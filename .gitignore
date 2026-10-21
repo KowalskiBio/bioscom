@@ -23,3 +23,20 @@ Nahrat_na_Web.command
 # OS junk
 .DS_Store
 Thumbs.db
+
+# DB migration dump — real lab data + PII, keep local
+migration/
+
+# TypeScript build output
+dist/
+
+# Migration tooling artifacts (real data — never commit)
+migrate/dumps/
+migrate/reports/
+migrate/.env
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

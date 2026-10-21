@@ -2,6 +2,12 @@
   "name": "bioscom",
   "version": "1.0.0",
   "description": "BioSCom – Laboratory chemical inventory management system",
+  "workspaces": [
+    "server",
+    "web",
+    "shared",
+    "migrate"
+  ],
   "scripts": {
     "test": "playwright test"
   },
