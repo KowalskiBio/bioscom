@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Firebase
+.firebase/
+firebase_bin
+
+# Test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Environment & secrets
+.env
+.env.local
+
+# Local tooling & scratch experiments
+.omo/
+test.js
+test_add.js
+Nahrat_na_Web.command
+
+# OS junk
+.DS_Store
+Thumbs.db
