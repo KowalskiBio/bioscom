@@ -34,6 +34,10 @@ export async function loadSession(): Promise<void> {
   }
 }
 
+export function setUser(nextUser: SessionUser | null): void {
+  user = nextUser;
+}
+
 export function clearSession(): void {
   user = null;
 }

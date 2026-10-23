@@ -420,5 +420,3 @@
         </div>
         <audio id="lab-radio-audio"></audio>
     </div>
-
-    <div id="toast-container" class="toast-container"></div>

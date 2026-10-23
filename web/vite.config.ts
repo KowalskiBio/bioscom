@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [svelte()],
   resolve: {
     alias: {
-      "@bioscom/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
+      "@bioscom/shared": fileURLToPath(new URL("../shared/src/browser.ts", import.meta.url)),
     },
   },
   server: { port: 5173, proxy: apiProxy },
