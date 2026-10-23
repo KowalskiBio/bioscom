@@ -13,6 +13,12 @@ import { registerUserRoutes } from "./routes/users.js";
 import { InventoryHub, registerInventoryWs } from "./inventory/ws.js";
 import { registerInventoryRoutes } from "./inventory/routes.js";
 import { registerSharedContainerRoutes } from "./inventory/shared.js";
+import { registerNoticeRoutes } from "./features/notices.js";
+import { registerInstrumentRoutes } from "./features/instruments.js";
+import { registerPrintRoutes } from "./features/print.js";
+import { registerGameRoutes } from "./features/games.js";
+import { registerHistoryAndBackupRoutes } from "./features/history.js";
+import { registerSandboxRoutes } from "./features/sandbox.js";
 
 const PLACEHOLDER_HTML = `<!doctype html>
 <html lang="en">
@@ -70,6 +76,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   registerInventoryWs(app, config, hub);
   registerInventoryRoutes(app, config, hub);
   registerSharedContainerRoutes(app, config, hub);
+  registerNoticeRoutes(app, config, hub);
+  registerInstrumentRoutes(app, config, hub);
+  registerPrintRoutes(app, config, hub);
+  registerGameRoutes(app, config, hub);
+  registerHistoryAndBackupRoutes(app, config, hub);
+  registerSandboxRoutes(app, config, hub);
 
   if (existsSync(webDistDir)) {
     await app.register(fastifyStatic, { root: webDistDir });

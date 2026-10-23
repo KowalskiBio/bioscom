@@ -163,6 +163,106 @@ export const UnshareContainerBodySchema = z.object({
   sharedWithGroupId: z.string().min(1),
 });
 
+export const CreateNoticeBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().min(1).max(4000),
+  category: z.enum(["suggestion", "issue", "info", "general"]),
+});
+
+export const UpdateNoticeBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    content: z.string().trim().min(1).max(4000).optional(),
+    category: z.enum(["suggestion", "issue", "info", "general"]).optional(),
+  })
+  .refine((value) => value.title !== undefined || value.content !== undefined || value.category !== undefined, {
+    message: "empty update",
+  });
+
+export const ReactionBodySchema = z.object({
+  text: z.string().trim().min(1).max(16),
+});
+
+export const CreateInstrumentBodySchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(4000).optional(),
+  location: z.string().trim().min(1).max(200),
+  contactPerson: z.string().trim().max(200).optional(),
+  contactEmail: z.string().trim().max(254).optional(),
+});
+
+export const UpdateInstrumentBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(4000).optional(),
+    location: z.string().trim().min(1).max(200).optional(),
+    contactPerson: z.string().trim().max(200).optional(),
+    contactEmail: z.string().trim().max(254).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: "empty update" });
+
+export const BookingBodySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  note: z.string().trim().max(1000).optional(),
+});
+
+export const CreateCatalogItemBodySchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(4000).optional(),
+  category: z.string().trim().max(100).optional(),
+  material: z.string().trim().max(100).optional(),
+  estimatedTime: z.string().trim().max(100).optional(),
+  image: z.string().max(1_000_000).optional(),
+});
+
+export const UpdateCatalogItemBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(4000).optional(),
+    category: z.string().trim().max(100).optional(),
+    material: z.string().trim().max(100).optional(),
+    estimatedTime: z.string().trim().max(100).optional(),
+    image: z.string().max(1_000_000).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: "empty update" });
+
+export const CreatePrintRequestBodySchema = z.object({
+  catalogItemId: z.string().trim().max(100).optional(),
+  catalogItemName: z.string().trim().max(200).optional(),
+  customDesign: z.boolean().optional(),
+  note: z.string().trim().max(2000).optional(),
+  quantity: z.number().int().min(1).max(1000).optional(),
+});
+
+export const PrintStatusBodySchema = z.object({
+  status: z.string().trim().min(1).max(32),
+});
+
+export const CreateGameBodySchema = z.object({
+  gameType: z.enum(["chess", "frog"]),
+  opponentUid: z.string().min(1),
+});
+
+export const ChessMoveBodySchema = z.object({
+  board: z.array(z.array(z.string())).min(8).max(8),
+  turn: z.enum(["white", "black"]),
+});
+
+export const FrogAnswerBodySchema = z.object({
+  round: z.number().int().min(0).max(100),
+  score: z.number().int().min(0).max(100),
+});
+
+export const FinishGameBodySchema = z.object({
+  winnerUid: z.string().min(1).optional(),
+});
+
+export const TreeReplaceBodySchema = z.object({
+  tree: z.custom<unknown>(),
+});
+
 export type RegisterBody = z.infer<typeof RegisterBodySchema>;
 export type CreateGroupBody = z.infer<typeof CreateGroupBodySchema>;
 export type JoinGroupBody = z.infer<typeof JoinGroupBodySchema>;

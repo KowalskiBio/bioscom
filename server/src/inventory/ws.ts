@@ -28,6 +28,16 @@ export class InventoryHub {
     if (channel === undefined) {
       return;
     }
+    this.sendTo(channel, payload);
+  }
+
+  broadcastAll(payload: unknown): void {
+    for (const channel of this.channels.values()) {
+      this.sendTo(channel, payload);
+    }
+  }
+
+  private sendTo(channel: Set<WebSocket>, payload: unknown): void {
     const message = JSON.stringify(payload);
     for (const socket of channel) {
       if (socket.readyState === socket.OPEN) {
