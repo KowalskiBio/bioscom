@@ -7,14 +7,17 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "export": "tsx src/export.ts",
-    "report": "npm run build --workspace @bioscom/shared && tsx src/report.ts"
+    "report": "npm run build --workspace @bioscom/shared && tsx src/report.ts",
+    "import": "npm run build --workspace @bioscom/shared && tsx src/import.ts"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.9",
     "firebase-admin": "^14.5.0"
   }
