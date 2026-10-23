@@ -153,6 +153,16 @@ export const MoveChemicalBodySchema = z.object({
   position: z.string().trim().max(32).optional(),
 });
 
+export const ShareContainerBodySchema = z.object({
+  roomId: z.string().min(1),
+  sharedWithGroupId: z.string().min(1),
+});
+
+export const UnshareContainerBodySchema = z.object({
+  roomId: z.string().min(1),
+  sharedWithGroupId: z.string().min(1),
+});
+
 export type RegisterBody = z.infer<typeof RegisterBodySchema>;
 export type CreateGroupBody = z.infer<typeof CreateGroupBodySchema>;
 export type JoinGroupBody = z.infer<typeof JoinGroupBodySchema>;

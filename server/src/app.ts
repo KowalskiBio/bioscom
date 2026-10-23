@@ -12,6 +12,7 @@ import { registerGroupRoutes } from "./routes/groups.js";
 import { registerUserRoutes } from "./routes/users.js";
 import { InventoryHub, registerInventoryWs } from "./inventory/ws.js";
 import { registerInventoryRoutes } from "./inventory/routes.js";
+import { registerSharedContainerRoutes } from "./inventory/shared.js";
 
 const PLACEHOLDER_HTML = `<!doctype html>
 <html lang="en">
@@ -68,6 +69,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   await app.register(websocket);
   registerInventoryWs(app, config, hub);
   registerInventoryRoutes(app, config, hub);
+  registerSharedContainerRoutes(app, config, hub);
 
   if (existsSync(webDistDir)) {
     await app.register(fastifyStatic, { root: webDistDir });
