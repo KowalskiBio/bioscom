@@ -11,12 +11,19 @@ const EMPTY_TREE = JSON.stringify({ rooms: [], assetRooms: [], assets: [], proto
 export function registerGroupRoutes(app: FastifyInstance, config: ServerConfig): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
+  app.get("/api/public/groups", async (_request, reply) => {
+    const rows = db()
+      .prepare("SELECT id, name FROM groups ORDER BY name")
+      .all() as Array<{ id: string; name: string }>;
+    return { groups: rows };
+  });
+
   app.get("/api/groups", async (request, reply) => {
     if (requireUser(db(), request, reply) === null) return;
     const rows = db()
-      .prepare("SELECT id, name, created FROM groups ORDER BY name")
-      .all() as Array<{ id: string; name: string; created: number }>;
-    return { groups: rows };
+      .prepare("SELECT id, name, join_code, created FROM groups ORDER BY name")
+      .all() as Array<{ id: string; name: string; join_code: string; created: number }>;
+    return { groups: rows.map((row) => ({ id: row.id, name: row.name, joinCode: row.join_code, created: row.created })) };
   });
 
   app.post("/api/groups", async (request, reply) => {
@@ -44,7 +51,7 @@ export function registerGroupRoutes(app: FastifyInstance, config: ServerConfig):
         .prepare("INSERT INTO groups (id, name, join_code, created) VALUES (?, ?, ?, ?)")
         .run(groupId, body.data.name, joinCode, Date.now());
       db().prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES (?, ?, 0)").run(groupId, EMPTY_TREE);
-      db().prepare("UPDATE users SET group_id = ? WHERE uid = ?").run(groupId, user.uid);
+      db().prepare("UPDATE users SET group_id = ?, role = 'admin' WHERE uid = ?").run(groupId, user.uid);
     });
     create();
     return reply.status(201).send({ group: { id: groupId, name: body.data.name, joinCode } });

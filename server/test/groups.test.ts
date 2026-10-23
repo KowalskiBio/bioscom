@@ -78,8 +78,20 @@ describe("POST /api/groups", () => {
       .get(group.id) as { tree: string; version: number };
     expect(doc.version).toBe(0);
     expect(JSON.parse(doc.tree)).toEqual({ rooms: [], assetRooms: [], assets: [], protocols: [] });
-    const member = db.prepare("SELECT group_id FROM users WHERE uid = 'uid-owner'").get() as { group_id: string };
+    const member = db.prepare("SELECT group_id, role FROM users WHERE uid = 'uid-owner'").get() as { group_id: string; role: string };
     expect(member.group_id).toBe(group.id);
+    expect(member.role).toBe("admin");
+  });
+});
+
+describe("GET /api/public/groups", () => {
+  it("lists group names without authentication and without join codes", async () => {
+    const response = await request(baseUrl).get("/api/public/groups");
+    expect(response.status).toBe(200);
+    const groups = response.body.groups as Array<{ id: string; name: string }>;
+    expect(groups.some((g) => g.name === "Old Lab")).toBe(true);
+    expect(JSON.stringify(groups)).not.toContain("joinCode");
+    expect(JSON.stringify(groups)).not.toContain("BIOS-111");
   });
 });
 

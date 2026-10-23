@@ -16,6 +16,8 @@ export function onUnauthorized(handler: () => void): void {
   unauthorizedHandler = handler;
 }
 
+const AUTH_PATHS = ["/api/login", "/api/register", "/api/forgot-password", "/api/reset-password"];
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   if (method !== "GET" && !connection.connected && connection.everConnected) {
     throw new ApiError(503, "You are offline – changes are disabled until the connection returns.");
@@ -29,10 +31,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (res.status === 401) {
-    unauthorizedHandler?.();
-    throw new ApiError(401, "Not authenticated", { error: "Not authenticated" });
-  }
   let parsed: unknown = undefined;
   if (res.status !== 204) {
     try {
@@ -40,6 +38,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       parsed = undefined;
     }
+  }
+  if (res.status === 401) {
+    if (!AUTH_PATHS.some((authPath) => path === authPath)) {
+      unauthorizedHandler?.();
+    }
+    const message =
+      parsed !== null && typeof parsed === "object" && "error" in parsed
+        ? String((parsed as { error: unknown }).error)
+        : "Not authenticated";
+    throw new ApiError(401, message, parsed);
   }
   if (!res.ok) {
     const message =

@@ -23,7 +23,7 @@ import type { Emailer } from "./emails.js";
 
 const LoginBody = z.object({ email: z.string().min(3).max(254), password: z.string().min(1).max(1024) });
 const ForgotBody = z.object({ email: z.string().min(3).max(254) });
-const ResetBody = z.object({ token: z.string().min(10).max(256), password: z.string().min(8).max(1024) });
+const ResetBody = z.object({ token: z.string().min(10).max(256), password: z.string().min(6).max(1024) });
 
 const RESET_TTL_MS = 60 * 60 * 1000;
 const GENERIC_LOGIN_ERROR = { error: "Invalid email or password" };

@@ -52,6 +52,17 @@ describe("api client", () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
+  it("401 on auth endpoints keeps the server message and does not clear the session", async () => {
+    const handler = vi.fn();
+    onUnauthorized(handler);
+    status = 401;
+    responseBody = { error: "Invalid email or password" };
+    await expect(api.post("/api/login", { email: "x", password: "y" })).rejects.toThrow(
+      "Invalid email or password",
+    );
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it("surfaces the server error message", async () => {
     status = 409;
     responseBody = { error: "Already a member of this lab" };

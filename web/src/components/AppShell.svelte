@@ -1,5 +1,12 @@
 <script lang="ts">
   import { router, navigateTo, TOP_VIEWS, type TopView } from "../lib/router.svelte";
+  import { session } from "../lib/stores/session.svelte";
+  import { groupList } from "../lib/stores/groups.svelte";
+  import { currentGroup } from "../lib/stores/currentGroup.svelte";
+  import { logout } from "../lib/app";
+  import { toggleTheme } from "../lib/theme.svelte";
+  import { showToast } from "../lib/stores/toast.svelte";
+  import Modal from "./Modal.svelte";
 
   const TAB_MAP: Record<string, string> = {
     rooms: "tab-inventory",
@@ -17,9 +24,21 @@
   const route = $derived(router.route);
   const isTopView = $derived((TOP_VIEWS as readonly string[]).includes(route.view));
   const activeTab = $derived(TAB_MAP[route.view] ?? "tab-inventory");
+  const badgeGroup = $derived(groupList.items.find((g) => g.id === session.user?.groupId));
+  const badgeVisible = $derived(session.user !== null);
 
   function onTabClick(view: TopView): void {
     navigateTo(view);
+  }
+
+  function copyJoinCode(): void {
+    const code = badgeGroup?.joinCode;
+    if (code === undefined) {
+      return;
+    }
+    void navigator.clipboard.writeText(code).then(() => {
+      showToast("Join code copied to clipboard!", "info");
+    });
   }
 </script>
 
@@ -58,10 +77,10 @@
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         </button>
                         <div class="dropdown-content" id="user-dropdown-content">
-                            <div class="user-badge" id="user-badge" style="display: none; flex-direction: column; padding: 1rem; line-height: 1.3;">
-                                <span id="user-badge-name" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">Jane Doe</span>
-                                <span id="user-badge-lab" style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 500;">Organic Chemistry Lab</span>
-                                <span id="user-badge-code" style="font-size: 0.65rem; color: var(--text-muted); cursor: pointer; margin-top: 0.25rem;" title="Click to copy join code">Code: CHEM-ORG-842</span>
+                            <div class="user-badge" id="user-badge" style={`display: ${badgeVisible ? "flex" : "none"}; flex-direction: column; padding: 1rem; line-height: 1.3;`}>
+                                <span id="user-badge-name" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">{session.user?.name ?? "Jane Doe"}</span>
+                                <span id="user-badge-lab" style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 500;">{badgeGroup?.name ?? currentGroup.groupName ?? "Organic Chemistry Lab"}</span>
+                                <span id="user-badge-code" style="font-size: 0.65rem; color: var(--text-muted); cursor: pointer; margin-top: 0.25rem;" title="Click to copy join code" onclick={copyJoinCode}>Code: {badgeGroup?.joinCode ?? "—"}</span>
                             </div>
                             <div class="dropdown-divider"></div>
                             <a class="dropdown-item" id="btn-group-members" style="display: none;">
@@ -74,12 +93,12 @@
                                 Edit Profile
                             </a>
 
-                            <a class="dropdown-item" id="btn-toggle-theme">
+                            <a class="dropdown-item" id="btn-toggle-theme" onclick={toggleTheme}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                                 Toggle Lite Mode
                             </a>
                             <div class="dropdown-divider"></div>
-                            <a class="dropdown-item" id="btn-logout" style="color: var(--accent-red);">
+                            <a class="dropdown-item" id="btn-logout" style="color: var(--accent-red);" onclick={() => void logout()}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                                 Log Out
                             </a>
@@ -383,20 +402,7 @@
         </section>
     </main>
 
-    <!-- Modal -->
-    <div id="modal-overlay" class="modal-overlay">
-        <div id="modal" class="modal">
-            <div class="modal-header">
-                <h2 id="modal-title">Modal</h2>
-                <button id="modal-close" class="modal-close-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-            </div>
-            <div id="modal-body" class="modal-body"></div>
-            <div class="modal-footer">
-                <button id="modal-cancel" class="btn-secondary">Cancel</button>
-                <button id="modal-confirm" class="btn-primary">Confirm</button>
-            </div>
-        </div>
-    </div>
+    <Modal />
     <!-- Persistent Lab Radio Widget -->
     <div id="lab-radio-widget" class="lab-radio-widget hidden">
         <div class="radio-content">

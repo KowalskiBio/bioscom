@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const RegisterBodySchema = z.object({
   email: z.email().max(254),
-  password: z.string().min(8).max(1024),
+  password: z.string().min(6).max(1024),
   name: z.string().trim().min(1).max(100),
 });
 

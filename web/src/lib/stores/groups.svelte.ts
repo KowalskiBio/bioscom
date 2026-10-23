@@ -3,7 +3,8 @@ import { api } from "../api";
 export interface GroupInfo {
   id: string;
   name: string;
-  created: number;
+  joinCode?: string;
+  created?: number;
 }
 
 let groups = $state<GroupInfo[]>([]);
@@ -20,6 +21,12 @@ export const groupList = {
 
 export async function fetchGroups(): Promise<void> {
   const body = await api.get<{ groups: GroupInfo[] }>("/api/groups");
+  groups = body.groups;
+  loaded = true;
+}
+
+export async function fetchPublicGroups(): Promise<void> {
+  const body = await api.get<{ groups: GroupInfo[] }>("/api/public/groups");
   groups = body.groups;
   loaded = true;
 }

@@ -1,5 +1,15 @@
+import { appendFileSync } from "node:fs";
+
 export interface Emailer {
   sendResetEmail(to: string, resetLink: string): Promise<void>;
+}
+
+export function createFileCaptureEmailer(path: string): Emailer {
+  return {
+    async sendResetEmail(to: string, resetLink: string): Promise<void> {
+      appendFileSync(path, `${JSON.stringify({ to, resetLink })}\n`, "utf8");
+    },
+  };
 }
 
 export function createResendEmailer(apiKey: string, from: string): Emailer {
