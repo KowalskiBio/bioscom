@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { verifyFirebaseScrypt, type FirebaseScryptParams } from "@bioscom/shared";
 import { loadEnv } from "./env.js";
 import { dumpsDir, reportsDir } from "./paths.js";
-import { verifyFirebaseScrypt, type FirebaseScryptParams } from "./scrypt.js";
 import type { AuthUserRecord } from "./source.js";
 
 const FALLBACK_DIRECTIVE = [

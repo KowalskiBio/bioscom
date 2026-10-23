@@ -9,7 +9,8 @@
     "export": "tsx src/export.ts",
     "report": "npm run build --workspace @bioscom/shared && tsx src/report.ts",
     "import": "npm run build --workspace @bioscom/shared && tsx src/import.ts",
-    "verify-hashes": "tsx src/verify-hashes.ts"
+    "verify-hashes": "npm run build --workspace @bioscom/shared && tsx src/verify-hashes.ts",
+    "seed-admin": "tsx src/seed-admin.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

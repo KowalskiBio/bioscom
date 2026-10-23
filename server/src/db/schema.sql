@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   password_hash TEXT,
   password_salt TEXT,
-  hash_version TEXT CHECK (hash_version IN ('firebase-scrypt', 'argon2id') OR hash_version IS NULL),
+  hash_version TEXT CHECK (hash_version IN ('firebase-scrypt', 'argon2id', 'unverified') OR hash_version IS NULL),
   name TEXT,
   role TEXT NOT NULL DEFAULT 'reader',
   group_id TEXT
@@ -156,3 +156,11 @@ CREATE TABLE IF NOT EXISTS quarantined_rows (
   payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_quarantine_source ON quarantined_rows(source);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  uid TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_uid ON password_resets(uid);

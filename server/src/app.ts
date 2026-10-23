@@ -5,6 +5,8 @@ import fastifyStatic from "@fastify/static";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { checkDatabase } from "./db.js";
 import { webDistDir } from "./paths.js";
+import { createResendEmailer, noopEmailer, type Emailer } from "./auth/emails.js";
+import { registerAuthRoutes } from "./auth/routes.js";
 
 const PLACEHOLDER_HTML = `<!doctype html>
 <html lang="en">
@@ -16,8 +18,15 @@ const PLACEHOLDER_HTML = `<!doctype html>
 </html>
 `;
 
-export async function buildApp(configOverrides: Partial<ServerConfig> = {}): Promise<FastifyInstance> {
-  const config = loadConfig(configOverrides);
+export interface AppOptions {
+  config?: Partial<ServerConfig>;
+  emailer?: Emailer;
+}
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
+  const config = loadConfig(options.config);
   const app = Fastify({ logger: { level: config.logLevel } });
 
   await app.register(cookie);
@@ -28,6 +37,14 @@ export async function buildApp(configOverrides: Partial<ServerConfig> = {}): Pro
     reply.header("Referrer-Policy", "no-referrer");
   });
 
+  app.addHook("preHandler", async (request, reply) => {
+    if (request.url.startsWith("/api/") && MUTATING_METHODS.has(request.method)) {
+      if (request.headers["x-requested-with"] !== "XMLHttpRequest") {
+        return reply.status(403).send({ error: "Missing X-Requested-With header" });
+      }
+    }
+  });
+
   app.get("/api/health", async (_request, reply) => {
     const result = checkDatabase(config.dbPath);
     if (result.ok) {
@@ -36,6 +53,10 @@ export async function buildApp(configOverrides: Partial<ServerConfig> = {}): Pro
     reply.status(503);
     return { status: "error", detail: result.error };
   });
+
+  const emailer =
+    options.emailer ?? (config.resendApiKey !== "" ? createResendEmailer(config.resendApiKey, config.resendFrom) : noopEmailer);
+  registerAuthRoutes(app, { config, emailer });
 
   if (existsSync(webDistDir)) {
     await app.register(fastifyStatic, { root: webDistDir });

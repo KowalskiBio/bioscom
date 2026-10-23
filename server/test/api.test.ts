@@ -21,7 +21,7 @@ async function listen(app: FastifyInstance): Promise<string> {
 
 beforeAll(async () => {
   const dir = mkdtempSync(join(tmpdir(), "bioscom-server-test-"));
-  app = await buildApp({ dbPath: join(dir, "test.db"), logLevel: "silent" });
+  app = await buildApp({ config: { dbPath: join(dir, "test.db"), logLevel: "silent" } });
   baseUrl = await listen(app);
 });
 
@@ -65,7 +65,7 @@ describe("GET /", () => {
 describe("database failure", () => {
   it("returns 503 on health and keeps serving when the db path is unusable", async () => {
     const dirPath = mkdtempSync(join(tmpdir(), "bioscom-server-bad-"));
-    const badApp = await buildApp({ dbPath: dirPath, logLevel: "silent" });
+    const badApp = await buildApp({ config: { dbPath: dirPath, logLevel: "silent" } });
     const badUrl = await listen(badApp);
     try {
       const first = await request(badUrl).get("/api/health");
