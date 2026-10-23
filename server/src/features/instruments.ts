@@ -36,6 +36,19 @@ interface BookingRow {
 export function registerInstrumentRoutes(app: FastifyInstance, config: ServerConfig, hub: InventoryHub): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
+function logHistory(db: Database.Database, groupId: string | null, userName: string, action: string): void {
+  if (groupId === null) {
+    return;
+  }
+  db.prepare("INSERT INTO history (group_id, timestamp, user_name, action) VALUES (?, ?, ?, ?)").run(
+    groupId,
+    Date.now(),
+    userName,
+    action,
+  );
+}
+
+
   const canManageInstrument = (user: SessionUserRow, instrument: InstrumentRow): boolean =>
     user.role === "superadmin" || instrument.owner_lab_id === user.group_id;
 
@@ -81,6 +94,7 @@ export function registerInstrumentRoutes(app: FastifyInstance, config: ServerCon
       )
       .run(id, body.data.name, body.data.description ?? null, body.data.location, body.data.contactPerson ?? null, body.data.contactEmail ?? null, user.group_id, group?.name ?? null);
     hub.broadcastAll({ type: "reload", resource: "instruments" });
+    logHistory(db(), user.group_id, user.name ?? user.uid, `Added instrument "${body.data.name}"`);
     return reply.status(201).send({ id });
   });
 

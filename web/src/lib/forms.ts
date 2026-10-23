@@ -34,6 +34,180 @@ import SimplePromptModal from "../components/modals/SimplePromptModal.svelte";
 import ProtocolFormModal from "../components/modals/ProtocolFormModal.svelte";
 import AssetRoomFormModal from "../components/modals/AssetRoomFormModal.svelte";
 import AssetFormModal from "../components/modals/AssetFormModal.svelte";
+import NoticeFormModal from "../components/modals/NoticeFormModal.svelte";
+import InstrumentFormModal from "../components/modals/InstrumentFormModal.svelte";
+import BookingModal from "../components/modals/BookingModal.svelte";
+import CatalogFormModal from "../components/modals/CatalogFormModal.svelte";
+import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
+import {
+  opCreateNotice,
+  opUpdateNotice,
+  opCreateInstrument,
+  opUpdateInstrument,
+  opBookInstrument,
+  opCreateCatalogItem,
+  opUpdateCatalogItem,
+  opCreatePrintRequest,
+  opUpdateProfile,
+} from "./featureOps";
+import { session } from "./stores/session.svelte";
+
+export function openNoticeForm(edit?: { id: string; title: string; content: string; category: string }): void {
+  const form = { title: edit?.title ?? "", content: edit?.content ?? "", category: edit?.category ?? "general" };
+  openModal({
+    title: edit === undefined ? "Add Note" : "Edit Notice",
+    component: NoticeFormModal,
+    props: { form },
+    btnText: edit === undefined ? "Add" : "Save",
+    onConfirm: async () => {
+      const title = form.title.trim();
+      const content = form.content.trim();
+      if (title === "" || content === "") {
+        showToast("Title and content are required", "error");
+        return;
+      }
+      if (countWords(title) > 300 || countWords(content) > 300) {
+        showToast("Title or content exceeds 300 words!", "error");
+        return;
+      }
+      const ok =
+        edit === undefined
+          ? await opCreateNotice({ title, content, category: form.category })
+          : await opUpdateNotice(edit.id, { title, content, category: form.category });
+      if (ok) {
+        closeModal();
+        showToast(edit === undefined ? "Notice added successfully" : "Notice updated successfully");
+      }
+    },
+  });
+}
+
+export function openInstrumentForm(edit?: { id: string; name: string; description: string; location: string; contactPerson: string; contactEmail: string }): void {
+  const form = {
+    name: edit?.name ?? "",
+    description: edit?.description ?? "",
+    location: edit?.location ?? "",
+    contactPerson: edit?.contactPerson ?? "",
+    contactEmail: edit?.contactEmail ?? "",
+  };
+  openModal({
+    title: edit === undefined ? "Add Instrument" : "Edit Instrument",
+    component: InstrumentFormModal,
+    props: { form },
+    btnText: edit === undefined ? "Add" : "Save",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      const location = form.location.trim();
+      if (name === "" || location === "") {
+        showToast("Name and location are required", "error");
+        return;
+      }
+      const ok =
+        edit === undefined
+          ? await opCreateInstrument({ name, description: form.description.trim() || undefined, location, contactPerson: form.contactPerson.trim() || undefined, contactEmail: form.contactEmail.trim() || undefined })
+          : await opUpdateInstrument(edit.id, { name, description: form.description.trim(), location, contactPerson: form.contactPerson.trim(), contactEmail: form.contactEmail.trim() });
+      if (ok) {
+        closeModal();
+        showToast(edit === undefined ? "Instrument added" : "Instrument saved");
+      }
+    },
+  });
+}
+
+export function openBookingModal(instrumentId: string, instrumentName: string): void {
+  const form = { date: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "10:00", note: "" };
+  openModal({
+    title: `Book: ${instrumentName}`,
+    component: BookingModal,
+    props: { form, instrumentId },
+    btnText: "Book",
+    onConfirm: async () => {
+      if (form.date === "" || form.startTime === "" || form.endTime === "") {
+        showToast("Date, start and end time are required", "error");
+        return;
+      }
+      if (form.startTime >= form.endTime) {
+        showToast("End time must be after start time", "error");
+        return;
+      }
+      if (await opBookInstrument(instrumentId, { date: form.date, startTime: form.startTime, endTime: form.endTime, note: form.note.trim() || undefined })) {
+        closeModal();
+        showToast("Instrument booked");
+      }
+    },
+  });
+}
+
+export function openCatalogForm(edit?: { id: string; name: string; description: string; category: string; material: string; estimatedTime: string }): void {
+  const form = {
+    name: edit?.name ?? "",
+    description: edit?.description ?? "",
+    category: edit?.category ?? "Others",
+    material: edit?.material ?? "",
+    estimatedTime: edit?.estimatedTime ?? "",
+  };
+  openModal({
+    title: edit === undefined ? "Add to Catalog" : "Edit Catalog Item",
+    component: CatalogFormModal,
+    props: { form },
+    btnText: edit === undefined ? "Add" : "Save",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      if (name === "") {
+        showToast("Name is required", "error");
+        return;
+      }
+      const body = { name, description: form.description.trim() || undefined, category: form.category || undefined, material: form.material.trim() || undefined, estimatedTime: form.estimatedTime.trim() || undefined };
+      const ok = edit === undefined ? await opCreateCatalogItem(body) : await opUpdateCatalogItem(edit.id, body);
+      if (ok) {
+        closeModal();
+        showToast(edit === undefined ? "Catalog item added" : "Catalog item saved");
+      }
+    },
+  });
+}
+
+export function openPrintRequestModal(item?: { id: string; name: string }): void {
+  const form = { note: "", quantity: 1 };
+  openModal({
+    title: item === undefined ? "Custom Print Request" : `Request: ${item.name}`,
+    component: PrintRequestModal,
+    props: { form, custom: item === undefined },
+    btnText: "Send Request",
+    onConfirm: async () => {
+      const ok = await opCreatePrintRequest(
+        item === undefined
+          ? { customDesign: true, note: form.note.trim() || undefined, quantity: form.quantity }
+          : { catalogItemId: item.id, catalogItemName: item.name, note: form.note.trim() || undefined, quantity: form.quantity },
+      );
+      if (ok) {
+        closeModal();
+        showToast("Print request sent");
+      }
+    },
+  });
+}
+
+export function openProfileModal(): void {
+  const form = { name: session.user?.name ?? "" };
+  openModal({
+    title: "Edit Profile",
+    bodyHtml: `<div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="pf-name" value="${form.name.replaceAll('"', "&quot;")}"></div>`,
+    btnText: "Save",
+    onConfirm: async () => {
+      const input = document.getElementById("pf-name") as HTMLInputElement | null;
+      const name = (input?.value ?? "").trim();
+      if (name === "") {
+        showToast("Enter name", "error");
+        return;
+      }
+      if (await opUpdateProfile({ name })) {
+        closeModal();
+        showToast("Profile updated");
+      }
+    },
+  });
+}
 
 export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => void): void {
   const form = { name: room?.name ?? "", description: room?.description ?? "" };

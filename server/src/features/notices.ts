@@ -24,6 +24,19 @@ interface NoticeRow {
 export function registerNoticeRoutes(app: FastifyInstance, config: ServerConfig, hub: InventoryHub): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
+function logHistory(db: Database.Database, groupId: string | null, userName: string, action: string): void {
+  if (groupId === null) {
+    return;
+  }
+  db.prepare("INSERT INTO history (group_id, timestamp, user_name, action) VALUES (?, ?, ?, ?)").run(
+    groupId,
+    Date.now(),
+    userName,
+    action,
+  );
+}
+
+
   const loadNotice = (id: string): NoticeRow | undefined =>
     db().prepare("SELECT * FROM notices WHERE id = ?").get(id) as NoticeRow | undefined;
 
@@ -68,6 +81,7 @@ export function registerNoticeRoutes(app: FastifyInstance, config: ServerConfig,
       )
       .run(id, body.data.title, body.data.content, body.data.category, user.name ?? user.uid, user.uid, group?.name ?? null, null, Date.now());
     hub.broadcastAll({ type: "reload", resource: "notices" });
+    logHistory(db(), user.group_id, user.name ?? user.uid, `Added notice "${body.data.title}"`);
     return reply.status(201).send({ id });
   });
 
@@ -95,7 +109,8 @@ export function registerNoticeRoutes(app: FastifyInstance, config: ServerConfig,
         id,
       );
     hub.broadcastAll({ type: "reload", resource: "notices" });
-    return { ok: true };
+    logHistory(db(), user.group_id, user.name ?? user.uid, `Deleted notice "${notice.title}"`);
+      return { ok: true };
   });
 
   app.delete("/api/notices/:id", async (request, reply) => {

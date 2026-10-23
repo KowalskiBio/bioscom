@@ -5,8 +5,10 @@
   import { currentGroup } from "../lib/stores/currentGroup.svelte";
   import { inventory } from "../lib/stores/inventory.svelte";
   import { searchState } from "../lib/stores/search.svelte";
-  import { logout } from "../lib/app";
+  import { logout, switchGroup } from "../lib/app";
+  import { api } from "../lib/api";
   import { toggleTheme } from "../lib/theme.svelte";
+  import { closeLabRadio, toggleRadioPlay, setRadioVolume } from "../lib/radio";
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
   import { opDeleteContainer, roleCanWrite } from "../lib/ops";
@@ -30,8 +32,21 @@
   import DetailView from "./views/DetailView.svelte";
   import ProtocolsView from "./views/ProtocolsView.svelte";
   import AssetsView from "./views/AssetsView.svelte";
+  import NoticeboardView from "./views/NoticeboardView.svelte";
+  import InstrumentsView from "./views/InstrumentsView.svelte";
+  import PrintingView from "./views/PrintingView.svelte";
+  import HistoryView from "./views/HistoryView.svelte";
+  import MinigamesView from "./views/MinigamesView.svelte";
+  import {
+    openNoticeForm,
+    openInstrumentForm,
+    openCatalogForm,
+    openPrintRequestModal,
+    openProfileModal,
+  } from "../lib/forms";
 
   let assetSearch = $state("");
+  let instrumentSearch = $state("");
 
   const TAB_MAP: Record<string, string> = {
     rooms: "tab-inventory",
@@ -52,6 +67,7 @@
   const badgeGroup = $derived(groupList.items.find((g) => g.id === session.user?.groupId));
   const badgeVisible = $derived(session.user !== null);
   const isReader = $derived(session.user?.role === "reader");
+  const isSuperadmin = $derived(session.user?.role === "superadmin");
 
   const containersRoomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
   const containersRoom = $derived(
@@ -201,6 +217,79 @@
   function escapeHtmlText(text: string): string {
     return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
+
+  let dropdownOpen = $state(false);
+
+  function toggleDropdown(): void {
+    dropdownOpen = !dropdownOpen;
+  }
+
+  $effect(() => {
+    const onDocClick = (event: MouseEvent): void => {
+      if ((event.target as HTMLElement).closest("#user-dropdown-container") === null) {
+        dropdownOpen = false;
+      }
+    };
+    document.addEventListener("click", onDocClick);
+    return () => {
+      document.removeEventListener("click", onDocClick);
+    };
+  });
+
+  function openMembersModal(): void {
+    const groupId = currentGroup.groupId;
+    if (groupId === null) {
+      return;
+    }
+    openModal({
+      title: "Laboratory Members",
+      bodyHtml: `<div id="members-loading">Loading...</div>`,
+      btnText: "Close",
+      onConfirm: () => {
+        closeModal();
+      },
+    });
+    void api
+      .get<{ members: Array<{ uid: string; name: string | null; role: string }> }>(
+        `/api/groups/${encodeURIComponent(groupId)}/members`,
+      )
+      .then((body) => {
+        const rows = body.members
+          .map((m) => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border-subtle);"><span style="font-weight:600;">${escapeHtmlText(m.name ?? "Unknown")}</span><span style="color:var(--text-muted);font-size:0.8rem;">${m.role}</span></div>`)
+          .join("");
+        const list = document.getElementById("members-loading");
+        if (list !== null) {
+          list.innerHTML = rows;
+        }
+      })
+      .catch(() => {
+        showToast("Failed to load members", "error");
+      });
+  }
+
+  function openSuperadminLabsModal(): void {
+    const groups = groupList.items;
+    openModal({
+      title: "Manage Laboratories",
+      bodyHtml: groups
+        .map((g) => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border-subtle);"><span style="font-weight:600;">${escapeHtmlText(g.name)}</span><button class="btn-inline" data-switch-group="${g.id}" data-switch-name="${escapeHtmlText(g.name)}">Switch</button></div>`)
+        .join(""),
+      btnText: "Close",
+      onConfirm: () => {
+        closeModal();
+      },
+    });
+    setTimeout(() => {
+      document.querySelectorAll("[data-switch-group]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const groupId = button.getAttribute("data-switch-group") ?? "";
+          const groupName = button.getAttribute("data-switch-name") ?? null;
+          closeModal();
+          switchGroup(groupId, groupName);
+        });
+      });
+    }, 50);
+  }
 </script>
 
 <header id="app-header">
@@ -216,34 +305,38 @@
                 </div>
             </div>
             <div class="header-actions">
-                <div id="superadmin-console" style="display: none; align-items: center; gap: 0.5rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); padding: 0.25rem 0.65rem; border-radius: var(--radius-xl); margin-right: 0.5rem;">
+                <div id="superadmin-console" style={`display: ${isSuperadmin ? "flex" : "none"}; align-items: center; gap: 0.5rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); padding: 0.25rem 0.65rem; border-radius: var(--radius-xl); margin-right: 0.5rem;`}>
                         <span style="font-size: 0.65rem; text-transform: uppercase; font-weight: 700; color: var(--accent-blue); letter-spacing: 0.05em;">Super Admin</span>
-                        <select id="superadmin-lab-select" style="padding: 0.2rem 0.4rem; font-size: 0.75rem; width: 140px; background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-sm); outline: none; cursor: pointer;"></select>
-                        <button id="btn-superadmin-members" class="btn-icon" style="width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex;" title="View Laboratory Members">
+                        <select id="superadmin-lab-select" style="padding: 0.2rem 0.4rem; font-size: 0.75rem; width: 140px; background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-sm); outline: none; cursor: pointer;" onchange={(e) => switchGroup((e.target as HTMLSelectElement).value, (e.target as HTMLSelectElement).selectedOptions[0]?.textContent ?? null)}>
+                            {#each groupList.items as group (group.id)}
+                                <option value={group.id} selected={group.id === currentGroup.groupId}>{group.name}</option>
+                            {/each}
+                        </select>
+                        <button id="btn-superadmin-members" class="btn-icon" style="width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex;" title="View Laboratory Members" onclick={openMembersModal}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         </button>
-                        <button id="btn-superadmin-labs" class="btn-icon" style="width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex;" title="Manage Laboratories">
+                        <button id="btn-superadmin-labs" class="btn-icon" style="width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex;" title="Manage Laboratories" onclick={openSuperadminLabsModal}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                         </button>
                     </div>
                     <GlobalSearch />
                     <div class="dropdown" id="user-dropdown-container">
-                        <button class="dropdown-btn" id="btn-user-menu" title="User Menu">
+                        <button class="dropdown-btn" id="btn-user-menu" title="User Menu" onclick={toggleDropdown}>
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         </button>
-                        <div class="dropdown-content" id="user-dropdown-content">
+                        <div class="dropdown-content" id="user-dropdown-content" class:show={dropdownOpen}>
                             <div class="user-badge" id="user-badge" style={`display: ${badgeVisible ? "flex" : "none"}; flex-direction: column; padding: 1rem; line-height: 1.3;`}>
                                 <span id="user-badge-name" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">{session.user?.name ?? "Jane Doe"}</span>
                                 <span id="user-badge-lab" style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 500;">{badgeGroup?.name ?? currentGroup.groupName ?? "Organic Chemistry Lab"}</span>
                                 <span id="user-badge-code" style="font-size: 0.65rem; color: var(--text-muted); cursor: pointer; margin-top: 0.25rem;" title="Click to copy join code" onclick={copyJoinCode}>Code: {badgeGroup?.joinCode ?? "—"}</span>
                             </div>
                             <div class="dropdown-divider"></div>
-                            <a class="dropdown-item" id="btn-group-members" style="display: none;">
+                            <a class="dropdown-item" id="btn-group-members" style={`display: ${isSuperadmin || session.user?.role === "admin" ? "flex" : "none"};`} onclick={openMembersModal}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                                 Manage Members
                             </a>
 
-                            <a class="dropdown-item" id="btn-edit-profile">
+                            <a class="dropdown-item" id="btn-edit-profile" onclick={openProfileModal}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                 Edit Profile
                             </a>
@@ -379,13 +472,10 @@
             <div class="view-header">
                 <div><h1>📋 Notice Board</h1><p class="view-subtitle">Share suggestions and notes with your laboratory team</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-add-notice" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Note</span></button>
+                    <button id="btn-add-notice" class="btn-primary" onclick={() => openNoticeForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Note</span></button>
                 </div>
             </div>
-            <div id="noticeboard-container" class="protocols-container"></div>
-            <div id="noticeboard-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">📝</div><h2>No notes yet</h2><p>Add the first note or suggestion for your lab team</p>
-            </div>
+            <NoticeboardView />
         </section>
 
         <!-- Instruments View -->
@@ -395,16 +485,12 @@
                 <div class="view-header-actions">
                     <div class="search-box" style="min-width: 250px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input type="text" id="instruments-search-input" placeholder="Search instruments..." autocomplete="off">
+                        <input type="text" id="instruments-search-input" placeholder="Search instruments..." autocomplete="off" bind:value={instrumentSearch}>
                     </div>
-                    <button id="btn-add-instrument" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Instrument</span></button>
+                    <button id="btn-add-instrument" class="btn-primary" style={`display: ${isReader ? "none" : "inline-flex"};`} onclick={() => openInstrumentForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Instrument</span></button>
                 </div>
             </div>
-            <div id="instruments-grid" class="assets-grid"></div>
-            <div id="instruments-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">🔬</div><h2>No instruments yet</h2><p>Add your first laboratory instrument</p>
-                <button class="btn-primary" id="btn-add-instrument-empty"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Instrument</span></button>
-            </div>
+            <InstrumentsView bind:search={instrumentSearch} />
         </section>
 
         <!-- 3D Print View -->
@@ -412,73 +498,21 @@
             <div class="view-header">
                 <div><h1>🖨️ 3D Print Service</h1><p class="view-subtitle">Browse catalog and request 3D prints for your lab</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-add-catalog-item" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add to Catalog</span></button>
-                    <button id="btn-custom-print-request" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #ef4444);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Custom Request</span></button>
+                    <button id="btn-add-catalog-item" class="btn-primary" style={`display: ${isSuperadmin ? "inline-flex" : "none"};`} onclick={() => openCatalogForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add to Catalog</span></button>
+                    <button id="btn-custom-print-request" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #ef4444);" onclick={() => openPrintRequestModal()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Custom Request</span></button>
                 </div>
             </div>
-
-            <!-- Print View Tabs -->
-            <div class="print-tabs-nav">
-                <button class="print-tab-btn active" id="print-tab-catalog-btn">📚 Catalog</button>
-                <button class="print-tab-btn" id="print-tab-requests-btn">📋 Print Requests</button>
-            </div>
-
-            <!-- Tab Content 1: Catalog -->
-            <div id="print-catalog-tab-content">
-                <div class="filter-pills-container" id="print-category-filters">
-                    <button class="filter-pill active">All</button>
-                    <button class="filter-pill">Racks &amp; Holders</button>
-                    <button class="filter-pill">Adapters &amp; Clamps</button>
-                    <button class="filter-pill">Fluidics &amp; Tubing</button>
-                    <button class="filter-pill">Enclosures &amp; Boxes</button>
-                    <button class="filter-pill">Safety Gears</button>
-                    <button class="filter-pill">Others</button>
-                </div>
-                <div id="print-catalog-grid" class="assets-grid"></div>
-                <div id="print-catalog-empty" class="empty-state" style="display:none;">
-                    <div class="empty-icon">🖨️</div><h2>No items in catalog yet</h2><p>Add your first 3D printable design to the catalog</p>
-                </div>
-            </div>
-
-            <!-- Tab Content 2: Requests -->
-            <div id="print-requests-tab-content" style="display: none;">
-                <div id="print-requests-list" class="booking-list" style="margin-top: 0;"></div>
-                <div id="print-requests-empty" class="empty-state" style="display:none;">
-                    <div class="empty-icon">📋</div><h2>No print requests yet</h2><p>Request print from the catalog or submit a custom request</p>
-                </div>
-            </div>
+            <PrintingView />
         </section>
 
         <!-- History & Backups View -->
         <section id="view-history" class="view" class:active={route.view === "history"}>
             <div class="view-header">
                 <div><h1>⏱️ History &amp; Backups</h1><p class="view-subtitle">Audit log and system backups</p></div>
-                <div class="view-header-actions" id="history-superadmin-actions" style="display:none;">
-                    <select id="history-lab-select" class="form-select" style="max-width:200px; display:none;"></select>
+                <div class="view-header-actions" id="history-superadmin-actions" style={`display: ${isSuperadmin ? "flex" : "none"};`}>
                 </div>
             </div>
-
-            <div class="print-tabs-nav">
-                <button class="print-tab-btn active" id="history-tab-log-btn">📝 Audit Log</button>
-                <button class="print-tab-btn" id="history-tab-backups-btn">💾 Auto-Backups</button>
-            </div>
-
-            <div id="history-log-tab-content">
-                <div id="history-log-list" class="protocols-container" style="margin-top: 1rem;"></div>
-                <div id="history-log-empty" class="empty-state" style="display:none;">
-                    <div class="empty-icon">📝</div><h2>No history events</h2><p>Actions performed in the lab will appear here</p>
-                </div>
-            </div>
-
-            <div id="history-backups-tab-content" style="display: none;">
-                <div id="history-backups-actions" style="margin-bottom: 1rem; margin-top: 1rem; display: none;">
-                    <button class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span style="margin-left:6px;">Create Manual Backup</span></button>
-                </div>
-                <div id="history-backups-list" class="protocols-container" style="margin-top: 1rem;"></div>
-                <div id="history-backups-empty" class="empty-state" style="display:none;">
-                    <div class="empty-icon">💾</div><h2>No backups yet</h2><p>Auto-backups are generated every 30 minutes of active use</p>
-                </div>
-            </div>
+            <HistoryView />
         </section>
 
         <!-- Mini-games View -->
@@ -486,40 +520,7 @@
             <div class="view-header">
                 <div><h1>🎮 Biochemical Lab Games</h1><p class="view-subtitle">Challenge colleagues to games and captcha quizzes</p></div>
             </div>
-
-            <div class="minigames-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
-                <!-- Left: Challenges panel -->
-                <div class="minigames-panel" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-                    <h2>Challenge a Colleague</h2>
-                    <div class="form-group">
-                        <label class="form-label">Select Colleague</label>
-                        <select class="form-select" id="game-opponent-select"></select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Select Game</label>
-                        <select class="form-select" id="game-type-select">
-                            <option value="frog">🐸 Frog CAPTCHA Quiz</option>
-                            <option value="chess">🧬 Biochemical Chess</option>
-                        </select>
-                    </div>
-                    <button class="btn-primary" id="btn-send-game-challenge" style="margin-top: 0.5rem; width: 100%;">🚀 Send Challenge</button>
-
-                    <h2 style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">Pending Challenges</h2>
-                    <div id="game-pending-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
-                </div>
-
-                <!-- Right: Active & Past Games -->
-                <div class="minigames-panel" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-                    <h2>Active Matches</h2>
-                    <div id="game-active-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto;"></div>
-
-                    <h2 style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">Completed Matches</h2>
-                    <div id="game-completed-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
-                </div>
-            </div>
-
-            <!-- Game Workspace Container (Frog Quiz / Chess Board renders here) -->
-            <div id="active-game-workspace" style="display: none; background: var(--bg-card); border: 1.5px solid var(--accent-blue); border-radius: var(--radius-lg); padding: 2rem; margin-top: 2rem; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);"></div>
+            <MinigamesView />
         </section>
     </main>
 
@@ -529,7 +530,7 @@
         <div class="radio-content">
             <div class="radio-header">
                 <span class="radio-title">📻 Lab Radio</span>
-                <button class="radio-close" id="btn-radio-close" title="Close Radio">×</button>
+                <button class="radio-close" id="btn-radio-close" title="Close Radio" onclick={() => closeLabRadio()}>×</button>
             </div>
             <div class="radio-body">
                 <div class="vinyl-container">
@@ -541,8 +542,8 @@
                 </div>
             </div>
             <div class="radio-controls">
-                <button class="btn-radio-play" id="btn-radio-play">⏸️</button>
-                <input type="range" class="radio-volume" id="radio-volume" min="0" max="1" step="0.05" value="0.5">
+                <button class="btn-radio-play" id="btn-radio-play" onclick={() => toggleRadioPlay()}>⏸️</button>
+                <input type="range" class="radio-volume" id="radio-volume" min="0" max="1" step="0.05" value="0.5" oninput={(e) => setRadioVolume((e.target as HTMLInputElement).value)}>
             </div>
         </div>
         <audio id="lab-radio-audio"></audio>

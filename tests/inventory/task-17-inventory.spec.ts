@@ -84,9 +84,10 @@ const FROG_FILE_NAMES: Record<string, string> = {
 async function captchaAnswer(page: import("@playwright/test").Page): Promise<{ correct: string; wrong: string }> {
   const src = await page.getAttribute("#modal-body img", "src");
   expect(src).not.toBeNull();
-  const match = src!.match(/\/([A-Za-z0-9_-]+)-[A-Za-z0-9]{8}\.(?:jpg|webp|png)/);
-  expect(match).not.toBeNull();
-  const correct = FROG_FILE_NAMES[match![1]!] ?? "";
+  const filePart = (src ?? "").split("/").pop() ?? "";
+  const match = filePart.split("-");
+  match.pop();
+  const correct = FROG_FILE_NAMES[match.join("-")] ?? "";
   expect(correct).not.toBe("");
   const options = await page.locator("#modal-body .btn-primary").allTextContents();
   const wrong = options.map((o) => o.trim()).find((o) => o !== correct);

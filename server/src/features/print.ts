@@ -42,6 +42,19 @@ interface PrintRequestRow {
 export function registerPrintRoutes(app: FastifyInstance, config: ServerConfig, hub: InventoryHub): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
+function logHistory(db: Database.Database, groupId: string | null, userName: string, action: string): void {
+  if (groupId === null) {
+    return;
+  }
+  db.prepare("INSERT INTO history (group_id, timestamp, user_name, action) VALUES (?, ?, ?, ?)").run(
+    groupId,
+    Date.now(),
+    userName,
+    action,
+  );
+}
+
+
   const serializeRequest = (row: PrintRequestRow): unknown => ({
     id: row.id,
     catalogItemId: row.catalog_item_id,
@@ -73,7 +86,8 @@ export function registerPrintRoutes(app: FastifyInstance, config: ServerConfig, 
   });
 
   app.post("/api/print/catalog", async (request, reply) => {
-    if (requireSuperadmin(db(), request, reply) === null) return;
+    const user = requireSuperadmin(db(), request, reply);
+    if (user === null) return;
     const body = CreateCatalogItemBodySchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid request" });
@@ -85,6 +99,7 @@ export function registerPrintRoutes(app: FastifyInstance, config: ServerConfig, 
       )
       .run(id, body.data.name, body.data.description ?? null, body.data.category ?? null, body.data.material ?? null, body.data.estimatedTime ?? null, body.data.image ?? null);
     hub.broadcastAll({ type: "reload", resource: "print" });
+    logHistory(db(), user.group_id, user.name ?? user.uid, `Added print catalog item "${body.data.name}"`);
     return reply.status(201).send({ id });
   });
 
@@ -156,6 +171,7 @@ export function registerPrintRoutes(app: FastifyInstance, config: ServerConfig, 
       )
       .run(id, body.data.catalogItemId ?? null, catalogName, body.data.customDesign === true ? 1 : 0, body.data.note ?? null, body.data.quantity ?? 1, new Date().toISOString().slice(0, 10), user.name ?? user.uid, user.uid, group?.name ?? null);
     hub.broadcastAll({ type: "reload", resource: "print" });
+    logHistory(db(), user.group_id, user.name ?? user.uid, `Requested 3D print "${catalogName ?? "Custom design"}"`);
     return reply.status(201).send({ id });
   });
 
