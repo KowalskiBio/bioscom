@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
   hash_version TEXT CHECK (hash_version IN ('firebase-scrypt', 'argon2id', 'unverified') OR hash_version IS NULL),
   name TEXT,
   role TEXT NOT NULL DEFAULT 'reader',
-  group_id TEXT
+  group_id TEXT,
+  avatar TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

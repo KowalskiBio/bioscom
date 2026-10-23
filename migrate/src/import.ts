@@ -100,7 +100,7 @@ function main(): void {
     const insQuarantine = db.prepare("INSERT INTO quarantined_rows (source, reason, payload) VALUES (?, ?, ?)");
     const insGroup = db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES (?, ?, ?, ?)");
     const insUser = db.prepare(
-      "INSERT INTO users (uid, email, password_hash, password_salt, hash_version, name, role, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO users (uid, email, password_hash, password_salt, hash_version, name, role, group_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     const insDoc = db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES (?, ?, 0)");
     const insSandbox = db.prepare("INSERT INTO sandbox_docs (key, tree, version) VALUES (?, ?, 0)");
@@ -170,6 +170,7 @@ function main(): void {
         user.name ?? auth?.displayName ?? null,
         user.role,
         user.groupId ?? null,
+        user.avatar ?? null,
       );
       importedUids.add(uid);
     }
@@ -186,6 +187,7 @@ function main(): void {
         auth.passwordHash === null ? null : "firebase-scrypt",
         auth.displayName,
         "reader",
+        null,
         null,
       );
     }

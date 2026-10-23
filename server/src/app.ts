@@ -7,6 +7,8 @@ import { checkDatabase } from "./db.js";
 import { webDistDir } from "./paths.js";
 import { createResendEmailer, noopEmailer, type Emailer } from "./auth/emails.js";
 import { registerAuthRoutes } from "./auth/routes.js";
+import { registerGroupRoutes } from "./routes/groups.js";
+import { registerUserRoutes } from "./routes/users.js";
 
 const PLACEHOLDER_HTML = `<!doctype html>
 <html lang="en">
@@ -57,6 +59,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const emailer =
     options.emailer ?? (config.resendApiKey !== "" ? createResendEmailer(config.resendApiKey, config.resendFrom) : noopEmailer);
   registerAuthRoutes(app, { config, emailer });
+  registerGroupRoutes(app, config);
+  registerUserRoutes(app, config);
 
   if (existsSync(webDistDir)) {
     await app.register(fastifyStatic, { root: webDistDir });

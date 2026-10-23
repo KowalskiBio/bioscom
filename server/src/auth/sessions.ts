@@ -14,6 +14,8 @@ export interface SessionUserRow {
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+export const SESSION_COOKIE_NAME = "bioscom_session";
+
 export function createSession(db: Database.Database, uid: string): string {
   const id = randomBytes(32).toString("base64url");
   db.prepare("INSERT INTO sessions (id, uid, expires_at) VALUES (?, ?, ?)").run(id, uid, Date.now() + SESSION_TTL_MS);

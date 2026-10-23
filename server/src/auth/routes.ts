@@ -15,6 +15,7 @@ import {
   deleteSession,
   deleteSessionsForUser,
   getSessionUser,
+  SESSION_COOKIE_NAME,
   type SessionUserRow,
 } from "./sessions.js";
 import { createLoginRateLimiter } from "./rate-limit.js";
@@ -25,7 +26,6 @@ const ForgotBody = z.object({ email: z.string().min(3).max(254) });
 const ResetBody = z.object({ token: z.string().min(10).max(256), password: z.string().min(8).max(1024) });
 
 const RESET_TTL_MS = 60 * 60 * 1000;
-const COOKIE_NAME = "bioscom_session";
 const GENERIC_LOGIN_ERROR = { error: "Invalid email or password" };
 
 export interface AuthDeps {
@@ -108,18 +108,18 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
         .run(newHash, user.uid);
     }
     const sessionId = createSession(db(), user.uid);
-    reply.setCookie(COOKIE_NAME, sessionId, { path: "/", httpOnly: true, secure: true, sameSite: "lax" });
+    reply.setCookie(SESSION_COOKIE_NAME, sessionId, { path: "/", httpOnly: true, secure: true, sameSite: "lax" });
     return { user: publicUser(user) };
   });
 
   app.post("/api/logout", async (request, reply) => {
-    deleteSession(db(), request.cookies[COOKIE_NAME]);
-    reply.clearCookie(COOKIE_NAME, { path: "/" });
+    deleteSession(db(), request.cookies[SESSION_COOKIE_NAME]);
+    reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
     return { ok: true };
   });
 
   app.get("/api/me", async (request, reply) => {
-    const user = getSessionUser(db(), request.cookies[COOKIE_NAME]);
+    const user = getSessionUser(db(), request.cookies[SESSION_COOKIE_NAME]);
     if (user === null) {
       return reply.status(401).send({ error: "Not authenticated" });
     }

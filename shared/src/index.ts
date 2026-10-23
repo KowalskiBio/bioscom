@@ -1,5 +1,6 @@
 export * from "./common.js";
 export * from "./scrypt.js";
+export * from "./api.js";
 export * from "./user.js";
 export * from "./group.js";
 export * from "./history.js";
