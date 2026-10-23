@@ -6,6 +6,7 @@ import {
   AddContainerBodySchema,
   EditContainerBodySchema,
   AddShelfBodySchema,
+  EditShelfBodySchema,
   AddChemicalBodySchema,
   EditChemicalBodySchema,
   DeleteContainerBodySchema,
@@ -13,6 +14,12 @@ import {
   DeleteChemicalBodySchema,
   AdjustQtyBodySchema,
   MoveChemicalBodySchema,
+  AddProtocolBodySchema,
+  EditProtocolBodySchema,
+  AddAssetRoomBodySchema,
+  EditAssetRoomBodySchema,
+  AddAssetBodySchema,
+  EditAssetBodySchema,
   type Chemical,
   type Container,
   type InventoryTree,
@@ -177,11 +184,19 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           cabinetMethod: body.data.cabinetMethod,
           customRangeType: body.data.customRangeType,
           sharedWithGroupIds: [],
-          shelves: (body.data.shelves ?? []).map((shelfName) => ({
-            id: genId(),
-            name: shelfName,
-            chemicals: [],
-          })),
+          shelves: (body.data.shelves ?? []).map((shelf) => {
+            if (typeof shelf === "string") {
+              return { id: genId(), name: shelf, chemicals: [] };
+            }
+            return {
+              id: genId(),
+              name: shelf.name,
+              chemicals: [],
+              isRangeShelf: shelf.isRangeShelf,
+              rangeStart: shelf.rangeStart,
+              rangeEnd: shelf.rangeEnd,
+            };
+          }),
         };
         room.containers.push(container);
         return `Added container "${body.data.name}"`;
@@ -273,6 +288,38 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/shelves/:shelfId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const shelfId = (request.params as { shelfId: string }).shelfId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = EditShelfBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const isMember = isMemberOrSuperadmin(user, groupId);
+      const result = mutate(groupId, user, (tree, context) => {
+        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
+        checkSharedContainerAccess(user, groupId, container, context, isMember);
+        const shelf = container.shelves.find((candidate) => candidate.id === shelfId);
+        if (shelf === undefined) {
+          throw new OpError(404, "Shelf not found");
+        }
+        if (body.data.name !== undefined) {
+          shelf.name = body.data.name;
+        }
+        if (body.data.color !== undefined) {
+          shelf.color = body.data.color;
+        }
+        return `Edited shelf/place "${shelf.name}" in container "${container.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
     });
   });
 
@@ -500,6 +547,237 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         fromShelf.chemicals = fromShelf.chemicals.filter((candidate) => candidate.id !== chemicalId);
         toShelf.chemicals.push(chemical);
         return `Moved chemical "${chemical.name}" to "${toContainer.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/protocols", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = AddProtocolBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        tree.protocols.push({ id: genId(), title: body.data.title, content: body.data.content ?? "" });
+        return `Added protocol "${body.data.title}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/protocols/:protocolId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const protocolId = (request.params as { protocolId: string }).protocolId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = EditProtocolBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const protocol = tree.protocols.find((candidate) => candidate.id === protocolId);
+        if (protocol === undefined) {
+          throw new OpError(404, "Protocol not found");
+        }
+        if (body.data.title !== undefined) {
+          protocol.title = body.data.title;
+        }
+        if (body.data.content !== undefined) {
+          protocol.content = body.data.content;
+        }
+        return `Edited protocol "${protocol.title}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.delete("/api/groups/:id/inventory/protocols/:protocolId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const protocolId = (request.params as { protocolId: string }).protocolId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const result = mutate(groupId, user, (tree) => {
+        const protocol = tree.protocols.find((candidate) => candidate.id === protocolId);
+        if (protocol === undefined) {
+          throw new OpError(404, "Protocol not found");
+        }
+        tree.protocols = tree.protocols.filter((candidate) => candidate.id !== protocolId);
+        return `Deleted protocol "${protocol.title}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/asset-rooms", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = AddAssetRoomBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        tree.assetRooms.push({ id: genId(), name: body.data.name });
+        return `Added asset room "${body.data.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/asset-rooms/:roomId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const roomId = (request.params as { roomId: string }).roomId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = EditAssetRoomBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const room = tree.assetRooms.find((candidate) => candidate.id === roomId);
+        if (room === undefined) {
+          throw new OpError(404, "Asset room not found");
+        }
+        if (body.data.name !== undefined) {
+          room.name = body.data.name;
+        }
+        return `Edited asset room "${room.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.delete("/api/groups/:id/inventory/asset-rooms/:roomId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const roomId = (request.params as { roomId: string }).roomId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const result = mutate(groupId, user, (tree) => {
+        const room = tree.assetRooms.find((candidate) => candidate.id === roomId);
+        if (room === undefined) {
+          throw new OpError(404, "Asset room not found");
+        }
+        tree.assetRooms = tree.assetRooms.filter((candidate) => candidate.id !== roomId);
+        for (const asset of tree.assets) {
+          if (asset.roomId === roomId) {
+            asset.roomId = "";
+          }
+        }
+        return `Deleted asset room "${room.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/assets", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = AddAssetBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        tree.assets.push({
+          id: genId(),
+          name: body.data.name,
+          model: body.data.model,
+          barcode: body.data.barcode,
+          description: body.data.description,
+          roomId: body.data.roomId ?? "",
+        });
+        return `Added asset "${body.data.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/assets/:assetId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const assetId = (request.params as { assetId: string }).assetId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = EditAssetBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const asset = tree.assets.find((candidate) => candidate.id === assetId);
+        if (asset === undefined) {
+          throw new OpError(404, "Asset not found");
+        }
+        if (body.data.name !== undefined) {
+          asset.name = body.data.name;
+        }
+        if (body.data.model !== undefined) {
+          asset.model = body.data.model;
+        }
+        if (body.data.barcode !== undefined) {
+          asset.barcode = body.data.barcode;
+        }
+        if (body.data.description !== undefined) {
+          asset.description = body.data.description;
+        }
+        if (body.data.roomId !== undefined) {
+          asset.roomId = body.data.roomId;
+        }
+        return `Edited asset "${asset.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.delete("/api/groups/:id/inventory/assets/:assetId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const assetId = (request.params as { assetId: string }).assetId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const result = mutate(groupId, user, (tree) => {
+        const asset = tree.assets.find((candidate) => candidate.id === assetId);
+        if (asset === undefined) {
+          throw new OpError(404, "Asset not found");
+        }
+        tree.assets = tree.assets.filter((candidate) => candidate.id !== assetId);
+        return `Deleted asset "${asset.name}"`;
       });
       broadcastResult(groupId, result);
       return result;

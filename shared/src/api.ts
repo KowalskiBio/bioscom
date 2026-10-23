@@ -37,6 +37,16 @@ export const EditRoomBodySchema = z
   })
   .refine((value) => value.name !== undefined || value.description !== undefined, { message: "empty update" });
 
+const ShelfSpecSchema = z.union([
+  z.string().trim().min(1).max(100),
+  z.object({
+    name: z.string().trim().min(1).max(100),
+    isRangeShelf: z.boolean().optional(),
+    rangeStart: z.string().trim().max(16).optional(),
+    rangeEnd: z.string().trim().max(16).optional(),
+  }),
+]);
+
 export const AddContainerBodySchema = z.object({
   roomId: z.string().min(1),
   name: z.string().trim().min(1).max(100),
@@ -45,7 +55,7 @@ export const AddContainerBodySchema = z.object({
   type: z.enum(["cabinet", "fridge", "freezer", "deepfreezer"]),
   cabinetMethod: z.enum(["numerical", "alphabetical", "custom"]).optional(),
   customRangeType: z.enum(["alphabetical", "numerical"]).optional(),
-  shelves: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  shelves: z.array(ShelfSpecSchema).max(50).optional(),
 });
 
 export const EditContainerBodySchema = z
@@ -70,6 +80,15 @@ export const AddShelfBodySchema = z.object({
   rangeStart: z.string().trim().max(16).optional(),
   rangeEnd: z.string().trim().max(16).optional(),
 });
+
+export const EditShelfBodySchema = z
+  .object({
+    roomId: z.string().min(1),
+    containerId: z.string().min(1),
+    name: z.string().trim().min(1).max(100).optional(),
+    color: z.string().trim().max(32).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.color !== undefined, { message: "empty update" });
 
 export const AddChemicalBodySchema = z.object({
   roomId: z.string().min(1),
@@ -162,6 +181,44 @@ export const UnshareContainerBodySchema = z.object({
   roomId: z.string().min(1),
   sharedWithGroupId: z.string().min(1),
 });
+
+export const AddProtocolBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().max(8000).optional(),
+});
+
+export const EditProtocolBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    content: z.string().max(8000).optional(),
+  })
+  .refine((value) => value.title !== undefined || value.content !== undefined, { message: "empty update" });
+
+export const AddAssetRoomBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+});
+
+export const EditAssetRoomBodySchema = z
+  .object({ name: z.string().trim().min(1).max(100).optional() })
+  .refine((value) => value.name !== undefined, { message: "empty update" });
+
+export const AddAssetBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  model: z.string().trim().max(200).optional(),
+  barcode: z.string().trim().max(64).optional(),
+  description: z.string().max(4000).optional(),
+  roomId: z.string().trim().max(64).optional(),
+});
+
+export const EditAssetBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    model: z.string().trim().max(200).optional(),
+    barcode: z.string().trim().max(64).optional(),
+    description: z.string().max(4000).optional(),
+    roomId: z.string().trim().max(64).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: "empty update" });
 
 export const CreateNoticeBodySchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -273,7 +330,14 @@ export type EditRoomBody = z.infer<typeof EditRoomBodySchema>;
 export type AddContainerBody = z.infer<typeof AddContainerBodySchema>;
 export type EditContainerBody = z.infer<typeof EditContainerBodySchema>;
 export type AddShelfBody = z.infer<typeof AddShelfBodySchema>;
+export type EditShelfBody = z.infer<typeof EditShelfBodySchema>;
 export type AddChemicalBody = z.infer<typeof AddChemicalBodySchema>;
 export type EditChemicalBody = z.infer<typeof EditChemicalBodySchema>;
 export type AdjustQtyBody = z.infer<typeof AdjustQtyBodySchema>;
 export type MoveChemicalBody = z.infer<typeof MoveChemicalBodySchema>;
+export type AddProtocolBody = z.infer<typeof AddProtocolBodySchema>;
+export type EditProtocolBody = z.infer<typeof EditProtocolBodySchema>;
+export type AddAssetRoomBody = z.infer<typeof AddAssetRoomBodySchema>;
+export type EditAssetRoomBody = z.infer<typeof EditAssetRoomBodySchema>;
+export type AddAssetBody = z.infer<typeof AddAssetBodySchema>;
+export type EditAssetBody = z.infer<typeof EditAssetBodySchema>;

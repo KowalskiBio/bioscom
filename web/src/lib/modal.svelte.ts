@@ -12,7 +12,7 @@ export interface ModalState {
   onConfirm: (() => void) | null;
 }
 
-let state = $state<ModalState>({
+let state = $state.raw<ModalState>({
   open: false,
   title: "",
   bodyHtml: "",
@@ -56,11 +56,15 @@ export function openModal(options: OpenModalOptions): void {
 }
 
 export function closeModal(): void {
-  state.open = false;
-  state.bodyHtml = "";
-  state.component = null;
-  state.props = {};
-  state.onConfirm = null;
+  state = {
+    open: false,
+    title: "",
+    bodyHtml: "",
+    component: null,
+    props: {},
+    btnText: null,
+    onConfirm: null,
+  };
 }
 
 export function openLegacyModal(

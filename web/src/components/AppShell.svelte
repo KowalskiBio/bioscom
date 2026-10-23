@@ -3,10 +3,35 @@
   import { session } from "../lib/stores/session.svelte";
   import { groupList } from "../lib/stores/groups.svelte";
   import { currentGroup } from "../lib/stores/currentGroup.svelte";
+  import { inventory } from "../lib/stores/inventory.svelte";
+  import { searchState } from "../lib/stores/search.svelte";
   import { logout } from "../lib/app";
   import { toggleTheme } from "../lib/theme.svelte";
   import { showToast } from "../lib/stores/toast.svelte";
+  import { exportPDF, exportContainerPDF } from "../lib/exports";
+  import { opDeleteContainer, roleCanWrite } from "../lib/ops";
+  import { verifyCaptchaAndExecute } from "../lib/captcha";
+  import {
+    openRoomForm,
+    openDeleteRoomConfirm,
+    openContainerForm,
+    openEditContainerForm,
+    openAddShelfForm,
+    openChemicalRadioPrompt,
+    openProtocolForm,
+    openAssetRoomForm,
+    openAssetForm,
+  } from "../lib/forms";
+  import { openModal, closeModal } from "../lib/modal.svelte";
   import Modal from "./Modal.svelte";
+  import GlobalSearch from "./GlobalSearch.svelte";
+  import RoomsView from "./views/RoomsView.svelte";
+  import ContainersView from "./views/ContainersView.svelte";
+  import DetailView from "./views/DetailView.svelte";
+  import ProtocolsView from "./views/ProtocolsView.svelte";
+  import AssetsView from "./views/AssetsView.svelte";
+
+  let assetSearch = $state("");
 
   const TAB_MAP: Record<string, string> = {
     rooms: "tab-inventory",
@@ -26,6 +51,22 @@
   const activeTab = $derived(TAB_MAP[route.view] ?? "tab-inventory");
   const badgeGroup = $derived(groupList.items.find((g) => g.id === session.user?.groupId));
   const badgeVisible = $derived(session.user !== null);
+  const isReader = $derived(session.user?.role === "reader");
+
+  const containersRoomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
+  const containersRoom = $derived(
+    containersRoomId === "shared-assets" ? undefined : inventory.tree?.rooms.find((r) => r.id === containersRoomId),
+  );
+  const detailRoom = $derived(inventory.tree?.rooms.find((r) => r.id === (route.view === "detail" ? route.roomId : "")));
+  const detailCont = $derived(detailRoom?.containers.find((c) => c.id === (route.view === "detail" ? route.containerId : "")));
+  const isVirtualShared = $derived(containersRoomId === "shared-assets");
+
+  $effect(() => {
+    if (route.view === "assets" && isReader) {
+      showToast("Access Denied", "error");
+      navigateTo("rooms");
+    }
+  });
 
   function onTabClick(view: TopView): void {
     navigateTo(view);
@@ -39,6 +80,126 @@
     void navigator.clipboard.writeText(code).then(() => {
       showToast("Join code copied to clipboard!", "info");
     });
+  }
+
+  function onAddRoom(): void {
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    openRoomForm("add");
+  }
+
+  function onExportPdf(): void {
+    if (inventory.tree !== null) {
+      exportPDF(inventory.tree);
+    }
+  }
+
+  function onEditRoom(): void {
+    if (containersRoom === undefined) {
+      return;
+    }
+    openRoomForm("edit", containersRoom, () => {
+      navigateTo("rooms");
+      navigateTo("containers", { roomId: containersRoom.id });
+    });
+  }
+
+  function onDeleteRoom(): void {
+    if (containersRoom === undefined) {
+      return;
+    }
+    openDeleteRoomConfirm(containersRoom, () => navigateTo("rooms"));
+  }
+
+  function onAddContainer(type: "cabinet" | "fridge" | "freezer"): void {
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    if (containersRoom === undefined) {
+      return;
+    }
+    openContainerForm(type);
+  }
+
+  function onAddShelf(): void {
+    if (detailRoom === undefined || detailCont === undefined) {
+      return;
+    }
+    openAddShelfForm(detailRoom, detailCont);
+  }
+
+  function onExportContainerPdf(): void {
+    if (detailRoom !== undefined && detailCont !== undefined) {
+      exportContainerPDF(detailRoom, detailCont);
+    }
+  }
+
+  function onEditContainer(): void {
+    if (detailRoom === undefined || detailCont === undefined) {
+      return;
+    }
+    openEditContainerForm(detailRoom, detailCont);
+  }
+
+  function onDeleteContainer(): void {
+    if (detailRoom === undefined || detailCont === undefined) {
+      return;
+    }
+    openModal({
+      title: "Delete Container",
+      bodyHtml: `<p>Delete <strong>${escapeHtmlText(detailCont.name ?? "")}</strong> and all its contents?</p>`,
+      btnText: "Delete",
+      onConfirm: () => {
+        verifyCaptchaAndExecute(async () => {
+          if (await opDeleteContainer(detailRoom.id, detailCont.id)) {
+            closeModal();
+            navigateTo("containers", { roomId: detailRoom.id });
+          }
+        });
+      },
+    });
+  }
+
+  function onAddChemical(): void {
+    if (detailRoom === undefined || detailCont === undefined) {
+      return;
+    }
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    openChemicalRadioPrompt(detailRoom, detailCont);
+  }
+
+  function onAddProtocol(): void {
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    openProtocolForm();
+  }
+
+  function onAddAssetRoom(): void {
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    openAssetRoomForm();
+  }
+
+  function onAddAsset(): void {
+    if (isReader) {
+      showToast("Access Denied", "error");
+      return;
+    }
+    openAssetForm(inventory.tree?.assetRooms ?? []);
+  }
+
+  function escapeHtmlText(text: string): string {
+    return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
 </script>
 
@@ -65,13 +226,7 @@
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                         </button>
                     </div>
-                    <div class="search-wrap">
-                        <div class="search-box">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="search-input" placeholder="Search global inventory..." autocomplete="off">
-                        </div>
-                        <div id="autocomplete-list" class="autocomplete-list"></div>
-                    </div>
+                    <GlobalSearch />
                     <div class="dropdown" id="user-dropdown-container">
                         <button class="dropdown-btn" id="btn-user-menu" title="User Menu">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -155,68 +310,41 @@
             <div class="view-header">
                 <div><h1>Rooms</h1><p class="view-subtitle">Select a room to view its cabinets and fridges</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-export-pdf" class="btn-secondary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
-                    <button id="btn-add-room" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
+                    <button id="btn-export-pdf" class="btn-secondary" onclick={onExportPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
+                    <button id="btn-add-room" class="btn-primary" onclick={onAddRoom}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
                 </div>
             </div>
-            <div id="rooms-grid" class="card-grid"></div>
-            <div id="rooms-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">🏢</div><h2>No rooms yet</h2><p>Start by adding your first room</p>
-                <button class="btn-primary add-room-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
-            </div>
+            <RoomsView />
         </section>
 
         <!-- Containers View (Cabinets + Fridges) -->
         <section id="view-containers" class="view" class:active={route.view === "containers"}>
             <div class="view-header">
-                <div><h1 id="containers-title">Containers</h1><p class="view-subtitle" id="containers-subtitle"></p></div>
+                <div><h1 id="containers-title">{isVirtualShared ? "Room: Shared Assets" : `Room: ${containersRoom?.name ?? "Containers"}`}</h1><p class="view-subtitle" id="containers-subtitle">{isVirtualShared ? "Containers shared from neighboring laboratories" : (containersRoom?.description ?? "")}</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-edit-room" class="btn-secondary" title="Edit room"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                    <button id="btn-delete-room" class="btn-danger-outline" title="Delete room"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-                    <button id="btn-add-cabinet" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Cabinet</span></button>
-                    <button id="btn-add-fridge" class="btn-primary btn-fridge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Fridge</span></button>
-                    <button id="btn-add-freezer" class="btn-primary" style="background: linear-gradient(135deg, #6366f1, #4f46e5); border: 1px solid rgba(99, 102, 241, 0.25);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Freezer</span></button>
+                    <button id="btn-edit-room" class="btn-secondary" title="Edit room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onEditRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                    <button id="btn-delete-room" class="btn-danger-outline" title="Delete room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onDeleteRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button id="btn-add-cabinet" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("cabinet")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Cabinet</span></button>
+                    <button id="btn-add-fridge" class="btn-primary btn-fridge" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("fridge")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Fridge</span></button>
+                    <button id="btn-add-freezer" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"}; background: linear-gradient(135deg, #6366f1, #4f46e5); border: 1px solid rgba(99, 102, 241, 0.25);`} onclick={() => onAddContainer("freezer")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Freezer</span></button>
                 </div>
             </div>
-            <div id="containers-split" class="containers-split">
-                <div class="containers-col">
-                    <h2 class="col-title">Cabinets</h2>
-                    <div id="cabinets-grid" class="card-grid"></div>
-                    <div id="cabinets-empty" class="empty-state-small" style="display:none;">No cabinets yet</div>
-                </div>
-                <div class="containers-col">
-                    <h2 class="col-title">Fridges</h2>
-                    <div id="fridges-grid" class="card-grid"></div>
-                    <div id="fridges-empty" class="empty-state-small" style="display:none;">No fridges yet</div>
-                </div>
-                <div class="containers-col">
-                    <h2 class="col-title">Freezers</h2>
-                    <div id="freezers-grid" class="card-grid"></div>
-                    <div id="freezers-empty" class="empty-state-small" style="display:none;">No freezers yet</div>
-                </div>
-            </div>
-            <div id="containers-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">🗄️</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
-            </div>
+            <ContainersView />
         </section>
 
         <!-- Detail View (Shelves + Chemicals) -->
         <section id="view-detail" class="view" class:active={route.view === "detail"}>
             <div class="view-header">
-                <div><h1 id="detail-title">Detail</h1><p class="view-subtitle" id="detail-subtitle"></p></div>
+                <div><h1 id="detail-title">{#if detailCont?.emoji}<span style="margin-right:0.5rem;">{detailCont.emoji}</span>{/if}{detailCont?.name ?? "Detail"}</h1><p class="view-subtitle" id="detail-subtitle">{detailRoom?.name ?? "Room"} → {detailCont?.name ?? ""}{#if detailCont && detailCont.sharedWithGroupIds && detailCont.sharedWithGroupIds.length > 0} | 🔗 Shared to: {detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")}{/if}</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-add-shelf" class="btn-secondary" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Shelf</span></button>
-                    <button id="btn-export-container-pdf" class="btn-secondary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
-                    <button id="btn-edit-container" class="btn-secondary" title="Edit container"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                    <button id="btn-delete-container" class="btn-danger-outline" title="Delete container"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-                    <button id="btn-add-chemical" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
+                    <button id="btn-add-shelf" class="btn-secondary" style={`display: ${!isReader && detailCont !== undefined && detailCont.type !== "deepfreezer" ? "inline-flex" : "none"};`} onclick={onAddShelf}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Shelf</span></button>
+                    <button id="btn-export-container-pdf" class="btn-secondary" onclick={onExportContainerPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
+                    <button id="btn-edit-container" class="btn-secondary" title="Edit container" style={`display: ${!isReader && detailCont !== undefined ? "inline-flex" : "none"};`} onclick={onEditContainer}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                    <button id="btn-delete-container" class="btn-danger-outline" title="Delete container" style={`display: ${!isReader && detailCont !== undefined ? "inline-flex" : "none"};`} onclick={onDeleteContainer}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button id="btn-add-chemical" class="btn-primary" onclick={onAddChemical}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
                 </div>
             </div>
-            <div id="shelves-container"></div>
-            <div id="detail-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">🧪</div><h2>No chemicals yet</h2><p>Add your first chemical</p>
-                <button class="btn-primary add-chem-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
-            </div>
+            <DetailView searchQuery={searchState.query} />
         </section>
 
         <!-- Protocols View -->
@@ -224,13 +352,10 @@
             <div class="view-header">
                 <div><h1>Standard Laboratory Solutions &amp; Stock Preparations</h1><p class="view-subtitle">Manage laboratory protocols and recipes</p></div>
                 <div class="view-header-actions">
-                    <button id="btn-add-protocol" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Protocol</span></button>
+                    <button id="btn-add-protocol" class="btn-primary" onclick={onAddProtocol}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Protocol</span></button>
                 </div>
             </div>
-            <div id="protocols-container" class="protocols-container"></div>
-            <div id="protocols-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">📖</div><h2>No protocols yet</h2><p>Add your first standard solution or protocol</p>
-            </div>
+            <ProtocolsView />
         </section>
 
         <!-- Assets/Inventory View -->
@@ -240,17 +365,13 @@
                 <div class="view-header-actions" style="display: flex; gap: 1rem; align-items: center;">
                     <div class="search-box" style="min-width: 250px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input type="text" id="assets-search-input" placeholder="Search inventory..." autocomplete="off">
+                        <input type="text" id="assets-search-input" placeholder="Search inventory..." autocomplete="off" bind:value={assetSearch}>
                     </div>
-                    <button id="btn-add-asset-room" class="btn-secondary" style="margin-right: 0.5rem;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
-                    <button id="btn-add-asset" class="btn-primary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Asset</span></button>
+                    <button id="btn-add-asset-room" class="btn-secondary" style="margin-right: 0.5rem;" onclick={onAddAssetRoom}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
+                    <button id="btn-add-asset" class="btn-primary" onclick={onAddAsset}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Asset</span></button>
                 </div>
             </div>
-            <div id="assets-grid" class="assets-grid"></div>
-            <div id="assets-empty" class="empty-state" style="display:none;">
-                <div class="empty-icon">📦</div><h2>No items in lab inventory yet</h2><p>Add your first laboratory asset, device, or equipment item</p>
-                <button class="btn-primary" id="btn-add-asset-empty"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Asset</span></button>
-            </div>
+            <AssetsView bind:searchQuery={assetSearch} />
         </section>
 
         <!-- Notice Board View -->
