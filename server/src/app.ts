@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
+import websocket from "@fastify/websocket";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { checkDatabase } from "./db.js";
 import { webDistDir } from "./paths.js";
@@ -9,6 +10,8 @@ import { createResendEmailer, noopEmailer, type Emailer } from "./auth/emails.js
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerUserRoutes } from "./routes/users.js";
+import { InventoryHub, registerInventoryWs } from "./inventory/ws.js";
+import { registerInventoryRoutes } from "./inventory/routes.js";
 
 const PLACEHOLDER_HTML = `<!doctype html>
 <html lang="en">
@@ -61,6 +64,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   registerAuthRoutes(app, { config, emailer });
   registerGroupRoutes(app, config);
   registerUserRoutes(app, config);
+  const hub = new InventoryHub();
+  await app.register(websocket);
+  registerInventoryWs(app, config, hub);
+  registerInventoryRoutes(app, config, hub);
 
   if (existsSync(webDistDir)) {
     await app.register(fastifyStatic, { root: webDistDir });
