@@ -51,9 +51,17 @@ FIREBASE_SCRYPT_ROUNDS=<user action 4>
 FIREBASE_SCRYPT_MEM_COST=<user action 4>
 ```
 
-Smoke (no sudo needed): `ssh proxmox1 'cd BioSCom && PORT=8004 DB_PATH=$PWD/bioscom.db SESSION_SECRET=dev node server/dist/index.js &'` then `curl http://127.0.0.1:8004/api/health` → `{"ok":true,...}`.
+Smoke (no sudo needed): `ssh proxmox1 'cd BioSCom && PORT=8004 DB_PATH=$PWD/bioscom.db SESSION_SECRET=dev node server/dist/index.js &'` then `curl http://127.0.0.1:8004/api/health` → `{"status":"ok"}` (verified 2026-10-24).
 
 ### Remaining privileged steps (user action 2)
+
+One command (idempotent — installs the unit + bootstrap site, and once DNS resolves + cert issued, swaps in the final TLS site):
+
+```bash
+sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh
+```
+
+If DNS is not live yet it installs the HTTP bootstrap and exits 0 — rerun after the record exists. Manual equivalent:
 
 ```bash
 sudo cp /home/kowalski/BioSCom/deploy/bioscom.service /etc/systemd/system/bioscom.service
@@ -67,6 +75,8 @@ sudo nginx -t && sudo systemctl reload nginx
 The bootstrap site (HTTP-only) exists because the final conf references TLS certs that do not exist yet.
 
 ## TLS issuance (after DNS is live — user action 1)
+
+Either rerun `sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh` (it detects DNS + missing cert and completes the swap), or manually:
 
 ```bash
 sudo certbot certonly --webroot -w /var/www/html -d bioscom.ubch.sci.muni.cz

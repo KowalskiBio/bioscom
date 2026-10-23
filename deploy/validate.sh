@@ -17,8 +17,9 @@ unit="$base/bioscom.service"
 nginx="$base/nginx-bioscom.conf"
 bootstrap="$base/nginx-bioscom-bootstrap.conf"
 script="$base/deploy.sh"
+enabler="$base/enable-on-vm.sh"
 
-for f in "$unit" "$nginx" "$bootstrap" "$script"; do
+for f in "$unit" "$nginx" "$bootstrap" "$script" "$enabler"; do
   if [ ! -f "$f" ]; then
     echo "FAIL: $f not found"
     exit 1
@@ -60,10 +61,10 @@ else
   echo "ok: bootstrap conf is HTTP-only"
 fi
 
-if bash -n "$script"; then
-  echo "ok: deploy.sh parses (bash -n)"
+if bash -n "$script" && bash -n "$enabler"; then
+  echo "ok: deploy.sh + enable-on-vm.sh parse (bash -n)"
 else
-  echo "FAIL: deploy.sh does not parse"
+  echo "FAIL: deploy script does not parse"
   fail=1
 fi
 
