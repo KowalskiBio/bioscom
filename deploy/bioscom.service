@@ -1,0 +1,13 @@
+[Unit]
+Description=BioSCom Server (Fastify + SQLite + Svelte static)
+After=network.target
+
+[Service]
+User=kowalski
+EnvironmentFile=/home/kowalski/BioSCom/.env
+WorkingDirectory=/home/kowalski/BioSCom
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
