@@ -6,6 +6,12 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 cd /home/kowalski/BioSCom
 
+if [ -f /tmp/bioscom-trial.pid ]; then
+  kill "$(cat /tmp/bioscom-trial.pid)" 2>/dev/null || true
+  rm -f /tmp/bioscom-trial.pid
+  echo "stopped direct-IP trial instance"
+fi
+
 if ! systemctl cat bioscom >/dev/null 2>&1 || ! systemctl is-active bioscom >/dev/null 2>&1; then
   cp deploy/bioscom.service /etc/systemd/system/bioscom.service
   systemctl daemon-reload
