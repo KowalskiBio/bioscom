@@ -108,7 +108,12 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
         .run(newHash, user.uid);
     }
     const sessionId = createSession(db(), user.uid);
-    reply.setCookie(SESSION_COOKIE_NAME, sessionId, { path: "/", httpOnly: true, secure: true, sameSite: "lax" });
+    reply.setCookie(SESSION_COOKIE_NAME, sessionId, {
+      path: "/",
+      httpOnly: true,
+      secure: deps.config.publicUrl.startsWith("https"),
+      sameSite: "lax",
+    });
     return { user: publicUser(user) };
   });
 
