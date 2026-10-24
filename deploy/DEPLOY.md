@@ -71,6 +71,17 @@ sudo nginx -t && sudo systemctl reload nginx
 
 The bootstrap site (HTTP-only) exists because the final conf references TLS certs that do not exist yet.
 
+## Temporary access via IP (until DNS is live)
+
+The MUNI network only passes 22/80/443 to the VM — the app port 8004 is NOT reachable from outside (verified: connection to 147.251.22.180:8004 times out; 80/443 answer). Until the DNS record exists, the app is served over plain HTTP on port 80 by IP:
+
+1. Run `sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh` (installs the systemd unit + bootstrap nginx site — its server_name matches both `bioscom.ubch.sci.muni.cz` and `147.251.22.180`, so the same site later serves the DNS name pre-TLS).
+2. Browse `http://147.251.22.180`.
+3. Trial values in `/home/kowalski/BioSCom/.env` (set 2026-10-24, flip back at TLS time):
+   - `PUBLIC_URL=http://147.251.22.180` — keeps the session cookie non-Secure (HTTP) and makes reset links directly clickable
+   - `EMAIL_CAPTURE_FILE=/home/kowalski/bioscom-trial-emails.jsonl` — reset links land in a file instead of email (no Resend yet). Get the latest: `ssh proxmox1 tail -1 bioscom-trial-emails.jsonl`
+4. When DNS is live: rerun `sudo ./deploy/enable-on-vm.sh` (cert + final TLS site) AND flip `.env` to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, remove `EMAIL_CAPTURE_FILE`, set `RESEND_API_KEY` — then `sudo systemctl restart bioscom`.
+
 ## TLS issuance (after DNS is live — user action 1)
 
 Either rerun `sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh` (it detects DNS + missing cert and completes the swap), or manually:
@@ -102,7 +113,7 @@ Read-heavy E2E only against production data; destructive tests run against a scr
 
 Data source is FINAL per user decision (2026-10-24): the 2026-10-21 export already staged on the VM — no fresh capture. Checklist, in order:
 
-1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `RESEND_API_KEY` set in `/home/kowalski/BioSCom/.env` (restart the unit after editing: `sudo systemctl restart bioscom`).
+1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `.env` flipped to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, `RESEND_API_KEY` set, `EMAIL_CAPTURE_FILE` removed — and `sudo systemctl restart bioscom`.
 2. Pre-cutover archive: `ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-cutover.db\""'`.
 3. Re-import + seed (idempotent, confirms the staged state is the cutover state): `ssh proxmox1 'cd BioSCom && node migrate/dist/import.js --legacy ../bioscom-db-export.json --db bioscom.db && node migrate/dist/seed-admin.js --db bioscom.db'`.
 4. Verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; two real logins via reset emails (one must be the superadmin).

@@ -39,7 +39,7 @@ else
   echo "ok: no inline secrets in unit"
 fi
 
-need "$nginx" '^(\s*)server_name bioscom\.ubch\.sci\.muni\.cz;' 'nginx server_name'
+need "$nginx" '^(\s*)server_name bioscom\.ubch\.sci\.muni\.cz 147\.251\.22\.180;' 'nginx server_name (dns + ip)'
 need "$nginx" 'listen 443 ssl;' 'nginx TLS listener'
 need "$nginx" 'ssl_certificate /etc/letsencrypt/live/bioscom\.ubch\.sci\.muni\.cz/fullchain\.pem;' 'nginx ssl_certificate'
 need "$nginx" 'ssl_certificate_key /etc/letsencrypt/live/bioscom\.ubch\.sci\.muni\.cz/privkey\.pem;' 'nginx ssl_certificate_key'
@@ -48,10 +48,11 @@ need "$nginx" 'proxy_http_version 1\.1;' 'nginx proxy_http_version 1.1'
 need "$nginx" 'proxy_set_header Upgrade \$http_upgrade;' 'nginx WS Upgrade header'
 need "$nginx" 'proxy_set_header Connection "upgrade";' 'nginx WS Connection header'
 need "$nginx" 'proxy_read_timeout 300s;' 'nginx WS read timeout'
-need "$nginx" 'return 301 https://\$host\$request_uri;' 'nginx http->https redirect'
+need "$nginx" 'return 301 https://bioscom\.ubch\.sci\.muni\.cz\$request_uri;' 'nginx http->https redirect'
 need "$nginx" 'location \^~ /\.well-known/acme-challenge/' 'nginx acme-challenge location'
 
 need "$bootstrap" 'listen 80;' 'bootstrap port-80 listener'
+need "$bootstrap" 'server_name bioscom\.ubch\.sci\.muni\.cz 147\.251\.22\.180;' 'bootstrap server_name (dns + ip)'
 need "$bootstrap" 'proxy_pass http://127\.0\.0\.1:8004;' 'bootstrap proxy_pass'
 need "$bootstrap" 'location \^~ /\.well-known/acme-challenge/' 'bootstrap acme-challenge location'
 if grep -qE 'listen 443|ssl_certificate' "$bootstrap"; then
