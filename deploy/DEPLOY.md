@@ -98,6 +98,43 @@ All users import with `hash_version='unverified'` → first login attempt trigge
 
 Read-heavy E2E only against production data; destructive tests run against a scratch DB first. The VM-side `~/bioscom-db-export.json` is kept (chmod 600) for the cutover re-import and deleted at decommission.
 
+## Cutover (todo 22 — no-Firebase variant)
+
+Data source is FINAL per user decision (2026-10-24): the 2026-10-21 export already staged on the VM — no fresh capture. Checklist, in order:
+
+1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `RESEND_API_KEY` set in `/home/kowalski/BioSCom/.env` (restart the unit after editing: `sudo systemctl restart bioscom`).
+2. Pre-cutover archive: `ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-cutover.db\""'`.
+3. Re-import + seed (idempotent, confirms the staged state is the cutover state): `ssh proxmox1 'cd BioSCom && node migrate/dist/import.js --legacy ../bioscom-db-export.json --db bioscom.db && node migrate/dist/seed-admin.js --db bioscom.db'`.
+4. Verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; two real logins via reset emails (one must be the superadmin).
+5. Send the announcement (template below) — the legacy app CANNOT be frozen or redirected (no Firebase access), so the message must be explicit about deprecation.
+6. Monitor 24h: `ssh proxmox1 'journalctl -u bioscom --since "1 hour ago" | grep -iE "error|warn"'` and WS stability (browser stays connected >60s).
+
+Announcement template (user composes/sends):
+
+> Subject: BioSCom is moving — new address, set your password
+>
+> Hi everyone,
+>
+> BioSCom now runs on our own server: **https://bioscom.ubch.sci.muni.cz**
+> The old address (bioscom-ca01a.web.app) is DEPRECATED — please stop using it. Anything entered there after Oct 21, 2026 will NOT be carried over.
+>
+> First login: go to the new address, enter your email and any password — you'll get an email with a link to set your new password. Your data (inventories, history, notices, bookings) is all there as of Oct 21.
+>
+> If anything looks missing or broken, reply here.
+
+Rollback (documented drill): stop the unit, restore `bioscom-pre-cutover.db` into place, start the unit, verify the app serves the pre-cutover state. Returning to the legacy app is possible (it stays live) but data entered in the NEW app after a rollback must be manually re-entered — no automated reverse-import exists (no Firebase write access).
+
+Execution log (fill during cutover):
+
+- [ ] DNS live (date/time)
+- [ ] enable-on-vm.sh run, health 200 over https
+- [ ] RESEND_API_KEY set, unit restarted
+- [ ] pre-cutover archive taken (path + sha256)
+- [ ] re-import + seed-admin, 0 quarantined
+- [ ] ≥2 real logins verified (incl. superadmin)
+- [ ] announcement sent
+- [ ] 24h monitoring clean
+
 ## Routine updates
 
 From the dev machine:
