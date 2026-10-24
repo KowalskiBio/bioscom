@@ -24,7 +24,8 @@ The migration plan originally specified port 8003 (free at recon time). The sibl
 1. **DNS**: A record `bioscom.ubch.sci.muni.cz` → `147.251.22.180` (MUNI network team).
 2. **sudo** on proxmox1 for the unit / nginx / certbot steps (kowalski's account, password sudo).
 3. **Resend**: API key + a verified sender for `bioscom@ubch.sci.muni.cz` — set `RESEND_API_KEY` in `/home/kowalski/BioSCom/.env` (needed for forgot-password / reset emails).
-4. **Firebase data export** (staged import only): service-account key JSON + password hash parameters (Firebase console → Authentication → Users → ⋮ → Password hash parameters) into `migrate/.env` on the dev machine.
+
+No Firebase access exists (user directive 2026-10-24) — no service account, no hash parameters, no console. User data comes from the captured RTDB export (see "Staged data import"); all accounts are reset-first-login (email a reset link on first login attempt).
 
 ## First provisioning (one-time)
 
@@ -45,10 +46,6 @@ DB_PATH=/home/kowalski/BioSCom/bioscom.db
 SESSION_SECRET=<openssl rand -hex 32>
 PUBLIC_URL=https://bioscom.ubch.sci.muni.cz
 RESEND_API_KEY=<user action 3>
-FIREBASE_SCRYPT_SIGNER_KEY=<user action 4, staged import only>
-FIREBASE_SCRYPT_SALT_SEPARATOR=<user action 4>
-FIREBASE_SCRYPT_ROUNDS=<user action 4>
-FIREBASE_SCRYPT_MEM_COST=<user action 4>
 ```
 
 Smoke (no sudo needed): `ssh proxmox1 'cd BioSCom && PORT=8004 DB_PATH=$PWD/bioscom.db SESSION_SECRET=dev node server/dist/index.js &'` then `curl http://127.0.0.1:8004/api/health` → `{"status":"ok"}` (verified 2026-10-24).
@@ -87,20 +84,19 @@ curl -sS https://bioscom.ubch.sci.muni.cz/api/health
 
 Renewal: the port-80 block keeps the `/.well-known/acme-challenge/` webroot location, so plain `sudo certbot renew` works (certbot's standard timer). WS check through nginx: open the app in a browser, `wss://bioscom.ubch.sci.muni.cz/ws` must stay connected >60s (30s server heartbeat).
 
-## Staged data import (todo 21)
+## Staged data import (todo 21 — no-Firebase variant, executed 2026-10-24)
 
-Run on the dev machine (dumps contain PII — they never leave dev machine + VM; `migrate/dumps/` and `migrate/.env` are gitignored):
+Source: the captured RTDB export `migration/bioscom-db-export.json` on the dev machine (real lab data as of 2026-10-21; PII — gitignored, never committed; never leaves dev machine + VM). No Firebase export is possible or needed.
 
 ```bash
-npm run export -w migrate        # needs FIREBASE_SERVICE_ACCOUNT (user action 4)
-npm run report -w migrate -- --check
-rsync -a --delete migrate/dumps/ proxmox1:BioSCom/migrate/dumps/   # OR run steps on VM
-npm run import -w migrate         # against the VM DB: DB_PATH=... node migrate/dist/import.js
-npm run verify-hashes -w migrate  # TEST account must PASS (task-6 gate)
-node migrate/dist/seed-admin.js  # promote the legacy admin email to superadmin
+rsync -a migration/bioscom-db-export.json proxmox1:bioscom-db-export.json
+ssh proxmox1 'chmod 600 ~/bioscom-db-export.json'
+ssh proxmox1 'cd BioSCom && node migrate/dist/import.js --legacy ../bioscom-db-export.json --db bioscom.db && node migrate/dist/seed-admin.js --db bioscom.db'
 ```
 
-Read-heavy E2E only against production data; destructive tests run against a scratch DB first.
+All users import with `hash_version='unverified'` → first login attempt triggers a reset email; after resetting, the account is argon2id. Verified on the VM loopback (EMAIL_CAPTURE_FILE stand-in): unverified login → 401 reset-required → reset via token → login 200 + session. Zero drift vs local import; 0 quarantined rows.
+
+Read-heavy E2E only against production data; destructive tests run against a scratch DB first. The VM-side `~/bioscom-db-export.json` is kept (chmod 600) for the cutover re-import and deleted at decommission.
 
 ## Routine updates
 
