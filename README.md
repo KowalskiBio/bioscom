@@ -3,7 +3,7 @@
   <h1>BioSCom</h1>
   <p><strong>Laboratory Chemical Inventory Management System</strong></p>
   <p>
-    Track chemicals across rooms, cabinets, shelves and containers — per-lab isolated inventories,
+    Track chemicals across rooms, cabinets, shelves and containers: per-lab isolated inventories,
     shared containers between labs, barcode labels, full history logging and offline resilience.
   </p>
 </div>
@@ -12,114 +12,90 @@
 
 ## Overview
 
-BioSCom is a fully static web application backed by **Firebase Realtime Database** and
-**Firebase Authentication**. There is no build step and no backend server — the frontend
-talks directly to Firebase. It can be hosted by any static file server.
+BioSCom is the inventory system used by the biochemistry labs at the Faculty of Science, Masaryk
+University. It used to run on Google Firebase; since October 2026 it is fully self-hosted on the
+faculty VM at **https://bioscom.ubch.sci.muni.cz** and has no Firebase dependency of any kind:
+no Firebase database, no Firebase authentication, no Firebase hosting.
+
+All existing data was migrated from the Firebase Realtime Database (snapshot from October 21,
+2026): inventories, rooms and containers, history logs, notices, instrument bookings, print
+requests and game challenges.
+
+> **First login:** user accounts were migrated, but Firebase passwords could not be carried over.
+> On your first login, enter your email with any password and you will receive an email with a
+> link to set a new password. After that you log in normally.
+>
+> Until the DNS record is live, the app is temporarily reachable at http://147.251.22.180.
+> The old address bioscom-ca01a.web.app is deprecated; anything entered there after
+> October 21, 2026 was not carried over.
 
 ### Features
 
-- 🧪 **Multi-lab support** — each laboratory group gets its own isolated inventory (`inventories/<groupId>`)
-- 📦 **Physical structure** — rooms → containers (cabinets, fridges…) → shelves → chemicals with positions
-- 🤝 **Shared containers** — containers can be shared between neighbouring labs with mirrored history
-- 🏷️ **Barcode labels** — powered by JsBarcode
+- 🧪 **Multi-lab support**: each laboratory group gets its own isolated inventory
+- 📦 **Physical structure**: rooms → containers (cabinets, fridges…) → shelves → chemicals with positions
+- 🤝 **Shared containers**: containers can be shared between neighbouring labs with mirrored history
+- 🏷️ **Barcode labels** powered by JsBarcode
 - 🔐 **Auth + biology-themed visual captcha** (poison dart frogs, naturally)
-- 📜 **History logging** — every change is recorded per lab
-- 📡 **Offline resilience** — realtime sync with long-polling fallback
+- 📜 **History logging**: every change is recorded per lab, with manual backups and restore
+- 📡 **Offline banner + realtime sync** over WebSocket
+- 🧬 Extra lab tools: noticeboard, instrument booking, 3D print requests, protocols, minigames, lab radio
 
 ## Tech Stack
 
-| Layer     | Technology                                             |
-| --------- | ------------------------------------------------------ |
-| Frontend  | Vanilla HTML/CSS/JS (no build step)                    |
-| Backend   | Firebase Realtime Database (europe-west1) + Firebase Auth |
-| Libraries | Firebase v10.8.1 (CDN), JsBarcode                      |
-| Testing   | Playwright                                             |
+| Layer     | Technology                                                            |
+| --------- | --------------------------------------------------------------------- |
+| Frontend  | Svelte 5 + Vite (TypeScript), legacy CSS ported verbatim               |
+| Backend   | Fastify (Node.js) + SQLite (better-sqlite3) + WebSocket realtime      |
+| Shared    | zod schemas and types, one npm-workspaces monorepo                     |
+| Email     | Resend (password reset links)                                         |
+| Tests     | vitest + supertest (unit/API), Playwright (E2E incl. visual parity)    |
 
 ## Project Structure
 
 ```
-├── index.html            # Main application
-├── BioSCom.html          # Landing / portal page
-├── app.js                # Application logic
-├── core.js               # Firebase init, auth, history, shared state
-├── style.css             # All styles
-├── Capcha/               # Images for the visual captcha
-├── database.rules.json   # Realtime Database security rules
-├── firebase.json         # Firebase project config (rules + optional hosting)
-├── tests/                # Playwright E2E tests
-└── logo_preview.png
+├── server/          Fastify backend: REST + WebSocket, SQLite, session auth
+├── web/             Svelte 5 frontend
+├── shared/          zod schemas shared by server and web
+├── migrate/         one-shot migration tooling (legacy export → SQLite import)
+├── deploy/          systemd unit, nginx sites, deployment runbook
+├── tests/           Playwright E2E suites (self-contained scratch stack)
+├── DEVELOPMENT.md   how to set up and work on the code
+└── deploy/DEPLOY.md how the app is deployed and operated on the VM
 ```
 
-## Deployment on a VM
+## Developing
 
-The app is static — serve the repository root over HTTPS and you are done.
-No `npm install`, no build.
-
-### Option A: Nginx (recommended)
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name bioscom.example.com;
-
-    root /var/www/bioscom;
-    index BioSCom.html;
-
-    location / {
-        try_files $uri $uri/ =404;
-    }
-
-    # Cache static assets aggressively
-    location ~* \.(css|js|png|jpg|webp)$ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the full quickstart. In short:
 
 ```bash
-sudo mkdir -p /var/www/bioscom
-sudo git clone https://github.com/KowalskiBio/bioscom.git /var/www/bioscom
-# then install your TLS certificate (e.g. certbot) and reload nginx
-```
-
-### Option B: Quick throwaway server
-
-```bash
+git clone https://github.com/KowalskiBio/bioscom.git
 cd bioscom
-python3 -m http.server 8080
-# or: npx serve .
+npm ci
+npm run build -ws
+npm test -w server && npm test -w web && npm test -w shared
+npx playwright test
 ```
 
-> [!IMPORTANT]
-> **Firebase Auth authorized domains** — the domain (or IP) you serve the app from must be added in
-> the Firebase console: *Authentication → Settings → Authorized domains*.
-> Realtime Database works from any origin, but sign-in will fail on unauthorized domains.
+## Deployment
 
-## Firebase Setup
-
-The Firebase project (`bioscom-ca01a`) is configured in `core.js`. Client-side Firebase
-config is not a secret — access is controlled by the database rules.
-
-To push security rules after changing `database.rules.json`:
-
-```bash
-firebase deploy --only database
-```
+The app runs on the faculty VM (proxmox1) as a systemd service behind nginx, with a Let's
+Encrypt certificate. Routine updates and the full runbook (provisioning, TLS, backups,
+rollback, cutover) are documented in [deploy/DEPLOY.md](deploy/DEPLOY.md). There is no Docker
+and no Firebase anywhere in the pipeline.
 
 ## Running Tests
 
-Playwright E2E tests require Node.js and a `.env` with a test account:
+Playwright E2E tests spawn their own scratch server and throwaway database, so they never
+touch real data:
 
 ```bash
-npm install
-cp .env.example .env   # fill in TEST_EMAIL / TEST_PASSWORD / APP_URL
+npm ci
 npx playwright install chromium
 npm test
 ```
 
 > [!WARNING]
-> Never commit `.env` — it contains real credentials and is git-ignored.
+> Never commit `.env` files or database files. They are git-ignored; keep it that way.
 
 ## License
 
