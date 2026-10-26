@@ -25,7 +25,6 @@ requests and game challenges.
 > On your first login, enter your email with any password and you will receive an email with a
 > link to set a new password. After that you log in normally.
 >
-> Until the DNS record is live, the app is temporarily reachable at http://147.251.22.180.
 > The old address bioscom-ca01a.web.app is deprecated; anything entered there after
 > October 21, 2026 was not carried over.
 
