@@ -147,6 +147,23 @@ Execution log (fill during cutover):
 - [ ] announcement sent
 - [ ] 24h monitoring clean
 
+## Collaborator VM access (read-only, ACLs)
+
+A colleague with a VM account (e.g. `zble`) gets read access to the deployed tree — but NOT to secrets or lab data. One-time setup (sudo):
+
+```bash
+sudo apt-get install -y acl
+sudo setfacl -m u:zble:x /home/kowalski
+sudo setfacl -R -m u:zble:rX /home/kowalski/BioSCom
+sudo setfacl -m u:zble:--- /home/kowalski/BioSCom/.env /home/kowalski/BioSCom/bioscom.db /home/kowalski/BioSCom/bioscom.db-wal /home/kowalski/BioSCom/bioscom.db-shm
+```
+
+- `/home/kowalski` gets traversal-only (`x`, no listing) for the account
+- the whole `BioSCom` tree is readable (source, dists, deploy configs — the repo is public on GitHub anyway)
+- `.env` (Resend key, session secret) and the SQLite DB files (real lab PII) are explicitly denied
+- new files created by later deploys are NOT automatically readable (no default ACLs — deliberate); re-run the recursive grant after deploys if needed
+- the colleague develops via GitHub (clone `https://github.com/KowalskiBio/bioscom.git`, see `DEVELOPMENT.md`); the VM tree is for inspecting what is actually running
+
 ## Routine updates
 
 From the dev machine:
