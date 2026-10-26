@@ -79,8 +79,9 @@ The MUNI network only passes 22/80/443 to the VM — the app port 8004 is NOT re
 2. Browse `http://147.251.22.180`.
 3. Trial values in `/home/kowalski/BioSCom/.env` (set 2026-10-24, flip back at TLS time):
    - `PUBLIC_URL=http://147.251.22.180` — keeps the session cookie non-Secure (HTTP) and makes reset links directly clickable
-   - `EMAIL_CAPTURE_FILE=/home/kowalski/bioscom-trial-emails.jsonl` — reset links land in a file instead of email (no Resend yet). Get the latest: `ssh proxmox1 tail -1 bioscom-trial-emails.jsonl`
-4. When DNS is live: rerun `sudo ./deploy/enable-on-vm.sh` (cert + final TLS site) AND flip `.env` to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, remove `EMAIL_CAPTURE_FILE`, set `RESEND_API_KEY` — then `sudo systemctl restart bioscom`.
+   - `RESEND_API_KEY` + `RESEND_FROM="BioSCom <notifications@octoslave.karamazov.website>"` — email delivery via the same Resend account Oligool uses (key copied on the VM from `~/Oligool/backend/.env`; it never enters the repo)
+   - `RESET_REDIRECT_EMAIL` — during the trial all password-reset emails go to this single address (the Oligool `REPORT_NOTIFY_EMAIL` address) instead of each account's own inbox; REMOVE at cutover so members get their own reset links
+4. When DNS is live: rerun `sudo ./deploy/enable-on-vm.sh` (cert + final TLS site) AND flip `.env` to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, remove `RESET_REDIRECT_EMAIL`, keep `RESEND_API_KEY` — then `sudo systemctl restart bioscom`.
 
 ## TLS issuance (after DNS is live — user action 1)
 
@@ -113,7 +114,7 @@ Read-heavy E2E only against production data; destructive tests run against a scr
 
 Data source is FINAL per user decision (2026-10-24): the 2026-10-21 export already staged on the VM — no fresh capture. Checklist, in order:
 
-1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `.env` flipped to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, `RESEND_API_KEY` set, `EMAIL_CAPTURE_FILE` removed — and `sudo systemctl restart bioscom`.
+1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `.env` flipped to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, `RESET_REDIRECT_EMAIL` removed, `RESEND_API_KEY` present — and `sudo systemctl restart bioscom`.
 2. Pre-cutover archive: `ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-cutover.db\""'`.
 3. Re-import + seed (idempotent, confirms the staged state is the cutover state): `ssh proxmox1 'cd BioSCom && node migrate/dist/import.js --legacy ../bioscom-db-export.json --db bioscom.db && node migrate/dist/seed-admin.js --db bioscom.db'`.
 4. Verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; two real logins via reset emails (one must be the superadmin).

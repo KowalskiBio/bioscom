@@ -85,7 +85,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
         const token = createResetToken(db(), user.uid);
         const link = `${deps.config.publicUrl}/#/reset-password?token=${token}`;
         try {
-          await deps.emailer.sendResetEmail(user.email, link);
+          await deps.emailer.sendResetEmail(deps.config.resetRedirectEmail || user.email, link);
         } catch (error) {
           request.log.warn(error, "failed to send reset email for unverified account");
         }
@@ -141,7 +141,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
       const token = createResetToken(db(), user.uid);
       const link = `${deps.config.publicUrl}/#/reset-password?token=${token}`;
       try {
-        await deps.emailer.sendResetEmail(user.email, link);
+        await deps.emailer.sendResetEmail(deps.config.resetRedirectEmail || user.email, link);
       } catch (error) {
         request.log.warn(error, "failed to send reset email");
       }

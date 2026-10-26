@@ -269,3 +269,46 @@ describe("login rate limiting", () => {
     }
   });
 });
+
+describe("RESET_REDIRECT_EMAIL", () => {
+  it("delivers unverified-login and forgot-password resets to the configured address", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bioscom-redirect-test-"));
+    const redirectDbPath = join(dir, "test.db");
+    const redirectApp = await buildApp({
+      config: {
+        dbPath: redirectDbPath,
+        logLevel: "silent",
+        publicUrl: "https://test.example",
+        loginRateLimit: 1000,
+        resetRedirectEmail: "trial-inbox@test.example",
+      },
+      emailer,
+    });
+    const redirectUrl = await listen(redirectApp);
+    try {
+      const db = getDatabase(redirectDbPath);
+      db.prepare(
+        "INSERT INTO users (uid, email, password_hash, password_salt, hash_version, name, role, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("uid-redirect", "redirected@test.example", "leftover", null, "unverified", "Redirected User", "reader", "group-a");
+      const login = await request(redirectUrl)
+        .post("/api/login")
+        .set(XRW)
+        .send({ email: "redirected@test.example", password: "whatever" });
+      expect(login.status).toBe(401);
+      expect(login.body.error).toContain("password reset is required");
+      const forgot = await request(redirectUrl)
+        .post("/api/forgot-password")
+        .set(XRW)
+        .send({ email: "redirected@test.example" });
+      expect(forgot.status).toBe(200);
+      const redirected = sentEmails.filter((mail) => mail.to === "trial-inbox@test.example");
+      expect(redirected.length).toBe(2);
+      expect(redirected.every((mail) => mail.link.includes("token="))).toBe(true);
+      expect(sentEmails.some((mail) => mail.to === "redirected@test.example")).toBe(false);
+    } finally {
+      await redirectApp.close();
+      closeDatabase();
+      getDatabase(dbPath);
+    }
+  });
+});
