@@ -12,6 +12,7 @@
     renderFormulaHtml,
     highlightHtml,
     countChems,
+    stripEmoji,
   } from "../../lib/inventoryUtils";
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
@@ -193,10 +194,10 @@
                 {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                 <tr class="fade-in" data-chemid={ch.id}>
                   <td>
-                    <button class="deepfreezer-nav-btn" title="Go to Box" style="margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-weight: 600;" onclick={() => { selectedRack = match.rack; selectedBox = match.box; navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box }); }}>Rack {match.rack} / Box {match.box}</button>
+                    <button class="deepfreezer-nav-btn" title="Go to Box" style="margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-weight: 600;" onclick={() => { selectedRack = match.rack; selectedBox = match.box; navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box }); }}>Rack {design === "bauhaus" ? stripEmoji(match.rack) : match.rack} / Box {design === "bauhaus" ? stripEmoji(match.box) : match.box}</button>
                   </td>
                   <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                  <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(ch.name ?? "", q)}</td>
+                  <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}</td>
                   <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
                   <td>
                     <div class="qty-adjuster">
@@ -208,7 +209,7 @@
                   <td>{ch.unit ?? "pcs"}</td>
                   <td style="white-space:nowrap">{conc}</td>
                   <td>{ch.cas ?? "—"}</td>
-                  <td>{ch.note ?? "—"}</td>
+                  <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
                   <td>
                     <div class="row-actions">
                       <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -243,7 +244,7 @@
               <div class="deepfreezer-grid-cell" data-slot={i}>
                 <div class="deepfreezer-card rack-card" onclick={() => selectRack(rackAtSlot!)}>
                   <div class="deepfreezer-card-icon">{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}🗄️{/if}</div>
-                  <div class="deepfreezer-card-title">Rack {rackAtSlot}</div>
+                  <div class="deepfreezer-card-title">Rack {design === "bauhaus" ? stripEmoji(rackAtSlot) : rackAtSlot}</div>
                   <div class="deepfreezer-card-subtitle">{boxesCount} Boxes ({totalItems} samples)</div>
                 </div>
               </div>
@@ -260,7 +261,7 @@
             <div>
                 <span class="deepfreezer-nav-link" onclick={() => resetSelection()}>{#if design !== "bauhaus"}❄️ {/if}Deep Freezer Explorer</span>
               <span class="deepfreezer-nav-separator">›</span>
-              <span class="deepfreezer-nav-text">Rack {selectedRack}</span>
+              <span class="deepfreezer-nav-text">Rack {design === "bauhaus" ? stripEmoji(selectedRack) : selectedRack}</span>
               <button class="deepfreezer-nav-btn" onclick={() => resetSelection()}>Change Rack</button>
               <span class="deepfreezer-nav-separator">/</span>
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Box</span>
@@ -281,7 +282,7 @@
               onclick={() => selectBox(bk)}
             >
               <div class="deepfreezer-card-icon" style={`color: ${boxColor};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</div>
-              <div class="deepfreezer-card-title">Box {bk}</div>
+              <div class="deepfreezer-card-title">Box {design === "bauhaus" ? stripEmoji(bk) : bk}</div>
               <div class="deepfreezer-card-subtitle">{sampleCount} samples</div>
               {#if !isReader}
                 <div class="deepfreezer-card-actions" onclick={(e) => e.stopPropagation()}>
@@ -301,10 +302,10 @@
               <div class="deepfreezer-nav-item">
 <span class="deepfreezer-nav-link" onclick={() => resetSelection()}>{#if design !== "bauhaus"}❄️ {/if}Deep Freezer Explorer</span>
                 <span class="deepfreezer-nav-separator">›</span>
-                <span class="deepfreezer-nav-link" onclick={() => { selectedBox = null; navigateTo("detail", { roomId, containerId, rack: selectedRack }); }}>Rack {selectedRack}</span>
+                <span class="deepfreezer-nav-link" onclick={() => { selectedBox = null; navigateTo("detail", { roomId, containerId, rack: selectedRack }); }}>Rack {design === "bauhaus" ? stripEmoji(selectedRack) : selectedRack}</span>
                 <button class="deepfreezer-nav-btn" onclick={() => resetSelection()}>Change Rack</button>
                 <span class="deepfreezer-nav-separator">›</span>
-                <span class="deepfreezer-nav-text">Box {selectedBox}</span>
+                <span class="deepfreezer-nav-text">Box {design === "bauhaus" ? stripEmoji(selectedBox) : selectedBox}</span>
                 <button class="deepfreezer-nav-btn" onclick={() => { selectedBox = null; navigateTo("detail", { roomId, containerId, rack: selectedRack }); }}>Change Box</button>
               </div>
             </div>
@@ -312,7 +313,7 @@
               <div class="shelf-header" style="cursor: default;">
                 <div class="shelf-info">
                   <span class="shelf-icon" style={`color: ${activeShelf.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🧊{/if}</span>
-                  <span class="shelf-name">Rack {selectedRack} / Box {selectedBox}</span>
+                  <span class="shelf-name">Rack {design === "bauhaus" ? stripEmoji(selectedRack) : selectedRack} / Box {design === "bauhaus" ? stripEmoji(selectedBox) : selectedBox}</span>
                   <span class="shelf-count">{(activeShelf.chemicals ?? []).length} chemicals</span>
                 </div>
                 <div class="shelf-actions">
@@ -330,7 +331,7 @@
                         {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                         <tr class="fade-in" data-chemid={ch.id}>
                           <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                          <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(ch.name ?? "", q)}</td>
+                          <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}</td>
                           <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
                           <td>
                             <div class="qty-adjuster">
@@ -342,7 +343,7 @@
                           <td>{ch.unit ?? "pcs"}</td>
                           <td style="white-space:nowrap">{conc}</td>
                           <td>{ch.cas ?? "—"}</td>
-                          <td>{ch.note ?? "—"}</td>
+                          <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
                           <td>
                             <div class="row-actions">
                               <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -375,7 +376,7 @@
           <div class="shelf-header" onclick={() => toggleShelf(sh.id)}>
             <div class="shelf-info">
               <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}{icon}{/if}</span>
-              <span class="shelf-name">{sh.name}</span>
+              <span class="shelf-name">{design === "bauhaus" ? stripEmoji(sh.name) : sh.name}</span>
               <span class="shelf-count">{chems.length} chemicals</span>
             </div>
             <div class="shelf-actions">
@@ -401,7 +402,7 @@
                     onclick={(e) => { e.stopPropagation(); toggleShelf(box.id); }}
                   >
                     <div class="deepfreezer-card-icon" style={`color: ${boxColor}; font-size: 1.8rem; margin-bottom: 0.25rem;`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</div>
-                    <div class="deepfreezer-card-title" style="font-size: 0.85rem;">{box.name}</div>
+                    <div class="deepfreezer-card-title" style="font-size: 0.85rem;">{design === "bauhaus" ? stripEmoji(box.name) : box.name}</div>
                     <div class="deepfreezer-card-subtitle" style="font-size: 0.7rem;">{(box.chemicals ?? []).length} samples</div>
                     {#if canManage}
                       <div class="deepfreezer-card-actions" style="margin-top: 0.35rem;" onclick={(e) => e.stopPropagation()}>
@@ -419,7 +420,7 @@
                   <div class="box-chemicals-section" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem; background: rgba(255,255,255,0.015); box-shadow: inset 0 0 10px rgba(0,0,0,0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
                       <h4 style="margin: 0; color: var(--text-primary); font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem;">
-                        <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span> {box.name} Chemicals
+                        <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span> {design === "bauhaus" ? stripEmoji(box.name) : box.name} Chemicals
                       </h4>
                       {#if canManage}
                         <button class="btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.7rem; margin: 0; height: auto; display: inline-flex; align-items: center; gap: 0.25rem;" onclick={() => openChemicalRadioPrompt(room, cont, box.id)}>{design === "bauhaus" ? "+ Add Chemical" : "➕ Add Chemical"}</button>
@@ -429,7 +430,7 @@
                       <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
                         {#each boxChems as ch (ch.id)}
                           {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                          <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(ch.name ?? "", q)}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{ch.note ?? "—"}</td><td><div class="row-actions"><button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
+                          <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions"><button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                         {/each}
                       </tbody></table>
                     {:else}
@@ -446,7 +447,7 @@
               <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
                 {#each chems as ch (ch.id)}
                   {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                  <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(ch.name ?? "", q)}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{ch.note ?? "—"}</td><td><div class="row-actions"><button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
+                  <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions"><button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                 {/each}
               </tbody></table>
             {:else if boxes.length === 0}

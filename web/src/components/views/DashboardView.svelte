@@ -4,9 +4,12 @@
   import { instrumentList } from "../../lib/stores/instruments.svelte";
   import { historyData } from "../../lib/stores/history.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
-  import { quantityClass } from "../../lib/inventoryUtils";
+  import { quantityClass, stripEmoji } from "../../lib/inventoryUtils";
   import { exportPDF } from "../../lib/exports";
   import { navigateTo } from "../../lib/router.svelte";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   const tree = $derived(inventory.tree);
   const rooms = $derived<Room[]>(tree?.rooms ?? []);
@@ -148,7 +151,7 @@
 <div class="view-header">
     <div>
         <h1 id="dashboard-title">Dashboard</h1>
-        <p class="view-subtitle" id="dashboard-subtitle">{labName} · {dateLine}</p>
+        <p class="view-subtitle" id="dashboard-subtitle">{design === "bauhaus" ? stripEmoji(labName) : labName} · {dateLine}</p>
     </div>
     <div class="view-header-actions">
         <button class="btn-secondary" id="btn-dash-export" onclick={() => { if (inventory.tree !== null) exportPDF(inventory.tree); }}>
@@ -202,8 +205,8 @@
                     <li class="dash-item">
                         <span class="stat-glyph {item.level === "low" ? "g-square g-red" : "g-tri g-yellow"}"></span>
                         <span class="dash-item-main">
-                            <span class="dash-item-title">{item.name}</span>
-                            <span class="dash-item-sub">{item.path}</span>
+                            <span class="dash-item-title">{design === "bauhaus" ? stripEmoji(item.name) : item.name}</span>
+                            <span class="dash-item-sub">{design === "bauhaus" ? stripEmoji(item.path) : item.path}</span>
                         </span>
                         <span class="dash-qty {item.level}">{fmtQty(item.qty)} {item.unit}</span>
                     </li>
@@ -225,8 +228,8 @@
                     <li class="dash-item">
                         <span class="dash-time">{r.time}</span>
                         <span class="dash-item-main">
-                            <span class="dash-item-title">{r.instrument}</span>
-                            <span class="dash-item-sub">{r.user}</span>
+                            <span class="dash-item-title">{design === "bauhaus" ? stripEmoji(r.instrument) : r.instrument}</span>
+                            <span class="dash-item-sub">{design === "bauhaus" ? stripEmoji(r.user) : r.user}</span>
                         </span>
                         <span class="status-badge {r.status === "live" ? "printing" : r.status === "done" ? "done" : "pending"}">{r.status === "done" ? "Done" : r.status === "live" ? "Live" : "Queued"}</span>
                     </li>
@@ -251,7 +254,7 @@
                     <li class="dash-item">
                         <span class="dash-time">{timeOf(entry.timestamp)}</span>
                         <span class="dash-item-main">
-                            <span class="dash-item-title"><strong>{entry.user}</strong> {entry.action}</span>
+                            <span class="dash-item-title"><strong>{design === "bauhaus" ? stripEmoji(entry.user) : entry.user}</strong> {design === "bauhaus" ? stripEmoji(entry.action) : entry.action}</span>
                         </span>
                     </li>
                 {/each}
@@ -271,8 +274,8 @@
                 {#each sharedTop as s (s.container.id)}
                     <li class="dash-item">
                         <span class="dash-item-main">
-                            <span class="dash-item-title">{s.container.name}</span>
-                            <span class="dash-item-sub">from {s.ownerGroupName ?? "—"} · {s.roomName}</span>
+                            <span class="dash-item-title">{design === "bauhaus" ? stripEmoji(s.container.name) : s.container.name}</span>
+                            <span class="dash-item-sub">from {design === "bauhaus" ? stripEmoji(s.ownerGroupName ?? "—") : (s.ownerGroupName ?? "—")} · {design === "bauhaus" ? stripEmoji(s.roomName) : s.roomName}</span>
                         </span>
                     </li>
                 {/each}

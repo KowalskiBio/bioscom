@@ -1,7 +1,7 @@
 <script lang="ts">
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { navigateTo } from "../../lib/router.svelte";
-  import { countAllChems, countChems } from "../../lib/inventoryUtils";
+  import { countAllChems, countChems, stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -43,8 +43,8 @@
     {#each rooms as room, i (room.id)}
         <div class="card" onclick={() => { navigateTo("containers", { roomId: room.id }); }}>
             <div class="card-icon room">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🏠{/if}</div>
-            <div class="card-title">{room.name}</div>
-            <div class="card-description">{room.description || "Room"}</div>
+            <div class="card-title">{design === "bauhaus" ? stripEmoji(room.name) : room.name}</div>
+            <div class="card-description">{design === "bauhaus" ? stripEmoji(room.description || "Room") : (room.description || "Room")}</div>
             <div class="card-stats">
               <div class="card-stat">{#if design !== "bauhaus"}🗄️ {/if}<span class="card-stat-value">{roomContainerCount(i)}</span> containers</div>
               <div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{roomChemCount(i)}</span> chemicals</div>

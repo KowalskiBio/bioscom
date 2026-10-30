@@ -24,7 +24,7 @@ import {
   opEditAsset,
   resolveAutoShelf,
 } from "./ops";
-import { countWords } from "./inventoryUtils";
+import { countWords, stripEmoji } from "./inventoryUtils";
 import { verifyCaptchaAndExecute } from "./captcha";
 import { router } from "./router.svelte";
 import RoomFormModal from "../components/modals/RoomFormModal.svelte";
@@ -51,6 +51,10 @@ import {
   opUpdateProfile,
 } from "./featureOps";
 import { session } from "./stores/session.svelte";
+
+function isBauhaus(): boolean {
+  return document.body.dataset.design === "bauhaus";
+}
 
 export function openNoticeForm(edit?: { id: string; title: string; content: string; category: string }): void {
   const form = { title: edit?.title ?? "", content: edit?.content ?? "", category: edit?.category ?? "general" };
@@ -117,7 +121,7 @@ export function openInstrumentForm(edit?: { id: string; name: string; descriptio
 export function openBookingModal(instrumentId: string, instrumentName: string): void {
   const form = { date: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "10:00", note: "" };
   openModal({
-    title: `Book: ${instrumentName}`,
+    title: isBauhaus() ? `Book: ${stripEmoji(instrumentName)}` : `Book: ${instrumentName}`,
     component: BookingModal,
     props: { form, instrumentId },
     btnText: "Book",
@@ -170,7 +174,7 @@ export function openCatalogForm(edit?: { id: string; name: string; description: 
 export function openPrintRequestModal(item?: { id: string; name: string }): void {
   const form = { note: "", quantity: 1 };
   openModal({
-    title: item === undefined ? "Custom Print Request" : `Request: ${item.name}`,
+    title: item === undefined ? "Custom Print Request" : (isBauhaus() ? `Request: ${stripEmoji(item.name)}` : `Request: ${item.name}`),
     component: PrintRequestModal,
     props: { form, custom: item === undefined },
     btnText: "Send Request",
@@ -237,7 +241,7 @@ export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => v
           : room !== undefined && (await opEditRoom(room.id, n, desc));
       if (ok) {
         closeModal();
-        showToast(mode === "add" ? `Room "${n}" added` : "Saved");
+        showToast(mode === "add" ? `Room "${isBauhaus() ? stripEmoji(n) : n}" added` : "Saved");
         onDone?.();
       }
     },
@@ -247,7 +251,7 @@ export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => v
 export function openDeleteRoomConfirm(room: Room, onDone?: () => void): void {
   openModal({
     title: "Delete Room",
-    bodyHtml: `<p>Delete <strong>${escapeHtmlText(room.name)}</strong> and all its contents?</p>`,
+    bodyHtml: `<p>Delete <strong>${escapeHtmlText(isBauhaus() ? stripEmoji(room.name) : room.name)}</strong> and all its contents?</p>`,
     btnText: "Delete",
     onConfirm: () => {
       verifyCaptchaAndExecute(async () => {
@@ -381,7 +385,7 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
         }
       }
       closeModal();
-      showToast(`${typeLabel} "${name}" added`);
+      showToast(`${typeLabel} "${isBauhaus() ? stripEmoji(name) : name}" added`);
       onDone?.();
     },
   });
@@ -442,7 +446,7 @@ export function openAddShelfForm(room: Room, cont: Container, onDone?: () => voi
       }
       if (await opAddShelf({ roomId: room.id, containerId: cont.id, name })) {
         closeModal();
-        showToast(`Shelf "${name}" added`);
+        showToast(`Shelf "${isBauhaus() ? stripEmoji(name) : name}" added`);
         onDone?.();
       }
     },
@@ -464,7 +468,7 @@ export function openAddBoxForm(room: Room, cont: Container, parentShelfId: strin
       }
       if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, parentShelfId })) {
         closeModal();
-        showToast(`Box "${name}" added`);
+        showToast(`Box "${isBauhaus() ? stripEmoji(name) : name}" added`);
         onDone?.();
       }
     },
@@ -591,7 +595,7 @@ export function openChemicalForm(
         const ok = await opAddChemical(room.id, cont.id, shelfId, values);
         if (ok) {
           closeModal();
-          showToast(`Chemical "${name}" added`);
+          showToast(`Chemical "${isBauhaus() ? stripEmoji(name) : name}" added`);
         }
       }
     },

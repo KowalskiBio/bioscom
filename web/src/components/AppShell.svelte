@@ -13,6 +13,7 @@
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
   import { opDeleteContainer, roleCanWrite } from "../lib/ops";
+  import { stripEmoji } from "../lib/inventoryUtils";
   import { verifyCaptchaAndExecute } from "../lib/captcha";
   import {
     openRoomForm,
@@ -80,6 +81,27 @@
   const detailRoom = $derived(inventory.tree?.rooms.find((r) => r.id === (route.view === "detail" ? route.roomId : "")));
   const detailCont = $derived(detailRoom?.containers.find((c) => c.id === (route.view === "detail" ? route.containerId : "")));
   const isVirtualShared = $derived(containersRoomId === "shared-assets");
+
+  const TOPBAR_LABELS: Record<string, string> = {
+    dashboard: "Dashboard",
+    rooms: "Chemicals",
+    protocols: "Protocols",
+    assets: "Inventory",
+    noticeboard: "Notice Board",
+    instruments: "Reservations",
+    printing: "3D Print",
+    history: "History",
+    minigames: "Mini-games",
+  };
+  const topbarLabel = $derived.by<string>(() => {
+    if (route.view === "containers") {
+      return `Chemicals / ${containersRoom?.name ?? "—"}`;
+    }
+    if (route.view === "detail") {
+      return `Chemicals / ${detailRoom?.name ?? containersRoom?.name ?? "—"} / ${detailCont?.name ?? "—"}`;
+    }
+    return TOPBAR_LABELS[route.view] ?? "Dashboard";
+  });
 
   $effect(() => {
     if (route.view === "assets" && isReader) {
@@ -341,7 +363,7 @@
                         <span style="font-size: 0.65rem; text-transform: uppercase; font-weight: 700; color: var(--accent-blue); letter-spacing: 0.05em;">Super Admin</span>
                         <select id="superadmin-lab-select" style="padding: 0.2rem 0.4rem; font-size: 0.75rem; width: 140px; background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-sm); outline: none; cursor: pointer;" onchange={(e) => switchGroup((e.target as HTMLSelectElement).value, (e.target as HTMLSelectElement).selectedOptions[0]?.textContent ?? null)}>
                             {#each groupList.items as group (group.id)}
-                                <option value={group.id} selected={group.id === currentGroup.groupId}>{group.name}</option>
+                                <option value={group.id} selected={group.id === currentGroup.groupId}>{design === "bauhaus" ? stripEmoji(group.name) : group.name}</option>
                             {/each}
                         </select>
                         <button id="btn-superadmin-members" class="btn-icon" style="width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex;" title="View Laboratory Members" onclick={openMembersModal}>
@@ -357,7 +379,7 @@
                             {#if design === "bauhaus"}
                                 <span class="user-tile-avatar">{userInitials}</span>
                                 <span class="user-tile-meta">
-                                    <span class="user-tile-name">{session.user?.name ?? "Guest"}</span>
+                                    <span class="user-tile-name">{design === "bauhaus" ? stripEmoji(session.user?.name ?? "Guest") : (session.user?.name ?? "Guest")}</span>
                                     <span class="user-tile-role">{session.user?.role ?? ""}</span>
                                 </span>
                             {/if}
@@ -365,8 +387,8 @@
                         </button>
                         <div class="dropdown-content" id="user-dropdown-content" class:show={dropdownOpen}>
                             <div class="user-badge" id="user-badge" style={`display: ${badgeVisible ? "flex" : "none"}; flex-direction: column; padding: 1rem; line-height: 1.3;`}>
-                                <span id="user-badge-name" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">{session.user?.name ?? "Jane Doe"}</span>
-                                <span id="user-badge-lab" style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 500;">{badgeGroup?.name ?? currentGroup.groupName ?? "Organic Chemistry Lab"}</span>
+                                <span id="user-badge-name" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">{design === "bauhaus" ? stripEmoji(session.user?.name ?? "Jane Doe") : (session.user?.name ?? "Jane Doe")}</span>
+                                <span id="user-badge-lab" style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 500;">{design === "bauhaus" ? stripEmoji(badgeGroup?.name ?? currentGroup.groupName ?? "Organic Chemistry Lab") : (badgeGroup?.name ?? currentGroup.groupName ?? "Organic Chemistry Lab")}</span>
                                 <span id="user-badge-code" style="font-size: 0.65rem; color: var(--text-muted); cursor: pointer; margin-top: 0.25rem;" title="Click to copy join code" onclick={copyJoinCode}>Code: {badgeGroup?.joinCode ?? "—"}</span>
                             </div>
                             <div class="dropdown-divider"></div>
@@ -472,6 +494,11 @@
     </header>
 
     <main id="app-main">
+        {#if design === "bauhaus"}
+            <div class="topbar" id="topbar">
+                <p class="topbar-crumb" id="topbar-crumb">LABHAUS / <span class="topbar-view">{design === "bauhaus" ? stripEmoji(topbarLabel) : topbarLabel}</span></p>
+            </div>
+        {/if}
         <!-- Dashboard View (Bauhaus home) -->
         <section id="view-dashboard" class="view" class:active={route.view === "dashboard"}>
             {#if design === "bauhaus"}
@@ -494,7 +521,7 @@
         <!-- Containers View (Cabinets + Fridges) -->
         <section id="view-containers" class="view" class:active={route.view === "containers"}>
             <div class="view-header">
-                <div><h1 id="containers-title">{isVirtualShared ? "Room: Shared Assets" : `Room: ${containersRoom?.name ?? "Containers"}`}</h1><p class="view-subtitle" id="containers-subtitle">{isVirtualShared ? "Containers shared from neighboring laboratories" : (containersRoom?.description ?? "")}</p></div>
+                <div><h1 id="containers-title">{isVirtualShared ? "Room: Shared Assets" : `Room: ${design === "bauhaus" ? stripEmoji(containersRoom?.name ?? "Containers") : (containersRoom?.name ?? "Containers")}`}</h1><p class="view-subtitle" id="containers-subtitle">{isVirtualShared ? "Containers shared from neighboring laboratories" : (design === "bauhaus" ? stripEmoji(containersRoom?.description ?? "") : (containersRoom?.description ?? ""))}</p></div>
                 <div class="view-header-actions">
                     <button id="btn-edit-room" class="btn-secondary" title="Edit room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onEditRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                     <button id="btn-delete-room" class="btn-danger-outline" title="Delete room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onDeleteRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
@@ -509,7 +536,7 @@
         <!-- Detail View (Shelves + Chemicals) -->
         <section id="view-detail" class="view" class:active={route.view === "detail"}>
             <div class="view-header">
-                <div><h1 id="detail-title">{#if detailCont?.emoji && design !== "bauhaus"}<span style="margin-right:0.5rem;">{detailCont.emoji}</span>{/if}{detailCont?.name ?? "Detail"}</h1><p class="view-subtitle" id="detail-subtitle">{detailRoom?.name ?? "Room"} → {detailCont?.name ?? ""}{#if detailCont && detailCont.sharedWithGroupIds && detailCont.sharedWithGroupIds.length > 0} | {#if design !== "bauhaus"}🔗 {/if}Shared to: {detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")}{/if}</p></div>
+                <div><h1 id="detail-title">{#if detailCont?.emoji && design !== "bauhaus"}<span style="margin-right:0.5rem;">{detailCont.emoji}</span>{/if}{design === "bauhaus" ? stripEmoji(detailCont?.name ?? "Detail") : (detailCont?.name ?? "Detail")}</h1><p class="view-subtitle" id="detail-subtitle">{design === "bauhaus" ? stripEmoji(detailRoom?.name ?? "Room") : (detailRoom?.name ?? "Room")} → {design === "bauhaus" ? stripEmoji(detailCont?.name ?? "") : (detailCont?.name ?? "")}{#if detailCont && detailCont.sharedWithGroupIds && detailCont.sharedWithGroupIds.length > 0} | {#if design !== "bauhaus"}🔗 {/if}Shared to: {design === "bauhaus" ? stripEmoji(detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")) : detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")}{/if}</p></div>
                 <div class="view-header-actions">
                     <button id="btn-add-shelf" class="btn-secondary" style={`display: ${!isReader && detailCont !== undefined && detailCont.type !== "deepfreezer" ? "inline-flex" : "none"};`} onclick={onAddShelf}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Shelf</span></button>
                     <button id="btn-export-container-pdf" class="btn-secondary" onclick={onExportContainerPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>

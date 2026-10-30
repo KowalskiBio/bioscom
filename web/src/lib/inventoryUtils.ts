@@ -154,3 +154,13 @@ export function countWords(text: string): number {
 export function canManageContainerContents(role: string): boolean {
   return role !== "reader";
 }
+
+export function stripEmoji(text: string | null | undefined): string {
+  if (text === null || text === undefined) {
+    return "";
+  }
+  return text
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}

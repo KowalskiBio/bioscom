@@ -6,6 +6,7 @@
   import { showToast } from "../../lib/stores/toast.svelte";
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { opDeleteInstrument, opCancelBooking } from "../../lib/featureOps";
+  import { stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -56,11 +57,11 @@
     {#each list as inst (inst.id)}
         <div class="asset-card">
             <div class="asset-header">
-                <div class="asset-title">{inst.name}</div>
-                {#if inst.ownerLabName}<div class="asset-meta">{inst.ownerLabName}</div>{/if}
+                <div class="asset-title">{design === "bauhaus" ? stripEmoji(inst.name) : inst.name}</div>
+                {#if inst.ownerLabName}<div class="asset-meta">{design === "bauhaus" ? stripEmoji(inst.ownerLabName) : inst.ownerLabName}</div>{/if}
             </div>
-            {#if inst.description}<div class="asset-description">{inst.description}</div>{/if}
-            {#if inst.location}<div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">{#if design !== "bauhaus"}📍 {/if}{inst.location}</div>{/if}
+            {#if inst.description}<div class="asset-description">{design === "bauhaus" ? stripEmoji(inst.description) : inst.description}</div>{/if}
+            {#if inst.location}<div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">{#if design !== "bauhaus"}📍 {/if}{design === "bauhaus" ? stripEmoji(inst.location) : inst.location}</div>{/if}
             {#if (inst.bookings ?? []).length > 0}
                 <div style="margin-bottom: 0.75rem;">
                     <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem;">Upcoming Bookings</div>
@@ -68,7 +69,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.2); border-radius: var(--radius-sm); padding: 0.35rem 0.6rem; margin-bottom: 0.3rem; font-size: 0.8rem;">
                             <div>
                                 <strong>{b.date}</strong> {b.startTime}–{b.endTime}
-                                <span style="color: var(--text-muted);"> · {b.userName}{b.labName ? ` (${b.labName})` : ""}</span>
+                                <span style="color: var(--text-muted);"> · {design === "bauhaus" ? stripEmoji(b.userName) : b.userName}{b.labName ? ` (${design === "bauhaus" ? stripEmoji(b.labName) : b.labName})` : ""}</span>
                             </div>
                             {#if b.userId === session.user?.uid}
                                 <button class="btn-inline danger" style="font-size:0.7rem; padding:0.15rem 0.4rem;" onclick={() => void opCancelBooking(inst.id, b.id ?? "")}>Cancel</button>

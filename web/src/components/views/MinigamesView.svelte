@@ -7,6 +7,7 @@
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { opCreateGame, opChessMove, opFrogAnswer, opFinishGame } from "../../lib/featureOps";
   import { CHESS_INITIAL_BOARD, CHESS_PIECE_MAP, getChessValidMoves, getPieceColor, applyChessMove, type ChessBoard } from "../../lib/chess";
+  import { stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -218,7 +219,7 @@
             <select class="form-select" id="game-opponent-select" bind:value={opponent}>
                 <option value="">-- choose --</option>
                 {#each members as member (member.uid)}
-                    <option value={member.uid}>{member.name}</option>
+                    <option value={member.uid}>{design === "bauhaus" ? stripEmoji(member.name) : member.name}</option>
                 {/each}
             </select>
         </div>
@@ -235,7 +236,7 @@
         <div id="game-pending-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;">
             {#each pending as game (game.id)}
                 <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem;">
-                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} from <strong>{game.challengerName}</strong></span>
+                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} from <strong>{design === "bauhaus" ? stripEmoji(game.challengerName) : game.challengerName}</strong></span>
                     <button class="btn-inline" onclick={() => void acceptChallenge(game.id)}>Accept</button>
                 </div>
             {:else}
@@ -249,7 +250,7 @@
         <div id="game-active-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto;">
             {#each active as game (game.id)}
                 <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem;">
-                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
+                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{design === "bauhaus" ? stripEmoji(game.challengerUid === uid ? game.opponentName : game.challengerName) : (game.challengerUid === uid ? game.opponentName : game.challengerName)}</strong></span>
                     <button class="btn-inline" onclick={() => openGame(game.id)}>Play</button>
                 </div>
             {:else}
@@ -261,7 +262,7 @@
         <div id="game-completed-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;">
             {#each completed as game (game.id)}
                 <div style="display:flex; justify-content:space-between; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem; font-size:0.85rem;">
-                    <span>{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
+                    <span>{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{design === "bauhaus" ? stripEmoji(game.challengerUid === uid ? game.opponentName : game.challengerName) : (game.challengerUid === uid ? game.opponentName : game.challengerName)}</strong></span>
                     <span style={game.winnerUid === uid ? "color: var(--accent-green);" : game.winnerUid ? "color: var(--accent-red);" : "color: var(--text-muted);"}>{game.winnerUid === uid ? (design === "bauhaus" ? "Won" : "🏆 Won") : game.winnerUid ? (design === "bauhaus" ? "Lost" : "❌ Lost") : (design === "bauhaus" ? "Draw" : "🤝 Draw")}</span>
                 </div>
             {:else}
@@ -304,9 +305,9 @@
             {/if}
         {:else if chessBoard !== null}
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-                <h2 style="margin:0;">{design === "bauhaus" ? "Biochemical Chess" : "🧬 Biochemical Chess"} vs {otherName}</h2>
+                <h2 style="margin:0;">{design === "bauhaus" ? "Biochemical Chess" : "🧬 Biochemical Chess"} vs {design === "bauhaus" ? stripEmoji(otherName) : otherName}</h2>
                 <div style="display:flex;gap:1rem;align-items:center;">
-                    {#if isMyTurn}<span style="color:var(--accent-green);font-weight:700;">{design === "bauhaus" ? "" : "🟢 "}Your turn ({myColor})</span>{:else}<span style="color:var(--text-muted);">{design === "bauhaus" ? "" : "⏳ "}Waiting for {otherName}...</span>{/if}
+                    {#if isMyTurn}<span style="color:var(--accent-green);font-weight:700;">{design === "bauhaus" ? "" : "🟢 "}Your turn ({myColor})</span>{:else}<span style="color:var(--text-muted);">{design === "bauhaus" ? "" : "⏳ "}Waiting for {design === "bauhaus" ? stripEmoji(otherName) : otherName}...</span>{/if}
                     <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={resign}>{design === "bauhaus" ? "Resign" : "🏳️ Resign"}</button>
                     <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={closeWorkspace}>Close</button>
                 </div>

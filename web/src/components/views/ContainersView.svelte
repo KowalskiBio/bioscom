@@ -2,7 +2,7 @@
   import type { Container } from "@bioscom/shared";
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
-  import { countChems } from "../../lib/inventoryUtils";
+  import { countChems, stripEmoji } from "../../lib/inventoryUtils";
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { theme } from "../../lib/theme.svelte";
@@ -49,13 +49,13 @@
   >
     <span class={`card-type-badge ${cls}-badge`}>{cont.type === "deepfreezer" ? "Deep Freezer" : typeName}</span>
     <div class={`card-icon ${cls}`}>{#if design === "bauhaus"}<span class={`glyph glyph-${glyphKind}`} aria-hidden="true"></span>{:else}{cont.emoji || icon}{/if}</div>
-    <div class="card-title">{cont.name}{isFromOtherLab ? " (Shared)" : ""}</div>
-    <div class="card-description">{cont.description || ""}
+    <div class="card-title">{design === "bauhaus" ? stripEmoji(cont.name) : cont.name}{isFromOtherLab ? " (Shared)" : ""}</div>
+    <div class="card-description">{design === "bauhaus" ? stripEmoji(cont.description || "") : (cont.description || "")}
       <br>
       {#if isFromOtherLab}
-        <span style="font-size: 0.7rem; background: rgba(34, 197, 94, 0.15); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared from: {cont.ownerGroupName ?? "—"} (Room: {shared.find((sc) => sc.container.id === cont.id)?.roomName ?? "—"})</span>
+        <span style="font-size: 0.7rem; background: rgba(34, 197, 94, 0.15); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared from: {design === "bauhaus" ? stripEmoji(cont.ownerGroupName ?? "—") : (cont.ownerGroupName ?? "—")} (Room: {design === "bauhaus" ? stripEmoji(shared.find((sc) => sc.container.id === cont.id)?.roomName ?? "—") : (shared.find((sc) => sc.container.id === cont.id)?.roomName ?? "—")})</span>
       {:else if otherGroupIds.length > 0}
-        <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared to: {otherGroupIds.map((gid) => groupNames[gid] ?? "Unknown Lab").join(", ")}</span>
+        <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared to: {design === "bauhaus" ? stripEmoji(otherGroupIds.map((gid) => groupNames[gid] ?? "Unknown Lab").join(", ")) : otherGroupIds.map((gid) => groupNames[gid] ?? "Unknown Lab").join(", ")}</span>
       {/if}
     </div>
     <div class="card-stats"><div class="card-stat">{#if design !== "bauhaus"}📁 {/if}<span class="card-stat-value">{(cont.shelves ?? []).length}</span> shelves</div><div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{chemCount}</span> chemicals</div></div>

@@ -3638,3 +3638,62 @@ body[data-design="bauhaus"] .card.stat-card.s-red { --dash-accent: var(--accent-
 body[data-design="bauhaus"] .card.stat-card.s-blue { --dash-accent: var(--accent-blue); }
 body[data-design="bauhaus"] .card.stat-card.s-yellow { --dash-accent: var(--accent-amber); }
 body[data-design="bauhaus"] .card.stat-card.s-ink { --dash-accent: var(--text-primary); }
+
+/* Bauhaus Theme — Topbar & Width */
+body[data-design="bauhaus"] .topbar {
+    position: fixed;
+    top: 0;
+    left: var(--bauhaus-sidebar-w);
+    right: 0;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    padding: 0 2.5rem;
+    background: var(--bg-primary);
+    border-bottom: 2px solid var(--text-primary);
+    z-index: 95;
+}
+body[data-design="bauhaus"] .topbar-crumb {
+    font-family: var(--bauhaus-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(23,21,18,0.6);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-design="bauhaus"] .topbar-crumb .topbar-view { color: var(--text-primary); font-weight: 600; }
+body[data-design="bauhaus"] #app-header .search-wrap {
+    position: fixed;
+    top: 0;
+    right: 2.5rem;
+    left: auto;
+    width: 280px;
+    height: 64px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    z-index: 96;
+}
+body[data-design="bauhaus"] #app-main {
+    max-width: none;
+    margin: 0 0 0 var(--bauhaus-sidebar-w);
+    padding: calc(64px + 2rem) 2.5rem 3rem;
+}
+@media (max-width: 900px) {
+    body[data-design="bauhaus"] .topbar { display: none; }
+    body[data-design="bauhaus"] #app-header .search-wrap {
+        position: static;
+        width: auto;
+        height: auto;
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+    }
+    body[data-design="bauhaus"] #app-main {
+        margin: 0 auto;
+        padding: 1.25rem 1rem;
+    }
+}

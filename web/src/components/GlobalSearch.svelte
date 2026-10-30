@@ -9,6 +9,7 @@
     chemMatchesQuery,
     highlightHtml,
     normalizeFormula,
+    stripEmoji,
   } from "../lib/inventoryUtils";
   import { theme } from "../lib/theme.svelte";
 
@@ -188,10 +189,10 @@
                 {#each results as item (item.kind + item.name + item.detail)}
                     <div class="autocomplete-item" onclick={() => pick(item)}>
                         <div style="display:flex;align-items:center;gap:0.5rem">
-                            <span class="autocomplete-item-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(item.name, q)}</span>
-                            <span class={`autocomplete-item-pos ${item.kind === "protocol" ? "protocol-badge" : ""} ${item.kind === "asset" ? "asset-badge" : ""}`}>{item.badge}</span>
+                            <span class="autocomplete-item-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(item.name) : item.name, q)}</span>
+                            <span class={`autocomplete-item-pos ${item.kind === "protocol" ? "protocol-badge" : ""} ${item.kind === "asset" ? "asset-badge" : ""}`}>{design === "bauhaus" ? stripEmoji(item.badge) : item.badge}</span>
                         </div>
-                        <span class="autocomplete-item-shelf">{item.detail}</span>
+                        <span class="autocomplete-item-shelf">{design === "bauhaus" ? stripEmoji(item.detail) : item.detail}</span>
                     </div>
                 {/each}
             {/if}

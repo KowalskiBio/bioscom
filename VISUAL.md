@@ -96,11 +96,23 @@ Svelte app was ported from. Baseline for parity only — do not edit.
   radio "▶/II". Skipped deliberately: PDF exports + user-typed content. Glyph CSS in `/* Bauhaus
   Theme — Glyphs, Nav Order & Dashboard */` (default 10px, .card-icon 14px, .empty-icon 32px +
   font-size:0 parent, `.glyph-box` = currentColor for custom box colors).
-- QA: typecheck 0 errors; 9/9 web tests; build ok; templated identity verified via computed-style
-  suites in `%TEMP%\opencode\bauhaus-qa\`: tpl-assert.mjs (59 PASS incl. original regression),
-  tpl-nav-check.mjs (8 PASS: nav visual order desktop+mobile, dashboard default route, zero-emoji
-  DOM scan, glyph render, stat accents, row split). Screenshots tpl-01..09 + tpl-09-dashboard.
-  CANNOT self-review pixels on this model — human eyeball pass recommended.
+- **Topbar (bauhaus desktop)**: `#topbar` fixed 64px strip at `left: sidebar-w; right: 0`, paper bg,
+  2px ink bottom border, mono crumb `LABHAUS / <view>` (TOPBAR_LABELS map; containers/detail get
+  CHEMICALS / room(/container)); GlobalSearch's `.search-wrap` repositioned `position:fixed` into the
+  strip (right: 2.5rem, width 280) — same sidebar flex item, pulled out of flow. ≤900px: topbar
+  hidden, search back to static in the mobile header. #app-main: `margin-left:256px; max-width:none;
+  padding-top:64px+2rem` = full stretch (user request; no width cap).
+- **Data-content emoji purge (bauhaus)**: `stripEmoji()` in lib/inventoryUtils.ts strips emoji
+  ranges + collapsing spaces; applied design-gated (`design==="bauhaus" ? stripEmoji(x) : x`) to ALL
+  stored/user-typed strings at render: room/container/shelf/box/rack names & descriptions, chemical
+  names+notes, notice title/content/authors/reactions (emoji-only reactions 👍❤️✅ map to glyph
+  spans inline), asset/instrument/protocol/print/history/game strings, GlobalSearch results, user
+  tile/badge names, superadmin select, topbar crumb paths. Leftovers (inline bodyHtml modals,
+  profile input value) listed in the fixer report — strip them if they ever show raw emoji.
+- QA: typecheck 0 errors; 9/9 web tests; build ok; assert suites in `%TEMP%\opencode\bauhaus-qa\`:
+  tpl-assert.mjs (59 PASS incl. original regression), tpl-nav-check.mjs (8 PASS: nav visual order
+  desktop+mobile, dashboard default route, zero-emoji DOM scan, glyph render, stat accents, row
+  split), tpl-topbar-check.mjs (16 PASS: topbar strip/crumb/search/main stretch/mobile fallback).
 - Known leftovers (inline-style-locked or next-pass): NoticeboardView inline category colors/badges,
   InstrumentsView booking rows, MinigamesView panels, AssetsView room h3s, superadmin-console looks,
   barcode img framing, `.instrument-card`/`.booking-*` classes dead in markup, `.shelf-count`/

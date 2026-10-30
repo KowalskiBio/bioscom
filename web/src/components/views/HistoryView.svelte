@@ -4,6 +4,7 @@
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
   import { opCreateManualBackup, opRestoreBackup } from "../../lib/featureOps";
+  import { stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -42,8 +43,8 @@
         {#each entries as entry (entry.id)}
             <div class="protocol-card fade-in" style="padding: 0.75rem 1rem;">
                 <div style="display:flex; justify-content:space-between; gap:1rem; align-items:baseline;">
-                    <div style="font-size: 0.9rem;">{entry.action}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); white-space:nowrap;">{entry.user} · {new Date(entry.timestamp).toLocaleString()}</div>
+                    <div style="font-size: 0.9rem;">{design === "bauhaus" ? stripEmoji(entry.action) : entry.action}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); white-space:nowrap;">{design === "bauhaus" ? stripEmoji(entry.user) : entry.user} · {new Date(entry.timestamp).toLocaleString()}</div>
                 </div>
             </div>
         {/each}

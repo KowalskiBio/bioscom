@@ -8,6 +8,7 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { opDeleteAsset, opDeleteAssetRoom, roleCanWrite } from "../../lib/ops";
   import { openAssetForm, openAssetRoomForm } from "../../lib/forms";
+  import { stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -118,10 +119,10 @@
 {#snippet assetCard(a: Asset)}
   <div class={`asset-card ${highlightedAssetId === a.id ? "highlighted" : ""}`} data-asset-id={a.id} style={highlightedAssetId === a.id ? "box-shadow: 0 0 0 3px var(--primary); transform: scale(1.02); transition: all 0.5s ease;" : ""}>
     <div class="asset-header">
-      <div class="asset-title">{a.name}</div>
-      {#if a.model}<div class="asset-meta">{a.model}</div>{/if}
+      <div class="asset-title">{design === "bauhaus" ? stripEmoji(a.name) : a.name}</div>
+      {#if a.model}<div class="asset-meta">{design === "bauhaus" ? stripEmoji(a.model) : a.model}</div>{/if}
     </div>
-    {#if a.description}<div class="asset-description">{a.description}</div>{/if}
+    {#if a.description}<div class="asset-description">{design === "bauhaus" ? stripEmoji(a.description) : a.description}</div>{/if}
     {#if a.barcode && a.barcode.trim() !== ""}
       <div class="asset-barcode-card-view" style="text-align: center; margin: 10px 0;">
         <svg class="barcode-render" data-barcode={a.barcode.trim()} style="width: 3.5in; height: 1.2in; display: block; margin: 0 auto; background: white; padding: 8px; border: 1px solid var(--border-subtle); box-sizing: border-box;"></svg>
@@ -141,7 +142,7 @@
     {#each rooms as room (room.id)}
       {@const roomAssets = list.filter((a) => a.roomId === room.id)}
       <div style="grid-column: 1 / -1; margin-top: 1rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--border-subtle); padding-bottom: 0.25rem; display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">{#if design !== "bauhaus"}🚪 {/if}{room.name}</h3>
+        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">{#if design !== "bauhaus"}🚪 {/if}{design === "bauhaus" ? stripEmoji(room.name) : room.name}</h3>
         {#if !isReader}
           <div style="display:flex; gap:0.5rem;">
             <button class="btn-inline" style="font-size:0.75rem;" onclick={() => openAssetRoomForm({ id: room.id, name: room.name ?? "" })}>Edit Room</button>
