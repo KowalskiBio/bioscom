@@ -5,9 +5,10 @@
   import { currentGroup } from "../lib/stores/currentGroup.svelte";
   import { inventory } from "../lib/stores/inventory.svelte";
   import { searchState } from "../lib/stores/search.svelte";
+  import { navPrefs } from "../lib/stores/navPrefs.svelte";
   import { logout, switchGroup } from "../lib/app";
   import { api } from "../lib/api";
-  import { toggleTheme } from "../lib/theme.svelte";
+  import { theme, toggleTheme } from "../lib/theme.svelte";
   import { closeLabRadio, toggleRadioPlay, setRadioVolume } from "../lib/radio";
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
@@ -26,8 +27,10 @@
   } from "../lib/forms";
   import { openModal, closeModal } from "../lib/modal.svelte";
   import Modal from "./Modal.svelte";
+  import SettingsModal from "./modals/SettingsModal.svelte";
   import GlobalSearch from "./GlobalSearch.svelte";
   import RoomsView from "./views/RoomsView.svelte";
+  import DashboardView from "./views/DashboardView.svelte";
   import ContainersView from "./views/ContainersView.svelte";
   import DetailView from "./views/DetailView.svelte";
   import ProtocolsView from "./views/ProtocolsView.svelte";
@@ -49,6 +52,7 @@
   let instrumentSearch = $state("");
 
   const TAB_MAP: Record<string, string> = {
+    dashboard: "tab-dashboard",
     rooms: "tab-inventory",
     containers: "tab-inventory",
     detail: "tab-inventory",
@@ -218,10 +222,26 @@
     return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
 
+  const userInitials = $derived(
+    (session.user?.name ?? "?")
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+      .slice(0, 2)
+      .map((w) => w.charAt(0).toUpperCase())
+      .join(""),
+  );
+
   let dropdownOpen = $state(false);
 
   function toggleDropdown(): void {
     dropdownOpen = !dropdownOpen;
+  }
+
+  const design = $derived(theme.design);
+
+  function openSettings(): void {
+    dropdownOpen = false;
+    openModal({ title: "Settings", component: SettingsModal, btnText: null });
   }
 
   $effect(() => {
@@ -296,13 +316,25 @@
     <div class="header-inner">
         <div class="header-top">
             <div class="logo" id="logo-home">
-                <div class="logo-icon">
-                    <svg viewBox="0 0 40 40" fill="none"><path d="M20 6 L32 13 L32 27 L20 34 L8 27 L8 13 Z" fill="none" stroke="url(#g1)" stroke-width="2"/><circle cx="20" cy="6" r="3" fill="url(#g1)"/><circle cx="32" cy="13" r="3" fill="url(#g1)"/><circle cx="32" cy="27" r="3" fill="url(#g1)"/><circle cx="20" cy="34" r="3" fill="url(#g1)"/><circle cx="8" cy="27" r="3" fill="url(#g1)"/><circle cx="8" cy="13" r="3" fill="url(#g1)"/><circle cx="20" cy="20" r="3" fill="url(#g1)"/><path d="M20 6 L20 20 M32 13 L20 20 M32 27 L20 20 M20 34 L20 20 M8 27 L20 20 M8 13 L20 20" stroke="url(#g1)" stroke-width="1.5" opacity="0.5"/><defs><linearGradient id="g1" x1="8" y1="6" x2="32" y2="34"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="100%" stop-color="#c084fc"/></linearGradient></defs></svg>
-                </div>
-                <div style="display: flex; flex-direction: column;">
-                    <span class="logo-text">BioSCom</span>
-                    <span style="font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; margin-top: 1px;">Biomolecular structures<br>in cellular communication</span>
-                </div>
+                {#if design === "bauhaus"}
+                    <svg class="logo-bauhaus-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                        <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                        <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                        <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                    </svg>
+                    <div class="logo-bauhaus-text">
+                        <span class="logo-bauhaus-name">LABHAUS</span>
+                        <span class="logo-bauhaus-sub">Lab Operations</span>
+                    </div>
+                {:else}
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 40 40" fill="none"><path d="M20 6 L32 13 L32 27 L20 34 L8 27 L8 13 Z" fill="none" stroke="url(#g1)" stroke-width="2"/><circle cx="20" cy="6" r="3" fill="url(#g1)"/><circle cx="32" cy="13" r="3" fill="url(#g1)"/><circle cx="32" cy="27" r="3" fill="url(#g1)"/><circle cx="20" cy="34" r="3" fill="url(#g1)"/><circle cx="8" cy="27" r="3" fill="url(#g1)"/><circle cx="8" cy="13" r="3" fill="url(#g1)"/><circle cx="20" cy="20" r="3" fill="url(#g1)"/><path d="M20 6 L20 20 M32 13 L20 20 M32 27 L20 20 M20 34 L20 20 M8 27 L20 20 M8 13 L20 20" stroke="url(#g1)" stroke-width="1.5" opacity="0.5"/><defs><linearGradient id="g1" x1="8" y1="6" x2="32" y2="34"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="100%" stop-color="#c084fc"/></linearGradient></defs></svg>
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span class="logo-text">BioSCom</span>
+                        <span style="font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; margin-top: 1px;">Biomolecular structures<br>in cellular communication</span>
+                    </div>
+                {/if}
             </div>
             <div class="header-actions">
                 <div id="superadmin-console" style={`display: ${isSuperadmin ? "flex" : "none"}; align-items: center; gap: 0.5rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); padding: 0.25rem 0.65rem; border-radius: var(--radius-xl); margin-right: 0.5rem;`}>
@@ -322,6 +354,13 @@
                     <GlobalSearch />
                     <div class="dropdown" id="user-dropdown-container">
                         <button class="dropdown-btn" id="btn-user-menu" title="User Menu" onclick={toggleDropdown}>
+                            {#if design === "bauhaus"}
+                                <span class="user-tile-avatar">{userInitials}</span>
+                                <span class="user-tile-meta">
+                                    <span class="user-tile-name">{session.user?.name ?? "Guest"}</span>
+                                    <span class="user-tile-role">{session.user?.role ?? ""}</span>
+                                </span>
+                            {/if}
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         </button>
                         <div class="dropdown-content" id="user-dropdown-content" class:show={dropdownOpen}>
@@ -341,7 +380,12 @@
                                 Edit Profile
                             </a>
 
-                            <a class="dropdown-item" id="btn-toggle-theme" onclick={toggleTheme}>
+                            <a class="dropdown-item" id="btn-open-settings" onclick={openSettings}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                Settings
+                            </a>
+
+                            <a class="dropdown-item" id="btn-toggle-theme" style={`display: ${design === "original" ? "flex" : "none"};`} onclick={toggleTheme}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                                 Toggle Lite Mode
                             </a>
@@ -358,38 +402,68 @@
             <div class="header-bottom">
                 <nav class="main-nav" style="display: {isTopView ? 'flex' : 'none'}; align-items: center; justify-content: flex-start; padding: 0.5rem 0;">
                     <div class="nav-tabs-bar" id="nav-tabs-bar">
-                        <a class="nav-tab" id="tab-inventory" data-label="List of Chemicals" class:active={activeTab === "tab-inventory"} role="button" tabindex="0" onclick={() => onTabClick("rooms")} onkeydown={(e) => e.key === "Enter" && onTabClick("rooms")}>
+                        {#if design === "bauhaus"}
+                            <p class="nav-section nav-section-a">Overview</p>
+                            <a class="nav-tab" id="tab-dashboard" data-label="Dashboard" class:active={activeTab === "tab-dashboard"} role="button" tabindex="0" onclick={() => onTabClick("dashboard")} onkeydown={(e) => e.key === "Enter" && onTabClick("dashboard")}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                Dashboard
+                            </a>
+                        {/if}
+                        <a class="nav-tab" id="tab-inventory" data-label={design === "bauhaus" ? "Chemicals" : "List of Chemicals"} class:active={activeTab === "tab-inventory"} role="button" tabindex="0" onclick={() => onTabClick("rooms")} onkeydown={(e) => e.key === "Enter" && onTabClick("rooms")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                            List of Chemicals
+                            {design === "bauhaus" ? "Chemicals" : "List of Chemicals"}
                         </a>
-                        <a class="nav-tab" id="tab-protocols" data-label="Solutions & Protocols" class:active={activeTab === "tab-protocols"} role="button" tabindex="0" onclick={() => onTabClick("protocols")} onkeydown={(e) => e.key === "Enter" && onTabClick("protocols")}>
+                        {#if design === "bauhaus" && (navPrefs.visible("protocols") || navPrefs.visible("instruments"))}
+                            <p class="nav-section nav-section-b">Workflows</p>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("protocols")}
+                        <a class="nav-tab" id="tab-protocols" data-label={design === "bauhaus" ? "Protocols" : "Solutions & Protocols"} class:active={activeTab === "tab-protocols"} role="button" tabindex="0" onclick={() => onTabClick("protocols")} onkeydown={(e) => e.key === "Enter" && onTabClick("protocols")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                            Solutions &amp; Protocols
+                            {design === "bauhaus" ? "Protocols" : "Solutions &amp; Protocols"}
                         </a>
+                        {/if}
+                        {#if design === "bauhaus"}
+                            <p class="nav-section nav-section-c">Assets</p>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("assets")}
                         <a class="nav-tab" id="tab-assets" data-label="Inventory" class:active={activeTab === "tab-assets"} role="button" tabindex="0" onclick={() => onTabClick("assets")} onkeydown={(e) => e.key === "Enter" && onTabClick("assets")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 9V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><circle cx="12" cy="13" r="4"/></svg>
                             Inventory
                         </a>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("noticeboard")}
                         <a class="nav-tab" id="tab-noticeboard" data-label="Notice Board" class:active={activeTab === "tab-noticeboard"} role="button" tabindex="0" onclick={() => onTabClick("noticeboard")} onkeydown={(e) => e.key === "Enter" && onTabClick("noticeboard")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             Notice Board
                         </a>
-                        <a class="nav-tab" id="tab-instruments" data-label="Instruments" class:active={activeTab === "tab-instruments"} role="button" tabindex="0" onclick={() => onTabClick("instruments")} onkeydown={(e) => e.key === "Enter" && onTabClick("instruments")}>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("instruments")}
+                        <a class="nav-tab" id="tab-instruments" data-label={design === "bauhaus" ? "Reservations" : "Instruments"} class:active={activeTab === "tab-instruments"} role="button" tabindex="0" onclick={() => onTabClick("instruments")} onkeydown={(e) => e.key === "Enter" && onTabClick("instruments")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                            Instruments
+                            {design === "bauhaus" ? "Reservations" : "Instruments"}
                         </a>
+                        {/if}
+                        {#if design === "bauhaus" && (navPrefs.visible("noticeboard") || navPrefs.visible("printing") || navPrefs.visible("history") || navPrefs.visible("minigames"))}
+                            <p class="nav-section nav-section-d">Extras</p>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("printing")}
                         <a class="nav-tab" id="tab-printing" data-label="3D Print" class:active={activeTab === "tab-printing"} role="button" tabindex="0" onclick={() => onTabClick("printing")} onkeydown={(e) => e.key === "Enter" && onTabClick("printing")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                             3D Print
                         </a>
-                        <a class="nav-tab" id="tab-history" data-label="History & Backups" class:active={activeTab === "tab-history"} role="button" tabindex="0" onclick={() => onTabClick("history")} onkeydown={(e) => e.key === "Enter" && onTabClick("history")}>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("history")}
+                        <a class="nav-tab" id="tab-history" data-label={design === "bauhaus" ? "History" : "History & Backups"} class:active={activeTab === "tab-history"} role="button" tabindex="0" onclick={() => onTabClick("history")} onkeydown={(e) => e.key === "Enter" && onTabClick("history")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            History &amp; Backups
+                            {design === "bauhaus" ? "History" : "History &amp; Backups"}
                         </a>
+                        {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("minigames")}
                         <a class="nav-tab" id="tab-minigames" data-label="Mini-games" class:active={activeTab === "tab-minigames"} role="button" tabindex="0" onclick={() => onTabClick("minigames")} onkeydown={(e) => e.key === "Enter" && onTabClick("minigames")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
                             Mini-games
                         </a>
+                        {/if}
                     </div>
                 </nav>
                 <nav id="breadcrumb" class="breadcrumb" style="display: {isTopView ? 'none' : 'flex'};"></nav>
@@ -398,6 +472,13 @@
     </header>
 
     <main id="app-main">
+        <!-- Dashboard View (Bauhaus home) -->
+        <section id="view-dashboard" class="view" class:active={route.view === "dashboard"}>
+            {#if design === "bauhaus"}
+                <DashboardView />
+            {/if}
+        </section>
+
         <!-- Rooms View -->
         <section id="view-rooms" class="view" class:active={route.view === "rooms"}>
             <div class="view-header">
@@ -428,7 +509,7 @@
         <!-- Detail View (Shelves + Chemicals) -->
         <section id="view-detail" class="view" class:active={route.view === "detail"}>
             <div class="view-header">
-                <div><h1 id="detail-title">{#if detailCont?.emoji}<span style="margin-right:0.5rem;">{detailCont.emoji}</span>{/if}{detailCont?.name ?? "Detail"}</h1><p class="view-subtitle" id="detail-subtitle">{detailRoom?.name ?? "Room"} → {detailCont?.name ?? ""}{#if detailCont && detailCont.sharedWithGroupIds && detailCont.sharedWithGroupIds.length > 0} | 🔗 Shared to: {detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")}{/if}</p></div>
+                <div><h1 id="detail-title">{#if detailCont?.emoji && design !== "bauhaus"}<span style="margin-right:0.5rem;">{detailCont.emoji}</span>{/if}{detailCont?.name ?? "Detail"}</h1><p class="view-subtitle" id="detail-subtitle">{detailRoom?.name ?? "Room"} → {detailCont?.name ?? ""}{#if detailCont && detailCont.sharedWithGroupIds && detailCont.sharedWithGroupIds.length > 0} | {#if design !== "bauhaus"}🔗 {/if}Shared to: {detailCont.sharedWithGroupIds.map((gid) => groupList.items.find((g) => g.id === gid)?.name ?? gid).join(", ")}{/if}</p></div>
                 <div class="view-header-actions">
                     <button id="btn-add-shelf" class="btn-secondary" style={`display: ${!isReader && detailCont !== undefined && detailCont.type !== "deepfreezer" ? "inline-flex" : "none"};`} onclick={onAddShelf}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Shelf</span></button>
                     <button id="btn-export-container-pdf" class="btn-secondary" onclick={onExportContainerPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
@@ -470,7 +551,7 @@
         <!-- Notice Board View -->
         <section id="view-noticeboard" class="view" class:active={route.view === "noticeboard"}>
             <div class="view-header">
-                <div><h1>📋 Notice Board</h1><p class="view-subtitle">Share suggestions and notes with your laboratory team</p></div>
+                <div><h1>{design === "bauhaus" ? "Notice Board" : "📋 Notice Board"}</h1><p class="view-subtitle">Share suggestions and notes with your laboratory team</p></div>
                 <div class="view-header-actions">
                     <button id="btn-add-notice" class="btn-primary" onclick={() => openNoticeForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Note</span></button>
                 </div>
@@ -481,7 +562,7 @@
         <!-- Instruments View -->
         <section id="view-instruments" class="view" class:active={route.view === "instruments"}>
             <div class="view-header">
-                <div><h1>🔬 Laboratory Instruments</h1><p class="view-subtitle">Browse instruments and book time slots</p></div>
+                <div><h1>{design === "bauhaus" ? "Reservations" : "🔬 Laboratory Instruments"}</h1><p class="view-subtitle">Browse instruments and book time slots</p></div>
                 <div class="view-header-actions">
                     <div class="search-box" style="min-width: 250px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -496,7 +577,7 @@
         <!-- 3D Print View -->
         <section id="view-printing" class="view" class:active={route.view === "printing"}>
             <div class="view-header">
-                <div><h1>🖨️ 3D Print Service</h1><p class="view-subtitle">Browse catalog and request 3D prints for your lab</p></div>
+                <div><h1>{design === "bauhaus" ? "3D Print Service" : "🖨️ 3D Print Service"}</h1><p class="view-subtitle">Browse catalog and request 3D prints for your lab</p></div>
                 <div class="view-header-actions">
                     <button id="btn-add-catalog-item" class="btn-primary" style={`display: ${isSuperadmin ? "inline-flex" : "none"};`} onclick={() => openCatalogForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add to Catalog</span></button>
                     <button id="btn-custom-print-request" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #ef4444);" onclick={() => openPrintRequestModal()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Custom Request</span></button>
@@ -508,7 +589,7 @@
         <!-- History & Backups View -->
         <section id="view-history" class="view" class:active={route.view === "history"}>
             <div class="view-header">
-                <div><h1>⏱️ History &amp; Backups</h1><p class="view-subtitle">Audit log and system backups</p></div>
+                <div><h1>{design === "bauhaus" ? "History & Backups" : "⏱️ History & Backups"}</h1><p class="view-subtitle">Audit log and system backups</p></div>
                 <div class="view-header-actions" id="history-superadmin-actions" style={`display: ${isSuperadmin ? "flex" : "none"};`}>
                 </div>
             </div>
@@ -518,7 +599,7 @@
         <!-- Mini-games View -->
         <section id="view-minigames" class="view" class:active={route.view === "minigames"}>
             <div class="view-header">
-                <div><h1>🎮 Biochemical Lab Games</h1><p class="view-subtitle">Challenge colleagues to games and captcha quizzes</p></div>
+                <div><h1>{design === "bauhaus" ? "Biochemical Lab Games" : "🎮 Biochemical Lab Games"}</h1><p class="view-subtitle">Challenge colleagues to games and captcha quizzes</p></div>
             </div>
             <MinigamesView />
         </section>
@@ -529,12 +610,12 @@
     <div id="lab-radio-widget" class="lab-radio-widget hidden">
         <div class="radio-content">
             <div class="radio-header">
-                <span class="radio-title">📻 Lab Radio</span>
+                <span class="radio-title">{design === "bauhaus" ? "LAB RADIO" : "📻 Lab Radio"}</span>
                 <button class="radio-close" id="btn-radio-close" title="Close Radio" onclick={() => closeLabRadio()}>×</button>
             </div>
             <div class="radio-body">
                 <div class="vinyl-container">
-                    <span class="vinyl-disc">💿</span>
+                    <span class="vinyl-disc">{#if design === "bauhaus"}<span class="glyph glyph-circle-ink" aria-hidden="true"></span>{:else}💿{/if}</span>
                 </div>
                 <div class="radio-info">
                     <div class="station-name" id="radio-station">Radio Folk</div>
@@ -542,7 +623,7 @@
                 </div>
             </div>
             <div class="radio-controls">
-                <button class="btn-radio-play" id="btn-radio-play" onclick={() => toggleRadioPlay()}>⏸️</button>
+                <button class="btn-radio-play" id="btn-radio-play" onclick={() => toggleRadioPlay()}>{design === "bauhaus" ? "II" : "⏸️"}</button>
                 <input type="range" class="radio-volume" id="radio-volume" min="0" max="1" step="0.05" value="0.5" oninput={(e) => setRadioVolume((e.target as HTMLInputElement).value)}>
             </div>
         </div>

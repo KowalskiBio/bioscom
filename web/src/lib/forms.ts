@@ -599,23 +599,24 @@ export function openChemicalForm(
 }
 
 export function openChemicalRadioPrompt(room: Room, cont: Container, preSelectedShelfId?: string): void {
+  const bauhaus = document.body.dataset.design === "bauhaus";
   openModal({
     title: "Laboratory Background Radio",
     bodyHtml: `<div style="text-align: center; padding: 1rem 0;">
-      <div style="font-size: 3rem; margin-bottom: 1rem; animation: floatBlob 2s ease-in-out infinite alternate;">🎵</div>
+      <div style="font-size: 3rem; margin-bottom: 1rem; animation: floatBlob 2s ease-in-out infinite alternate;">${bauhaus ? '<span class="glyph glyph-circle-ink" aria-hidden="true"></span>' : "🎵"}</div>
       <h3 style="margin-bottom: 0.5rem; color: var(--text-primary);">Laboratory Background Radio</h3>
       <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem; max-width: 320px; margin-left: auto; margin-right: auto;">
         Would you like to play some background folk music while you add this chemical?
       </p>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 280px; margin: 0 auto;">
         <button class="btn-primary" data-radio-action="cechomor" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem; background: linear-gradient(135deg, var(--accent-blue), #3b82f6); border: none;">
-          <span>🎻 Play Čechomor (String Folk)</span>
+          <span>${bauhaus ? "" : "🎻 "}Play Čechomor (String Folk)</span>
         </button>
         <button class="btn-primary" data-radio-action="moravanka" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem; background: linear-gradient(135deg, var(--accent-purple), #8b5cf6); border: none;">
-          <span>🎺 Play Moravanka (Brass Band)</span>
+          <span>${bauhaus ? "" : "🎺 "}Play Moravanka (Brass Band)</span>
         </button>
         <button class="btn-secondary" data-radio-action="none" style="width: 100%; padding: 0.75rem;">
-          <span>🔇 No music, thanks</span>
+          <span>${bauhaus ? "" : "🔇 "}No music, thanks</span>
         </button>
       </div>
     </div>`,

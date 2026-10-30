@@ -4,6 +4,9 @@
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
   import { opCreateManualBackup, opRestoreBackup } from "../../lib/featureOps";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   let activeTab = $state<"log" | "backups">("log");
   const isSuperadmin = $derived(session.user?.role === "superadmin");
@@ -30,8 +33,8 @@
 </script>
 
 <div class="print-tabs-nav">
-    <button class={`print-tab-btn ${activeTab === "log" ? "active" : ""}`} id="history-tab-log-btn" onclick={() => switchTab("log")}>📝 Audit Log</button>
-    <button class={`print-tab-btn ${activeTab === "backups" ? "active" : ""}`} id="history-tab-backups-btn" onclick={() => switchTab("backups")}>💾 Auto-Backups</button>
+    <button class={`print-tab-btn ${activeTab === "log" ? "active" : ""}`} id="history-tab-log-btn" onclick={() => switchTab("log")}>{design === "bauhaus" ? "Audit Log" : "📝 Audit Log"}</button>
+    <button class={`print-tab-btn ${activeTab === "backups" ? "active" : ""}`} id="history-tab-backups-btn" onclick={() => switchTab("backups")}>{design === "bauhaus" ? "Auto-Backups" : "💾 Auto-Backups"}</button>
 </div>
 
 <div id="history-log-tab-content" style={`display: ${activeTab === "log" ? "block" : "none"};`}>
@@ -46,7 +49,7 @@
         {/each}
     </div>
     <div id="history-log-empty" class="empty-state" style={`display: ${entries.length === 0 ? "block" : "none"};`}>
-        <div class="empty-icon">📝</div><h2>No history events</h2><p>Actions performed in the lab will appear here</p>
+        <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📝{/if}</div><h2>No history events</h2><p>Actions performed in the lab will appear here</p>
     </div>
 </div>
 
@@ -59,7 +62,7 @@
             <div class="protocol-card fade-in" style="padding: 0.75rem 1rem;">
                 <div style="display:flex; justify-content:space-between; gap:1rem; align-items:center;">
                     <div>
-                        <div style="font-weight:600;">💾 Snapshot</div>
+                        <div style="font-weight:600;">{#if design !== "bauhaus"}💾 {/if}Snapshot</div>
                         <div style="font-size: 0.75rem; color: var(--text-muted);">{new Date(backup.timestamp).toLocaleString()}</div>
                     </div>
                     {#if isSuperadmin}
@@ -70,6 +73,6 @@
         {/each}
     </div>
     <div id="history-backups-empty" class="empty-state" style={`display: ${backups.length === 0 ? "block" : "none"};`}>
-        <div class="empty-icon">💾</div><h2>No backups yet</h2><p>Auto-backups are generated every 30 minutes of active use</p>
+        <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-blue" aria-hidden="true"></span>{:else}💾{/if}</div><h2>No backups yet</h2><p>Auto-backups are generated every 30 minutes of active use</p>
     </div>
 </div>

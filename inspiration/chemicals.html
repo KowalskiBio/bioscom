@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LabHaus — Chemicals</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='8' r='4' fill='%23DE2C1E'/><rect x='10' y='4' width='8' height='8' fill='%231D4FA2'/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <script>
+    tailwind.config = { theme: { extend: {
+        colors: { ink:'#171512', paper:'#F4F0E6', baured:'#DE2C1E', baublue:'#1D4FA2', bauyel:'#F0B62B' },
+        fontFamily: { display:['Jost','sans-serif'], body:['Inter','sans-serif'], mono:['"IBM Plex Mono"','monospace'] }
+    }}}
+    </script>
+    <style type="text/tailwindcss">
+        .card{@apply bg-white border-2 border-ink;}
+        .btn{@apply inline-flex items-center justify-center gap-2 px-4 h-10 border-2 border-ink font-display text-xs font-semibold uppercase tracking-[0.15em] select-none cursor-pointer transition-colors;}
+        .btn-ink{@apply bg-ink text-white hover:bg-paper hover:text-ink;}
+        .btn-line{@apply bg-white text-ink hover:bg-ink hover:text-white;}
+        .chip{@apply inline-flex items-center justify-center gap-1.5 px-2 h-6 border border-ink text-[10px] font-semibold uppercase tracking-[0.12em];}
+        .fchip{@apply inline-flex items-center gap-2 px-3 h-9 border-2 border-ink text-[11px] font-semibold uppercase tracking-[0.12em] cursor-pointer select-none bg-white hover:bg-paper transition-colors;}
+        .fchip.on{@apply bg-ink text-white;}
+        .lbl{@apply block text-[10px] font-semibold uppercase tracking-[0.2em] text-ink/50 mb-1;}
+        .navlink{@apply flex items-center gap-3 px-6 py-[11px] text-sm font-medium text-ink/65 border-l-4 border-transparent hover:bg-paper hover:text-ink transition-colors;}
+        .navlink.active{@apply bg-ink text-white;}
+        .shape-circle{@apply inline-block w-2.5 h-2.5 rounded-full shrink-0;}
+        .shape-sq{@apply inline-block w-2.5 h-2.5 shrink-0;}
+        .shape-dia{@apply inline-block w-2.5 h-2.5 rotate-45 shrink-0;}
+        .th{@apply text-left text-[10px] font-semibold uppercase tracking-[0.15em] text-ink/50 px-4 py-2.5 border-b-2 border-ink whitespace-nowrap;}
+        .td{@apply px-4 py-3 border-b border-ink/10 text-sm;}
+    </style>
+    <style>
+        body{background:#F4F0E6;}
+        ::selection{background:#DE2C1E;color:#fff;}
+        ::-webkit-scrollbar{width:10px;height:10px;}
+        ::-webkit-scrollbar-track{background:#F4F0E6;}
+        ::-webkit-scrollbar-thumb{background:#171512;border:3px solid #F4F0E6;}
+        .navlink:hover{border-color:var(--c,#171512);}
+        .navlink.active{border-color:var(--c);}
+        .tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid;display:inline-block;}
+        .tri-y{border-bottom-color:#F0B62B;}.tri-r{border-bottom-color:#DE2C1E;}
+        #drawer{transition:transform .18s ease;}
+    </style>
+</head>
+<body class="text-ink font-body antialiased">
+
+<aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-64 -translate-x-full lg:translate-x-0 transition-transform duration-200 bg-white border-r-2 border-ink flex flex-col">
+    <div class="h-20 flex items-center gap-3 px-5 border-b-2 border-ink">
+        <svg width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="9" fill="#DE2C1E"/><polygon points="28,1 37,19 19,19" fill="#F0B62B"/><rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+        </svg>
+        <div><p class="font-display font-semibold text-lg leading-none tracking-wide">LABHAUS</p><p class="text-[10px] uppercase tracking-[0.25em] text-ink/50 mt-1">Lab Operations</p></div>
+    </div>
+    <nav class="flex-1 py-5 overflow-y-auto">
+        <p class="px-6 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Overview</p>
+        <a href="index.html" class="navlink" style="--c:#DE2C1E"><i data-feather="grid" class="w-4 h-4"></i>Dashboard</a>
+        <p class="px-6 mt-5 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Assets</p>
+        <a href="inventory.html" class="navlink" style="--c:#1D4FA2"><i data-feather="package" class="w-4 h-4"></i>Inventory<span class="ml-auto font-mono text-[10px] opacity-50">3.7k</span></a>
+        <a href="chemicals.html" class="navlink active" style="--c:#DE2C1E"><i data-feather="droplet" class="w-4 h-4"></i>Chemicals<span class="ml-auto font-mono text-[10px] opacity-50">1.3k</span></a>
+        <a href="storage.html" class="navlink" style="--c:#F0B62B"><i data-feather="archive" class="w-4 h-4"></i>Storage</a>
+        <p class="px-6 mt-5 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Workflows</p>
+        <a href="protocols.html" class="navlink" style="--c:#1D4FA2"><i data-feather="file-text" class="w-4 h-4"></i>Protocols</a>
+        <a href="reservations.html" class="navlink" style="--c:#DE2C1E"><i data-feather="calendar" class="w-4 h-4"></i>Reservations<span class="ml-auto w-5 h-5 grid place-items-center bg-baured text-white text-[10px] font-bold">3</span></a>
+    </nav>
+    <div class="p-5 border-t-2 border-ink space-y-2.5 text-xs">
+        <p class="lbl !mb-2">Facility status</p>
+        <div class="flex items-center gap-2.5"><span class="tri tri-y"></span><span class="flex-1">Cold chain</span><span class="font-mono text-[10px] text-baured font-semibold">1 ALERT</span></div>
+        <div class="flex items-center gap-2.5"><span class="shape-circle bg-baublue"></span><span class="flex-1">Sensors network</span><span class="font-mono text-[10px] text-ink/50">NOMINAL</span></div>
+        <div class="flex items-center gap-2.5"><span class="shape-sq bg-ink"></span><span class="flex-1">Data backup</span><span class="font-mono text-[10px] text-ink/50">02:00</span></div>
+    </div>
+    <div class="p-4 border-t-2 border-ink flex items-center gap-3">
+        <span class="w-9 h-9 bg-bauyel border-2 border-ink grid place-items-center font-display font-bold text-sm">AB</span>
+        <div class="leading-tight"><p class="text-xs font-semibold">Dr. A. Berg</p><p class="text-[10px] uppercase tracking-widest text-ink/50">Lab Manager</p></div>
+        <i data-feather="settings" class="w-4 h-4 ml-auto text-ink/40"></i>
+    </div>
+</aside>
+<div id="overlay" class="hidden fixed inset-0 bg-ink/50 z-30 lg:hidden"></div>
+
+<div class="lg:pl-64 min-h-screen flex flex-col">
+    <header class="sticky top-0 z-20 h-16 bg-paper/95 backdrop-blur border-b-2 border-ink flex items-center gap-4 px-4 sm:px-8">
+        <button id="menuBtn" class="lg:hidden w-9 h-9 border-2 border-ink bg-white grid place-items-center"><i data-feather="menu" class="w-4 h-4"></i></button>
+        <p class="font-mono text-[11px] tracking-[0.2em] uppercase text-ink/60">LABHAUS / <span class="text-ink font-semibold">CHEMICALS</span></p>
+        <div class="ml-auto flex items-center gap-3">
+            <button class="relative w-9 h-9 border-2 border-ink bg-white grid place-items-center hover:bg-ink hover:text-white transition-colors"><i data-feather="bell" class="w-4 h-4"></i><span class="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-baured border-2 border-paper rounded-full"></span></button>
+            <span class="w-9 h-9 bg-bauyel border-2 border-ink grid place-items-center font-display font-bold text-sm">AB</span>
+        </div>
+    </header>
+
+    <main class="flex-1 px-4 sm:px-8 py-8 max-w-[1400px] w-full mx-auto">
+        <div class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-ink pb-5">
+            <div>
+                <div class="flex items-center gap-2 mb-2"><span class="shape-circle bg-baured"></span><p class="uppercase tracking-[0.25em] text-[10px] font-semibold text-ink/60">Module — 03 / Assets</p></div>
+                <h1 class="font-display text-3xl sm:text-4xl font-semibold tracking-tight">Chemical register</h1>
+                <p class="font-mono text-xs text-ink/50 mt-2 uppercase tracking-wider">1,284 substances · GHS classified · Reference date 2025-03-04</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button class="btn btn-line" onclick="toast('SDS binder requested — EHS office')"><i data-feather="file-text" class="w-4 h-4"></i>SDS binder</button>
+                <button class="btn btn-ink" onclick="toast('Registration form opened — demo')"><i data-feather="plus" class="w-4 h-4"></i>Register chemical</button>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mt-6">
+            <div class="flex items-center gap-2 border-2 border-ink bg-white px-3 h-10 w-full sm:w-72">
+                <i data-feather="search" class="w-4 h-4 text-ink/45 shrink-0"></i>
+                <input id="q" oninput="render()" placeholder="Search name, formula, CAS…" class="bg-transparent outline-none text-sm w-full placeholder:text-ink/40">
+            </div>
+            <div id="hzChips" class="flex flex-wrap gap-2"></div>
+            <p id="count" class="ml-auto font-mono text-[11px] uppercase tracking-wider text-ink/50"></p>
+        </div>
+
+        <div class="card mt-5 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[920px]">
+                    <thead><tr>
+                        <th class="th">Substance</th><th class="th">CAS</th><th class="th">Hazard classes</th><th class="th">Storage</th><th class="th">Expiry</th><th class="th">Qty</th><th class="th">Status</th>
+                    </tr></thead>
+                    <tbody id="rows"></tbody>
+                </table>
+            </div>
+        </div>
+        <p class="font-mono text-[11px] text-ink/45 mt-3 uppercase tracking-wider">Select a row to open the full safety sheet.</p>
+    </main>
+
+    <footer class="border-t-2 border-ink py-5 px-8 flex flex-wrap gap-2 items-center justify-between text-[10px] uppercase tracking-[0.2em] text-ink/50">
+        <p>© 2025 LABHAUS · Building B · Facility Operations</p>
+        <p class="font-display text-sm normal-case tracking-normal text-ink/75">Form follows function.</p>
+    </footer>
+</div>
+
+<!-- Detail drawer -->
+<div id="drawerWrap" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-ink/60" onclick="closeDrawer()"></div>
+    <div id="drawer" class="absolute right-0 top-0 h-full w-[440px] max-w-[92vw] bg-white border-l-2 border-ink translate-x-full overflow-y-auto">
+        <div class="p-5 border-b-2 border-ink flex items-start justify-between sticky top-0 bg-white z-10">
+            <div>
+                <div class="flex items-center gap-2 mb-1.5"><span class="shape-circle bg-baured"></span><p class="text-[10px] uppercase tracking-[0.25em] font-semibold text-ink/50">Safety sheet</p></div>
+                <h3 id="dName" class="font-display text-xl font-semibold leading-tight"></h3>
+                <p id="dMeta" class="font-mono text-[11px] text-ink/50 mt-1"></p>
+            </div>
+            <button class="w-8 h-8 border-2 border-ink grid place-items-center hover:bg-ink hover:text-white shrink-0" onclick="closeDrawer()"><i data-feather="x" class="w-4 h-4"></i></button>
+        </div>
+        <div id="dBody" class="p-5 space-y-6"></div>
+    </div>
+</div>
+
+<script>
+const sb=document.getElementById('sidebar'),ov=document.getElementById('overlay');
+document.getElementById('menuBtn').onclick=()=>{sb.classList.remove('-translate-x-full');ov.classList.remove('hidden')};
+ov.onclick=()=>{sb.classList.add('-translate-x-full');ov.classList.add('hidden')};
+function toast(msg){const t=document.createElement('div');t.className='fixed top-4 right-4 z-[80] bg-ink text-white text-[11px] font-semibold uppercase tracking-[0.15em] px-4 py-3 border-2 border-ink flex items-center gap-2.5';t.innerHTML=`<span class="shape-sq bg-bauyel"></span>${msg}`;document.body.appendChild(t);setTimeout(()=>t.remove(),2400);}
+
+const NOW=new Date('2025-03-04');
+const hzColor={'Flammable':'bg-baured','Corrosive':'bg-bauyel','Toxic':'bg-ink','Oxidizer':'bg-baublue','Irritant':'border-2 border-ink bg-transparent','Non-hazardous':'border-2 border-dashed border-ink bg-transparent'};
+const chems=[
+ {n:'Acetonitrile, HPLC grade',f:'CH₃CN',cas:'75-05-8',h:['Flammable','Toxic'],loc:'SC-01 · Solvent cabinet',exp:'2026-03-04',qty:'8 × 2.5 L',st:'in',mw:'41.05 g/mol',den:'0.786 g/mL',temp:'Ambient',hp:'H225 · H302+H312+H332 · H319',ppe:'Nitrile gloves · Goggles · Fume hood',disp:'Halogen-free organic waste — Drum 12',own:'A. Berg'},
+ {n:'Ethanol absolute 99.8%',f:'C₂H₆O',cas:'64-17-5',h:['Flammable'],loc:'SC-01 · Solvent cabinet',exp:'2026-01-12',qty:'6 × 1 L',st:'in',mw:'46.07 g/mol',den:'0.789 g/mL',temp:'Ambient',hp:'H225 · H319',ppe:'Nitrile gloves · Goggles',disp:'Halogen-free organic waste — Drum 12',own:'J. Tan'},
+ {n:'Nitric acid 65%',f:'HNO₃',cas:'7697-37-2',h:['Corrosive','Oxidizer'],loc:'CB-03 · Acid cabinet',exp:'2025-05-02',qty:'4 × 1 L',st:'low',mw:'63.01 g/mol',den:'1.41 g/mL',temp:'Ambient · ventilated',hp:'H272 · H314',ppe:'Acid-resistant gloves · Face shield · Apron',disp:'Mineral acid waste — Neutralize before collection',own:'EHS Office'},
+ {n:'Sodium hydroxide pellets',f:'NaOH',cas:'1310-73-2',h:['Corrosive'],loc:'SH-B1 · Dry shelf',exp:'2027-02-01',qty:'12 × 1 kg',st:'in',mw:'40.00 g/mol',den:'2.13 g/cm³',temp:'Ambient · dry',hp:'H290 · H314',ppe:'Nitrile gloves · Goggles',disp:'Base waste — Drum 09 (label: NaOH)',own:'K. Richter'},
+ {n:'Hydrochloric acid 37%',f:'HCl',cas:'7647-01-0',h:['Corrosive'],loc:'CB-03 · Acid cabinet',exp:'2026-08-19',qty:'5 × 2.5 L',st:'in',mw:'36.46 g/mol',den:'1.19 g/mL',temp:'Ambient · ventilated',hp:'H290 · H314 · H335',ppe:'Gloves · Goggles · Fume hood',disp:'Mineral acid waste — Neutralize before collection',own:'EHS Office'},
+ {n:'Formaldehyde solution 37%',f:'CH₂O',cas:'50-00-0',h:['Toxic','Flammable'],loc:'CB-02 · Ventilated cabinet',exp:'2025-03-28',qty:'2 × 1 L',st:'in',mw:'30.03 g/mol',den:'1.09 g/mL',temp:'Ambient · below 25 °C',hp:'H301+H311+H331 · H314 · H317 · H350',ppe:'Double gloves · Goggles · Fume hood mandatory',disp:'Special waste — marked container SW-04',own:'A. Berg'},
+ {n:'Acetone, analytical grade',f:'C₃H₆O',cas:'67-64-1',h:['Flammable','Irritant'],loc:'SC-01 · Solvent cabinet',exp:'2025-11-30',qty:'9 × 2.5 L',st:'in',mw:'58.08 g/mol',den:'0.784 g/mL',temp:'Ambient',hp:'H225 · H319 · H336',ppe:'Nitrile gloves · Goggles',disp:'Halogen-free organic waste — Drum 12',own:'J. Tan'},
+ {n:'Methanol 99.9%',f:'CH₄O',cas:'67-56-1',h:['Flammable','Toxic'],loc:'SC-01 · Solvent cabinet',exp:'2026-04-25',qty:'7 × 2.5 L',st:'in',mw:'32.04 g/mol',den:'0.792 g/mL',temp:'Ambient',hp:'H225 · H301+H311+H331 · H370',ppe:'Gloves · Goggles · Fume hood',disp:'Halogen-free organic waste — Drum 12',own:'K. Richter'},
+ {n:'Glycerol 99%',f:'C₃H₈O₃',cas:'56-81-5',h:['Non-hazardous'],loc:'SH-A1 · Dry shelf',exp:'2028-01-01',qty:'3 × 5 L',st:'in',mw:'92.09 g/mol',den:'1.26 g/mL',temp:'Ambient',hp:'—',ppe:'Standard laboratory PPE',disp:'Drain-safe in small quantities · confirm SOP P-071',own:'A. Berg'},
+ {n:'DMSO, anhydrous',f:'C₂H₆OS',cas:'67-68-5',h:['Irritant'],loc:'FR-01 · Shelf 2',exp:'2025-09-14',qty:'4 × 100 mL',st:'in',mw:'78.13 g/mol',den:'1.10 g/mL',temp:'+4 °C',hp:'H315 · H319 · H335',ppe:'Butyl gloves (penetrates nitrile) · Goggles',disp:'Halogen-free organic waste — Drum 12',own:'M. Weber'},
+ {n:'Ethidium bromide 1% solution',f:'C₂₁H₂₀BrN₃',cas:'1239-45-8',h:['Toxic'],loc:'DC-01 · Restricted access',exp:'2024-12-15',qty:'1 × 10 mL',st:'out',mw:'394.29 g/mol',den:'—',temp:'Ambient · dark',hp:'H302 · H330 · H341',ppe:'Double nitrile gloves · Lab coat · Trained users only',disp:'Mutagenic waste — purple-lidded container MW-02',own:'EHS Office'},
+ {n:'TRIzol reagent',f:'—',cas:'—',h:['Toxic','Corrosive'],loc:'FR-01 · Shelf 1',exp:'2025-06-30',qty:'6 × 200 mL',st:'in',mw:'proprietary',den:'—',temp:'+4 °C',hp:'H301 · H314 · H335 · H351',ppe:'Gloves · Goggles · Fume hood',disp:'Phenol-containing waste — Drum 07',own:'K. Richter'},
+ {n:'Isopropanol 99%',f:'C₃H₈O',cas:'67-63-0',h:['Flammable','Irritant'],loc:'SC-01 · Solvent cabinet',exp:'2026-02-11',qty:'10 × 2.5 L',st:'in',mw:'60.10 g/mol',den:'0.785 g/mL',temp:'Ambient',hp:'H225 · H319 · H336',ppe:'Nitrile gloves · Goggles',disp:'Halogen-free organic waste — Drum 12',own:'J. Tan'},
+ {n:'Hydrogen peroxide 30%',f:'H₂O₂',cas:'7722-84-1',h:['Oxidizer','Corrosive'],loc:'FR-02 · Shelf 1',exp:'2025-04-20',qty:'2 × 500 mL',st:'low',mw:'34.01 g/mol',den:'1.11 g/mL',temp:'+4 °C · dark bottle',hp:'H271 · H302 · H314',ppe:'Gloves · Goggles · Apron',disp:'Dilute 10× before drain · confirm SOP P-071',own:'EHS Office'}
+];
+let hz='All';
+const hzList=['All','Flammable','Corrosive','Toxic','Oxidizer','Irritant'];
+document.getElementById('hzChips').innerHTML=hzList.map(h=>`<button class="fchip ${h==='All'?'on':''}" data-h="${h}" onclick="setHz('${h}')">${h==='All'?'':`<span class="shape-dia ${hzColor[h]}"></span>`}${h}</button>`).join('');
+function setHz(h){hz=h;document.querySelectorAll('#hzChips .fchip').forEach(b=>b.classList.toggle('on',b.dataset.h===h));render();}
+
+function expCell(exp){
+    const d=Math.ceil((new Date(exp)-NOW)/864e5);
+    if(d<0) return `<p class="font-mono text-xs font-semibold text-baured">${exp}</p><p class="font-mono text-[10px] text-baured uppercase tracking-wider mt-0.5">Expired ${-d} d ago</p>`;
+    if(d<=45) return `<p class="font-mono text-xs font-semibold text-baured">${exp}</p><p class="font-mono text-[10px] text-baured uppercase tracking-wider mt-0.5">${d} d left</p>`;
+    if(d<=120) return `<p class="font-mono text-xs font-semibold">${exp}</p><p class="font-mono text-[10px] text-[#8a6508] uppercase tracking-wider mt-0.5">${d} d left</p>`;
+    return `<p class="font-mono text-xs">${exp}</p>`;
+}
+function statusCell(st){
+    if(st==='out')return `<span class="chip border-baured text-baured"><span class="shape-sq bg-baured"></span>Expired</span>`;
+    if(st==='low')return `<span class="chip"><span class="tri tri-y" style="transform:scale(.85)"></span>Low</span>`;
+    return `<span class="chip"><span class="shape-circle bg-baublue"></span>In stock</span>`;
+}
+function render(){
+    const q=document.getElementById('q').value.toLowerCase();
+    const list=chems.filter(c=>{
+        if(hz!=='All'&&!c.h.includes(hz))return false;
+        if(q&&!(c.n.toLowerCase().includes(q)||c.f.toLowerCase().includes(q)||c.cas.includes(q)))return false;
+        return true;
+    });
+    document.getElementById('count').textContent=`Showing ${list.length} of ${chems.length} substances`;
+    document.getElementById('rows').innerHTML=list.map((c)=>{
+        const i=chems.indexOf(c);
+        return `<tr class="hover:bg-paper/60 cursor-pointer" onclick="openDrawer(${i})">
+            <td class="td"><p class="font-medium">${c.n}</p><p class="font-mono text-[11px] text-ink/45 mt-0.5">${c.f}</p></td>
+            <td class="td font-mono text-xs">${c.cas}</td>
+            <td class="td"><div class="flex flex-wrap gap-1.5">${c.h.map(h=>`<span class="chip !h-[22px] !px-1.5"><span class="shape-dia !w-2 !h-2 ${hzColor[h]}"></span>${h}</span>`).join('')}</div></td>
+            <td class="td font-mono text-[11px]">${c.loc}</td>
+            <td class="td">${expCell(c.exp)}</td>
+            <td class="td font-mono text-xs font-semibold whitespace-nowrap">${c.qty}</td>
+            <td class="td">${statusCell(c.st)}</td>
+        </tr>`;
+    }).join('')||`<tr><td colspan="7" class="td text-center py-10 text-ink/45 font-mono text-xs uppercase tracking-widest">No substances match the filter</td></tr>`;
+    feather.replace();
+}
+function field(l,v){return `<div class="border-b border-ink/10 py-2.5 flex justify-between gap-4"><span class="lbl !mb-0 pt-0.5">${l}</span><span class="font-mono text-xs text-right">${v}</span></div>`;}
+function openDrawer(i){
+    const c=chems[i];
+    document.getElementById('dName').textContent=c.n;
+    document.getElementById('dMeta').textContent=`${c.f} · CAS ${c.cas}`;
+    document.getElementById('dBody').innerHTML=`
+        <section>
+            <p class="lbl">Hazard classification (GHS)</p>
+            <div class="flex flex-wrap gap-2 mt-2">${c.h.map(h=>`<span class="chip !h-7"><span class="shape-dia ${hzColor[h]}"></span>${h}</span>`).join('')}</div>
+            <p class="font-mono text-[11px] text-ink/60 mt-3 leading-relaxed">${c.hp}</p>
+        </section>
+        <section class="grid grid-cols-3 gap-3">
+            <div class="border-2 border-ink p-3 text-center"><p class="lbl !mb-1">Molar mass</p><p class="font-mono text-xs font-semibold">${c.mw}</p></div>
+            <div class="border-2 border-ink p-3 text-center"><p class="lbl !mb-1">Density</p><p class="font-mono text-xs font-semibold">${c.den}</p></div>
+            <div class="border-2 border-ink p-3 text-center"><p class="lbl !mb-1">Storage T</p><p class="font-mono text-xs font-semibold">${c.temp}</p></div>
+        </section>
+        <section>
+            ${field('Storage location',c.loc)}
+            ${field('Quantity on hand',c.qty)}
+            ${field('Expiry date',c.exp)}
+            ${field('Custodian',c.own)}
+        </section>
+        <section class="border-2 border-ink border-l-[10px] border-l-baured p-4 bg-paper">
+            <p class="lbl">Required PPE</p><p class="text-sm leading-relaxed">${c.ppe}</p>
+        </section>
+        <section class="border-2 border-ink p-4">
+            <p class="lbl">Disposal route</p><p class="text-sm leading-relaxed">${c.disp}</p>
+        </section>
+        <div class="flex gap-2 pt-1">
+            <button class="btn btn-ink flex-1" onclick="toast('SDS opened — ${c.cas}')"><i data-feather="file-text" class="w-4 h-4"></i>Open SDS</button>
+            <button class="btn btn-line" onclick="toast('Movement form for ${c.cas}')"><i data-feather="edit-2" class="w-4 h-4"></i>Log movement</button>
+        </div>`;
+    document.getElementById('drawerWrap').classList.remove('hidden');
+    requestAnimationFrame(()=>document.getElementById('drawer').classList.remove('translate-x-full'));
+    feather.replace();
+}
+function closeDrawer(){
+    document.getElementById('drawer').classList.add('translate-x-full');
+    setTimeout(()=>document.getElementById('drawerWrap').classList.add('hidden'),180);
+}
+render();
+feather.replace();
+</script>
+</body>
+</html>

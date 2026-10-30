@@ -1,6 +1,9 @@
 <script lang="ts">
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   let {
     form,
@@ -64,7 +67,7 @@
 </div>
 <div class="form-group">
   <label class="form-label">Emoji Icon (optional)</label>
-  <input class="form-input" id="c-emoji" placeholder="e.g. 🧪 or 🥶" bind:value={form.emoji}>
+  <input class="form-input" id="c-emoji" placeholder={design === "bauhaus" ? "optional icon" : "e.g. 🧪 or 🥶"} bind:value={form.emoji}>
 </div>
 
 {#if type === "cabinet"}
@@ -112,11 +115,11 @@
               <span style="color: var(--text-muted); align-self: center; font-size: 0.85rem;">to</span>
               <input type="number" class="form-input range-end" min="1" max="999" style="width: 80px; padding: 0.25rem; font-size: 0.85rem;" bind:value={range.end}>
             {/if}
-            <button type="button" class="btn" style="padding: 0.25rem 0.5rem; display: inline-flex; align-items: center; background: rgba(239,68,68,0.15); color: var(--accent-red); border: none; font-size: 0.8rem; margin-left: auto; border-radius: 4px; cursor: pointer;" onclick={() => form.customRanges.splice(i, 1)}>🗑️</button>
+            <button type="button" class="btn" style="padding: 0.25rem 0.5rem; display: inline-flex; align-items: center; background: rgba(239,68,68,0.15); color: var(--accent-red); border: none; font-size: 0.8rem; margin-left: auto; border-radius: 4px; cursor: pointer;" onclick={() => form.customRanges.splice(i, 1)}>{design === "bauhaus" ? "×" : "🗑️"}</button>
           </div>
         {/each}
       </div>
-      <button type="button" class="btn btn-secondary" id="btn-add-custom-range" style="padding: 0.3rem 0.6rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 4px; cursor: pointer;" onclick={addRange}>➕ Add Range</button>
+      <button type="button" class="btn btn-secondary" id="btn-add-custom-range" style="padding: 0.3rem 0.6rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 4px; cursor: pointer;" onclick={addRange}>{design === "bauhaus" ? "+ Add Range" : "➕ Add Range"}</button>
     </div>
     <div class="form-group" style="margin-top: 0.75rem;">
       <label class="form-label">Extra Custom Shelf Names (One per line)</label>

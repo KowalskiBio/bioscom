@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LabHaus — Inventory</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='8' r='4' fill='%23DE2C1E'/><rect x='10' y='4' width='8' height='8' fill='%231D4FA2'/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <script>
+    tailwind.config = { theme: { extend: {
+        colors: { ink:'#171512', paper:'#F4F0E6', baured:'#DE2C1E', baublue:'#1D4FA2', bauyel:'#F0B62B' },
+        fontFamily: { display:['Jost','sans-serif'], body:['Inter','sans-serif'], mono:['"IBM Plex Mono"','monospace'] }
+    }}}
+    </script>
+    <style type="text/tailwindcss">
+        .card{@apply bg-white border-2 border-ink;}
+        .btn{@apply inline-flex items-center justify-center gap-2 px-4 h-10 border-2 border-ink font-display text-xs font-semibold uppercase tracking-[0.15em] select-none cursor-pointer transition-colors;}
+        .btn-ink{@apply bg-ink text-white hover:bg-paper hover:text-ink;}
+        .btn-line{@apply bg-white text-ink hover:bg-ink hover:text-white;}
+        .chip{@apply inline-flex items-center justify-center gap-1.5 px-2 h-6 border border-ink text-[10px] font-semibold uppercase tracking-[0.12em] cursor-pointer select-none;}
+        .fchip{@apply inline-flex items-center gap-2 px-3 h-9 border-2 border-ink text-[11px] font-semibold uppercase tracking-[0.12em] cursor-pointer select-none bg-white hover:bg-paper transition-colors;}
+        .fchip.on{@apply bg-ink text-white;}
+        .lbl{@apply block text-[10px] font-semibold uppercase tracking-[0.2em] text-ink/50 mb-1;}
+        .navlink{@apply flex items-center gap-3 px-6 py-[11px] text-sm font-medium text-ink/65 border-l-4 border-transparent hover:bg-paper hover:text-ink transition-colors;}
+        .navlink.active{@apply bg-ink text-white;}
+        .shape-circle{@apply inline-block w-2.5 h-2.5 rounded-full shrink-0;}
+        .shape-sq{@apply inline-block w-2.5 h-2.5 shrink-0;}
+        .th{@apply text-left text-[10px] font-semibold uppercase tracking-[0.15em] text-ink/50 px-4 py-2.5 border-b-2 border-ink whitespace-nowrap;}
+        .td{@apply px-4 py-3 border-b border-ink/10 text-sm;}
+        .input{@apply w-full h-10 px-3 bg-white border-2 border-ink text-sm outline-none focus:bg-paper placeholder:text-ink/35;}
+    </style>
+    <style>
+        body{background:#F4F0E6;}
+        ::selection{background:#1D4FA2;color:#fff;}
+        ::-webkit-scrollbar{width:10px;height:10px;}
+        ::-webkit-scrollbar-track{background:#F4F0E6;}
+        ::-webkit-scrollbar-thumb{background:#171512;border:3px solid #F4F0E6;}
+        .navlink:hover{border-color:var(--c,#171512);}
+        .navlink.active{border-color:var(--c);}
+        .tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid;display:inline-block;}
+        .tri-y{border-bottom-color:#F0B62B;}.tri-r{border-bottom-color:#DE2C1E;}
+    </style>
+</head>
+<body class="text-ink font-body antialiased">
+
+<aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-64 -translate-x-full lg:translate-x-0 transition-transform duration-200 bg-white border-r-2 border-ink flex flex-col">
+    <div class="h-20 flex items-center gap-3 px-5 border-b-2 border-ink">
+        <svg width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="9" fill="#DE2C1E"/><polygon points="28,1 37,19 19,19" fill="#F0B62B"/><rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+        </svg>
+        <div><p class="font-display font-semibold text-lg leading-none tracking-wide">LABHAUS</p><p class="text-[10px] uppercase tracking-[0.25em] text-ink/50 mt-1">Lab Operations</p></div>
+    </div>
+    <nav class="flex-1 py-5 overflow-y-auto">
+        <p class="px-6 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Overview</p>
+        <a href="index.html" class="navlink" style="--c:#DE2C1E"><i data-feather="grid" class="w-4 h-4"></i>Dashboard</a>
+        <p class="px-6 mt-5 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Assets</p>
+        <a href="inventory.html" class="navlink active" style="--c:#1D4FA2"><i data-feather="package" class="w-4 h-4"></i>Inventory<span class="ml-auto font-mono text-[10px] opacity-50">3.7k</span></a>
+        <a href="chemicals.html" class="navlink" style="--c:#DE2C1E"><i data-feather="droplet" class="w-4 h-4"></i>Chemicals<span class="ml-auto font-mono text-[10px] opacity-50">1.3k</span></a>
+        <a href="storage.html" class="navlink" style="--c:#F0B62B"><i data-feather="archive" class="w-4 h-4"></i>Storage</a>
+        <p class="px-6 mt-5 mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-ink/40">Workflows</p>
+        <a href="protocols.html" class="navlink" style="--c:#1D4FA2"><i data-feather="file-text" class="w-4 h-4"></i>Protocols</a>
+        <a href="reservations.html" class="navlink" style="--c:#DE2C1E"><i data-feather="calendar" class="w-4 h-4"></i>Reservations<span class="ml-auto w-5 h-5 grid place-items-center bg-baured text-white text-[10px] font-bold">3</span></a>
+    </nav>
+    <div class="p-5 border-t-2 border-ink space-y-2.5 text-xs">
+        <p class="lbl !mb-2">Facility status</p>
+        <div class="flex items-center gap-2.5"><span class="tri tri-y"></span><span class="flex-1">Cold chain</span><span class="font-mono text-[10px] text-baured font-semibold">1 ALERT</span></div>
+        <div class="flex items-center gap-2.5"><span class="shape-circle bg-baublue"></span><span class="flex-1">Sensors network</span><span class="font-mono text-[10px] text-ink/50">NOMINAL</span></div>
+        <div class="flex items-center gap-2.5"><span class="shape-sq bg-ink"></span><span class="flex-1">Data backup</span><span class="font-mono text-[10px] text-ink/50">02:00</span></div>
+    </div>
+    <div class="p-4 border-t-2 border-ink flex items-center gap-3">
+        <span class="w-9 h-9 bg-bauyel border-2 border-ink grid place-items-center font-display font-bold text-sm">AB</span>
+        <div class="leading-tight"><p class="text-xs font-semibold">Dr. A. Berg</p><p class="text-[10px] uppercase tracking-widest text-ink/50">Lab Manager</p></div>
+        <i data-feather="settings" class="w-4 h-4 ml-auto text-ink/40"></i>
+    </div>
+</aside>
+<div id="overlay" class="hidden fixed inset-0 bg-ink/50 z-30 lg:hidden"></div>
+
+<div class="lg:pl-64 min-h-screen flex flex-col">
+    <header class="sticky top-0 z-20 h-16 bg-paper/95 backdrop-blur border-b-2 border-ink flex items-center gap-4 px-4 sm:px-8">
+        <button id="menuBtn" class="lg:hidden w-9 h-9 border-2 border-ink bg-white grid place-items-center"><i data-feather="menu" class="w-4 h-4"></i></button>
+        <p class="font-mono text-[11px] tracking-[0.2em] uppercase text-ink/60">LABHAUS / <span class="text-ink font-semibold">INVENTORY</span></p>
+        <div class="ml-auto flex items-center gap-3">
+            <button class="relative w-9 h-9 border-2 border-ink bg-white grid place-items-center hover:bg-ink hover:text-white transition-colors"><i data-feather="bell" class="w-4 h-4"></i><span class="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-baured border-2 border-paper rounded-full"></span></button>
+            <span class="w-9 h-9 bg-bauyel border-2 border-ink grid place-items-center font-display font-bold text-sm">AB</span>
+        </div>
+    </header>
+
+    <main class="flex-1 px-4 sm:px-8 py-8 max-w-[1400px] w-full mx-auto">
+        <div class="flex flex-wrap items-end justify-between gap-4 border-b-2 border-ink pb-5">
+            <div>
+                <div class="flex items-center gap-2 mb-2"><span class="shape-sq bg-baublue"></span><p class="uppercase tracking-[0.25em] text-[10px] font-semibold text-ink/60">Module — 02 / Assets</p></div>
+                <h1 class="font-display text-3xl sm:text-4xl font-semibold tracking-tight">Inventory</h1>
+                <p class="font-mono text-xs text-ink/50 mt-2 uppercase tracking-wider">3,742 items · 96% locations verified · Last audit 2025-02-20</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button class="btn btn-line" onclick="toast('Stock report exported — CSV')"><i data-feather="download" class="w-4 h-4"></i>Export</button>
+                <button class="btn btn-line" onclick="toast('Label queue — 12 labels sent to printer')"><i data-feather="printer" class="w-4 h-4"></i>Print labels</button>
+                <button class="btn btn-ink" onclick="openModal()"><i data-feather="plus" class="w-4 h-4"></i>Add item</button>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex flex-wrap items-center gap-3 mt-6">
+            <div class="flex items-center gap-2 border-2 border-ink bg-white px-3 h-10 w-full sm:w-72">
+                <i data-feather="search" class="w-4 h-4 text-ink/45 shrink-0"></i>
+                <input id="q" oninput="render()" placeholder="Search name or SKU…" class="bg-transparent outline-none text-sm w-full placeholder:text-ink/40">
+            </div>
+            <div id="catChips" class="flex flex-wrap gap-2"></div>
+            <select id="stFilter" onchange="render()" class="h-10 px-3 bg-white border-2 border-ink text-[11px] font-semibold uppercase tracking-[0.12em] outline-none">
+                <option value="">All statuses</option><option value="in">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option>
+            </select>
+            <p id="count" class="ml-auto font-mono text-[11px] uppercase tracking-wider text-ink/50"></p>
+        </div>
+
+        <!-- Table -->
+        <div class="card mt-5 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[860px]">
+                    <thead><tr>
+                        <th class="th">Item</th><th class="th">Category</th><th class="th">Location</th><th class="th w-[220px]">Stock level</th><th class="th">Status</th><th class="th text-right">Edit</th>
+                    </tr></thead>
+                    <tbody id="rows"></tbody>
+                </table>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3 border-t-2 border-ink">
+                <p class="font-mono text-[11px] text-ink/50 uppercase tracking-wider">Page 1 of 4</p>
+                <div class="flex gap-2">
+                    <button class="btn btn-line !h-8 !px-2.5" onclick="toast('Already on first page')"><i data-feather="chevron-left" class="w-4 h-4"></i></button>
+                    <button class="btn btn-line !h-8 !px-2.5" onclick="toast('Loading page 2 — demo shows page 1')"><i data-feather="chevron-right" class="w-4 h-4"></i></button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="border-t-2 border-ink py-5 px-8 flex flex-wrap gap-2 items-center justify-between text-[10px] uppercase tracking-[0.2em] text-ink/50">
+        <p>© 2025 LABHAUS · Building B · Facility Operations</p>
+        <p class="font-display text-sm normal-case tracking-normal text-ink/75">Form follows function.</p>
+    </footer>
+</div>
+
+<!-- Add item modal -->
+<div id="modal" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-ink/60" onclick="closeModal()"></div>
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[540px] max-w-[92vw] card">
+        <div class="flex items-center justify-between px-5 py-4 border-b-2 border-ink">
+            <div class="flex items-center gap-3"><span class="shape-sq bg-baublue"></span><h3 class="font-display font-semibold uppercase tracking-wider text-sm">Register new item</h3></div>
+            <button class="w-8 h-8 border-2 border-ink grid place-items-center hover:bg-ink hover:text-white" onclick="closeModal()"><i data-feather="x" class="w-4 h-4"></i></button>
+        </div>
+        <form class="p-5 grid grid-cols-2 gap-4" onsubmit="addItem(event)">
+            <div class="col-span-2"><label class="lbl">Item name</label><input id="fName" required class="input" placeholder="e.g. Pipette tips 1000 µL, filtered"></div>
+            <div><label class="lbl">Category</label><select id="fCat" class="input"><option>Consumables</option><option>Reagents</option><option>Glassware</option><option>Safety</option></select></div>
+            <div><label class="lbl">Location</label><input id="fLoc" required class="input font-mono" placeholder="B-101 / DR-06"></div>
+            <div><label class="lbl">Quantity</label><input id="fQty" required type="number" min="0" class="input font-mono" placeholder="0"></div>
+            <div><label class="lbl">Par level</label><input id="fPar" required type="number" min="1" class="input font-mono" placeholder="10"></div>
+            <div class="col-span-2"><label class="lbl">Unit</label><input id="fUnit" required class="input" placeholder="pcs / boxes / L / mL"></div>
+            <div class="col-span-2 flex gap-2 pt-1">
+                <button type="submit" class="btn btn-ink flex-1"><i data-feather="check" class="w-4 h-4"></i>Register item</button>
+                <button type="button" class="btn btn-line" onclick="closeModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const sb=document.getElementById('sidebar'),ov=document.getElementById('overlay');
+document.getElementById('menuBtn').onclick=()=>{sb.classList.remove('-translate-x-full');ov.classList.remove('hidden')};
+ov.onclick=()=>{sb.classList.add('-translate-x-full');ov.classList.add('hidden')};
+function toast(msg){const t=document.createElement('div');t.className='fixed top-4 right-4 z-[80] bg-ink text-white text-[11px] font-semibold uppercase tracking-[0.15em] px-4 py-3 border-2 border-ink flex items-center gap-2.5';t.innerHTML=`<span class="shape-sq bg-bauyel"></span>${msg}`;document.body.appendChild(t);setTimeout(()=>t.remove(),2400);}
+function segBar(pct,color='bg-ink',n=12){const f=Math.max(0,Math.round(pct/100*n));let s='<div class="flex gap-[3px]">';for(let i=0;i<n;i++)s+=`<span class="h-2.5 flex-1 border border-ink ${i<f?color:'bg-white'}"></span>`;return s+'</div>';}
+
+const catColor={'Consumables':'bg-ink','Reagents':'bg-baured','Glassware':'bg-baublue','Safety':'bg-bauyel'};
+let cat='All';
+let items=[
+ {n:'Nitrile examination gloves · M',c:'Safety',sku:'GLV-NTR-M',loc:'B-101 / DR-02',qty:34,unit:'boxes',par:20},
+ {n:'Microcentrifuge tubes 1.5 mL',c:'Consumables',sku:'TUB-MCT-15',loc:'B-101 / DR-04',qty:12,unit:'bags',par:10},
+ {n:'Serological pipettes 10 mL, sterile',c:'Consumables',sku:'PIP-SER-10',loc:'B-101 / DR-04',qty:180,unit:'pcs',par:150},
+ {n:'Serological pipettes 25 mL, sterile',c:'Consumables',sku:'PIP-SER-25',loc:'B-101 / DR-04',qty:22,unit:'pcs',par:100},
+ {n:'Pipette tips 200 µL, filtered',c:'Consumables',sku:'TIP-200F',loc:'B-101 / DR-03',qty:6,unit:'racks',par:24},
+ {n:'Pipette tips 10 µL, filtered',c:'Consumables',sku:'TIP-010F',loc:'B-101 / DR-03',qty:40,unit:'racks',par:24},
+ {n:'96-well culture plates, TC-treated',c:'Consumables',sku:'PLT-96TC',loc:'B-101 / DR-05',qty:15,unit:'sleeves',par:10},
+ {n:'Ethanol absolute 99.8%',c:'Reagents',sku:'SOL-ETH-99',loc:'B-101 / SC-01',qty:2,unit:'bottles 1 L',par:6},
+ {n:'Tris base, molecular grade',c:'Reagents',sku:'RGT-TRIS',loc:'B-101 / SH-A2',qty:5,unit:'kg',par:2},
+ {n:'Agarose, standard melt',c:'Reagents',sku:'RGT-AGA',loc:'B-101 / SH-A2',qty:3,unit:'bottles 500 g',par:2},
+ {n:'Borosilicate beakers 250 mL',c:'Glassware',sku:'GLS-BKR-250',loc:'B-101 / CB-01',qty:24,unit:'pcs',par:12},
+ {n:'Volumetric flasks 100 mL, class A',c:'Glassware',sku:'GLS-FLK-100',loc:'B-101 / CB-01',qty:9,unit:'pcs',par:8},
+ {n:'Safety goggles, anti-fog',c:'Safety',sku:'PPE-GOG-AF',loc:'B-101 / DR-01',qty:0,unit:'pcs',par:10},
+ {n:'Kimwipes delicate task wipes',c:'Consumables',sku:'WIP-KIM-1P',loc:'B-101 / DR-02',qty:28,unit:'boxes',par:15},
+ {n:'Parafilm M rolls, 10 cm',c:'Consumables',sku:'FLM-PAR-10',loc:'B-101 / DR-05',qty:7,unit:'rolls',par:6}
+];
+function status(it){if(it.qty===0)return{key:'out',html:'<span class="chip border-baured text-baured"><span class="shape-sq bg-baured"></span>Out of stock</span>',bar:'bg-baured'};if(it.qty<it.par*0.5)return{key:'low',html:'<span class="chip"><span class="tri tri-y" style="transform:scale(.85)"></span>Low stock</span>',bar:'bg-bauyel'};return{key:'in',html:'<span class="chip"><span class="shape-circle bg-baublue"></span>In stock</span>',bar:'bg-ink'};}
+
+const cats=['All','Consumables','Reagents','Glassware','Safety'];
+document.getElementById('catChips').innerHTML=cats.map(c=>`<button class="fchip ${c==='All'?'on':''}" data-c="${c}" onclick="setCat('${c}')">${c==='All'?'':`<span class="shape-sq ${catColor[c]}"></span>`}${c}</button>`).join('');
+function setCat(c){cat=c;document.querySelectorAll('#catChips .fchip').forEach(b=>b.classList.toggle('on',b.dataset.c===c));render();feather.replace();}
+
+function render(){
+    const q=document.getElementById('q').value.toLowerCase(),st=document.getElementById('stFilter').value;
+    const list=items.filter(it=>{
+        if(cat!=='All'&&it.c!==cat)return false;
+        if(st&&status(it).key!==st)return false;
+        if(q&&!(it.n.toLowerCase().includes(q)||it.sku.toLowerCase().includes(q)))return false;
+        return true;
+    });
+    document.getElementById('count').textContent=`Showing ${list.length} of ${items.length} records`;
+    document.getElementById('rows').innerHTML=list.map((it,i)=>{
+        const s=status(it),pct=Math.min(100,Math.round(it.qty/(it.par*1.5)*100));
+        return `<tr class="hover:bg-paper/60">
+            <td class="td"><p class="font-medium">${it.n}</p><p class="font-mono text-[11px] text-ink/45 mt-0.5">${it.sku}</p></td>
+            <td class="td"><span class="chip !cursor-default"><span class="shape-sq ${catColor[it.c]}"></span>${it.c}</span></td>
+            <td class="td font-mono text-xs">${it.loc}</td>
+            <td class="td"><div class="flex items-center gap-3"><div class="flex-1">${segBar(pct,s.bar)}</div><p class="font-mono text-xs font-semibold whitespace-nowrap">${it.qty} <span class="text-ink/40 font-normal">/ ${it.par}</span></p></div><p class="font-mono text-[10px] text-ink/40 mt-1 uppercase tracking-wider">${it.unit} · par level</p></td>
+            <td class="td">${s.html}</td>
+            <td class="td text-right"><button class="w-8 h-8 border-2 border-ink grid place-items-center hover:bg-ink hover:text-white ml-auto" onclick="toast('Editing ${it.sku}')"><i data-feather="edit-2" class="w-3.5 h-3.5"></i></button></td>
+        </tr>`;
+    }).join('')||`<tr><td colspan="6" class="td text-center py-10 text-ink/45 font-mono text-xs uppercase tracking-widest">No records match the filter</td></tr>`;
+    feather.replace();
+}
+
+function openModal(){document.getElementById('modal').classList.remove('hidden');feather.replace();}
+function closeModal(){document.getElementById('modal').classList.add('hidden');}
+function addItem(e){
+    e.preventDefault();
+    const n=document.getElementById('fName').value.trim();
+    items.unshift({n,c:document.getElementById('fCat').value,sku:'NEW-'+String(Math.floor(Math.random()*900)+100),loc:document.getElementById('fLoc').value.toUpperCase(),qty:+document.getElementById('fQty').value,unit:document.getElementById('fUnit').value,par:+document.getElementById('fPar').value});
+    closeModal(); e.target.reset(); render(); toast('Item registered — '+n);
+}
+render();
+feather.replace();
+</script>
+</body>
+</html>

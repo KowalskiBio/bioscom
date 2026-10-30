@@ -8,6 +8,9 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { opDeleteAsset, opDeleteAssetRoom, roleCanWrite } from "../../lib/ops";
   import { openAssetForm, openAssetRoomForm } from "../../lib/forms";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   let {
     searchQuery = $bindable(""),
@@ -133,12 +136,12 @@
 
 <div id="assets-grid" class="assets-grid" style={`display: ${list.length === 0 && q !== "" ? "block" : "grid"};`}>
     {#if q !== "" && list.length === 0}
-      <div class="empty-state" style="grid-column: 1 / -1; padding: 3rem;"><div class="empty-icon">🔍</div><h2>No matching items found</h2><p>Try searching for a different name, brand, or model</p></div>
+      <div class="empty-state" style="grid-column: 1 / -1; padding: 3rem;"><div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-circle-ink" aria-hidden="true"></span>{:else}🔍{/if}</div><h2>No matching items found</h2><p>Try searching for a different name, brand, or model</p></div>
     {/if}
     {#each rooms as room (room.id)}
       {@const roomAssets = list.filter((a) => a.roomId === room.id)}
       <div style="grid-column: 1 / -1; margin-top: 1rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--border-subtle); padding-bottom: 0.25rem; display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">🚪 {room.name}</h3>
+        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">{#if design !== "bauhaus"}🚪 {/if}{room.name}</h3>
         {#if !isReader}
           <div style="display:flex; gap:0.5rem;">
             <button class="btn-inline" style="font-size:0.75rem;" onclick={() => openAssetRoomForm({ id: room.id, name: room.name ?? "" })}>Edit Room</button>
@@ -154,12 +157,12 @@
     {/each}
     {#if unassigned.length > 0}
       <div style="grid-column: 1 / -1; margin-top: 1rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--border-subtle); padding-bottom: 0.25rem; display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">🚪 No Room Assigned</h3>
+        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">{#if design !== "bauhaus"}🚪 {/if}No Room Assigned</h3>
       </div>
       {#each unassigned as a (a.id)}{@render assetCard(a)}{/each}
     {/if}
 </div>
 <div id="assets-empty" class="empty-state" style={`display: ${showEmpty ? "block" : "none"};`}>
-    <div class="empty-icon">📦</div><h2>No items in lab inventory yet</h2><p>Add your first laboratory asset, device, or equipment item</p>
+    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📦{/if}</div><h2>No items in lab inventory yet</h2><p>Add your first laboratory asset, device, or equipment item</p>
     <button class="btn-primary" id="btn-add-asset-empty"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Asset</span></button>
 </div>

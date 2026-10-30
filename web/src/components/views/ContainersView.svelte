@@ -5,6 +5,9 @@
   import { countChems } from "../../lib/inventoryUtils";
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   const route = $derived(router.route);
   const roomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
@@ -38,23 +41,24 @@
   {@const isMySharedContainer = !isFromOtherLab && (cont.sharedWithGroupIds ?? []).length > 0}
   {@const groupNames = Object.fromEntries(groupList.items.map((g) => [g.id, g.name]))}
   {@const otherGroupIds = (cont.sharedWithGroupIds ?? []).filter((gid) => gid !== currentGroup.groupId)}
+  {@const glyphKind = cont.type === "cabinet" ? "square-red" : cont.type === "fridge" ? "circle-blue" : cont.type === "freezer" ? "square-ink" : cont.type === "deepfreezer" ? "circle-ink" : "square-ink"}
   <div
     class={`card ${cls}-card`}
     style={isMySharedContainer ? "border: 2px solid var(--accent-blue); box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);" : ""}
     onclick={() => { navigateTo("detail", { roomId, containerId: cont.id }); }}
   >
     <span class={`card-type-badge ${cls}-badge`}>{cont.type === "deepfreezer" ? "Deep Freezer" : typeName}</span>
-    <div class={`card-icon ${cls}`}>{cont.emoji || icon}</div>
+    <div class={`card-icon ${cls}`}>{#if design === "bauhaus"}<span class={`glyph glyph-${glyphKind}`} aria-hidden="true"></span>{:else}{cont.emoji || icon}{/if}</div>
     <div class="card-title">{cont.name}{isFromOtherLab ? " (Shared)" : ""}</div>
     <div class="card-description">{cont.description || ""}
       <br>
       {#if isFromOtherLab}
-        <span style="font-size: 0.7rem; background: rgba(34, 197, 94, 0.15); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">🔗 Shared from: {cont.ownerGroupName ?? "—"} (Room: {shared.find((sc) => sc.container.id === cont.id)?.roomName ?? "—"})</span>
+        <span style="font-size: 0.7rem; background: rgba(34, 197, 94, 0.15); color: var(--accent-green); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared from: {cont.ownerGroupName ?? "—"} (Room: {shared.find((sc) => sc.container.id === cont.id)?.roomName ?? "—"})</span>
       {:else if otherGroupIds.length > 0}
-        <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">🔗 Shared to: {otherGroupIds.map((gid) => groupNames[gid] ?? "Unknown Lab").join(", ")}</span>
+        <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; display: inline-block; margin-top: 0.4rem; font-weight: 600;">{#if design !== "bauhaus"}🔗 {/if}Shared to: {otherGroupIds.map((gid) => groupNames[gid] ?? "Unknown Lab").join(", ")}</span>
       {/if}
     </div>
-    <div class="card-stats"><div class="card-stat">📁 <span class="card-stat-value">{(cont.shelves ?? []).length}</span> shelves</div><div class="card-stat">🧪 <span class="card-stat-value">{chemCount}</span> chemicals</div></div>
+    <div class="card-stats"><div class="card-stat">{#if design !== "bauhaus"}📁 {/if}<span class="card-stat-value">{(cont.shelves ?? []).length}</span> shelves</div><div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{chemCount}</span> chemicals</div></div>
   </div>
 {/snippet}
 
@@ -82,5 +86,5 @@
     </div>
 </div>
 <div id="containers-empty" class="empty-state" style={`display: ${showEmpty ? "block" : "none"};`}>
-    <div class="empty-icon">🗄️</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
+    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-red" aria-hidden="true"></span>{:else}🗄️{/if}</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
 </div>

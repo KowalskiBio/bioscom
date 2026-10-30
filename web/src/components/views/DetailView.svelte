@@ -31,6 +31,9 @@
     openChangeBoxColorForm,
   } from "../../lib/forms";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   let {
     searchQuery = $bindable(""),
@@ -174,7 +177,7 @@
         })}
         <div class="deepfreezer-nav">
           <div class="deepfreezer-nav-item">
-            <span class="deepfreezer-nav-text">🔍 Search Results inside Deep Freezer: {matching.length} items found</span>
+            <span class="deepfreezer-nav-text">{#if design !== "bauhaus"}🔍 {/if}Search Results inside Deep Freezer: {matching.length} items found</span>
           </div>
         </div>
         {#if matching.length === 0}
@@ -221,12 +224,12 @@
         <div class="deepfreezer-nav">
           <div class="deepfreezer-nav-item" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <div>
-              <span class="deepfreezer-nav-text">❄️ Deep Freezer Explorer</span>
+              <span class="deepfreezer-nav-text">{#if design !== "bauhaus"}❄️ {/if}Deep Freezer Explorer</span>
               <span class="deepfreezer-nav-separator">/</span>
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Rack</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>➕ Add Rack</button>
+              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>{design === "bauhaus" ? "+ Add Rack" : "➕ Add Rack"}</button>
             {/if}
           </div>
         </div>
@@ -239,7 +242,7 @@
               {@const totalItems = Object.values(racks[rackAtSlot] ?? {}).reduce((acc, sh) => acc + (sh.chemicals ?? []).length, 0)}
               <div class="deepfreezer-grid-cell" data-slot={i}>
                 <div class="deepfreezer-card rack-card" onclick={() => selectRack(rackAtSlot!)}>
-                  <div class="deepfreezer-card-icon">🗄️</div>
+                  <div class="deepfreezer-card-icon">{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}🗄️{/if}</div>
                   <div class="deepfreezer-card-title">Rack {rackAtSlot}</div>
                   <div class="deepfreezer-card-subtitle">{boxesCount} Boxes ({totalItems} samples)</div>
                 </div>
@@ -255,7 +258,7 @@
         <div class="deepfreezer-nav">
           <div class="deepfreezer-nav-item" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <div>
-              <span class="deepfreezer-nav-link" onclick={() => resetSelection()}>❄️ Deep Freezer Explorer</span>
+                <span class="deepfreezer-nav-link" onclick={() => resetSelection()}>{#if design !== "bauhaus"}❄️ {/if}Deep Freezer Explorer</span>
               <span class="deepfreezer-nav-separator">›</span>
               <span class="deepfreezer-nav-text">Rack {selectedRack}</span>
               <button class="deepfreezer-nav-btn" onclick={() => resetSelection()}>Change Rack</button>
@@ -263,7 +266,7 @@
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Box</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>➕ Add Box</button>
+              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>{design === "bauhaus" ? "+ Add Box" : "➕ Add Box"}</button>
             {/if}
           </div>
         </div>
@@ -277,14 +280,14 @@
               style={activeShelf.color ? `--custom-bg: ${boxColor}2d; --custom-border: ${boxColor}; --custom-bg-hover: ${boxColor}4d;` : ""}
               onclick={() => selectBox(bk)}
             >
-              <div class="deepfreezer-card-icon" style={`color: ${boxColor};`}>📦</div>
+              <div class="deepfreezer-card-icon" style={`color: ${boxColor};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</div>
               <div class="deepfreezer-card-title">Box {bk}</div>
               <div class="deepfreezer-card-subtitle">{sampleCount} samples</div>
               {#if !isReader}
                 <div class="deepfreezer-card-actions" onclick={(e) => e.stopPropagation()}>
-                  <button class="card-action-btn" title="Rename Box" onclick={() => openRenameShelfForm(room, cont, activeShelf.id, activeShelf.name)}>✏️</button>
-                  <button class="card-action-btn" title="Change Color" onclick={() => openChangeBoxColorForm(room, cont, activeShelf.id)}>🎨</button>
-                  <button class="card-action-btn danger" title="Delete Box" onclick={() => deleteShelf(activeShelf)}>🗑️</button>
+                  <button class="card-action-btn" title="Rename Box" onclick={() => openRenameShelfForm(room, cont, activeShelf.id, activeShelf.name)}>{design === "bauhaus" ? "R" : "✏️"}</button>
+                  <button class="card-action-btn" title="Change Color" onclick={() => openChangeBoxColorForm(room, cont, activeShelf.id)}>{design === "bauhaus" ? "C" : "🎨"}</button>
+                  <button class="card-action-btn danger" title="Delete Box" onclick={() => deleteShelf(activeShelf)}>{design === "bauhaus" ? "D" : "🗑️"}</button>
                 </div>
               {/if}
             </div>
@@ -296,7 +299,7 @@
           <div class="deepfreezer-explorer">
             <div class="deepfreezer-nav">
               <div class="deepfreezer-nav-item">
-                <span class="deepfreezer-nav-link" onclick={() => resetSelection()}>❄️ Deep Freezer Explorer</span>
+<span class="deepfreezer-nav-link" onclick={() => resetSelection()}>{#if design !== "bauhaus"}❄️ {/if}Deep Freezer Explorer</span>
                 <span class="deepfreezer-nav-separator">›</span>
                 <span class="deepfreezer-nav-link" onclick={() => { selectedBox = null; navigateTo("detail", { roomId, containerId, rack: selectedRack }); }}>Rack {selectedRack}</span>
                 <button class="deepfreezer-nav-btn" onclick={() => resetSelection()}>Change Rack</button>
@@ -308,7 +311,7 @@
             <div class="shelf-section open" data-sid={activeShelf.id}>
               <div class="shelf-header" style="cursor: default;">
                 <div class="shelf-info">
-                  <span class="shelf-icon" style={`color: ${activeShelf.color ?? "#3b82f6"};`}>🧊</span>
+                  <span class="shelf-icon" style={`color: ${activeShelf.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🧊{/if}</span>
                   <span class="shelf-name">Rack {selectedRack} / Box {selectedBox}</span>
                   <span class="shelf-count">{(activeShelf.chemicals ?? []).length} chemicals</span>
                 </div>
@@ -371,17 +374,17 @@
         <div class={`shelf-section ${isOpen ? "open" : ""}`} data-sid={sh.id}>
           <div class="shelf-header" onclick={() => toggleShelf(sh.id)}>
             <div class="shelf-info">
-              <span class="shelf-icon">{icon}</span>
+              <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}{icon}{/if}</span>
               <span class="shelf-name">{sh.name}</span>
               <span class="shelf-count">{chems.length} chemicals</span>
             </div>
             <div class="shelf-actions">
               {#if canManage}
-                <button class="btn-inline" title="Rename Shelf" onclick={(e) => { e.stopPropagation(); openRenameShelfForm(room, cont, sh.id, sh.name); }}>✏️</button>
+                <button class="btn-inline" title="Rename Shelf" onclick={(e) => { e.stopPropagation(); openRenameShelfForm(room, cont, sh.id, sh.name); }}>{design === "bauhaus" ? "R" : "✏️"}</button>
                 {#if cont.type === "fridge" || cont.type === "freezer"}
-                  <button class="btn-inline" title="Add Box" onclick={(e) => { e.stopPropagation(); openAddBoxForm(room, cont, sh.id); }}>➕ Box</button>
+                  <button class="btn-inline" title="Add Box" onclick={(e) => { e.stopPropagation(); openAddBoxForm(room, cont, sh.id); }}>{design === "bauhaus" ? "+ Box" : "➕ Box"}</button>
                 {/if}
-                <button class="btn-inline" title="Add Chemical to Shelf" onclick={(e) => { e.stopPropagation(); openChemicalRadioPrompt(room, cont, sh.id); }}>➕ Chem</button>
+                <button class="btn-inline" title="Add Chemical to Shelf" onclick={(e) => { e.stopPropagation(); openChemicalRadioPrompt(room, cont, sh.id); }}>{design === "bauhaus" ? "+ Chem" : "➕ Chem"}</button>
                 <button class="btn-inline danger" title="Delete shelf" onclick={(e) => { e.stopPropagation(); deleteShelf(sh); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
               {/if}
               <span class="shelf-toggle">▼</span>
@@ -397,14 +400,14 @@
                     style={`${box.color ? `--custom-bg: ${boxColor}2d; --custom-border: ${boxColor}; --custom-bg-hover: ${boxColor}4d;` : ""} padding: 1.25rem 0.75rem; min-height: auto;`}
                     onclick={(e) => { e.stopPropagation(); toggleShelf(box.id); }}
                   >
-                    <div class="deepfreezer-card-icon" style={`color: ${boxColor}; font-size: 1.8rem; margin-bottom: 0.25rem;`}>📦</div>
+                    <div class="deepfreezer-card-icon" style={`color: ${boxColor}; font-size: 1.8rem; margin-bottom: 0.25rem;`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</div>
                     <div class="deepfreezer-card-title" style="font-size: 0.85rem;">{box.name}</div>
                     <div class="deepfreezer-card-subtitle" style="font-size: 0.7rem;">{(box.chemicals ?? []).length} samples</div>
                     {#if canManage}
                       <div class="deepfreezer-card-actions" style="margin-top: 0.35rem;" onclick={(e) => e.stopPropagation()}>
-                        <button class="card-action-btn" title="Rename Box" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => openRenameShelfForm(room, cont, box.id, box.name)}>✏️</button>
-                        <button class="card-action-btn" title="Change Color" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => openChangeBoxColorForm(room, cont, box.id)}>🎨</button>
-                        <button class="card-action-btn danger" title="Delete Box" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => deleteShelf(box)}>🗑️</button>
+                        <button class="card-action-btn" title="Rename Box" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => openRenameShelfForm(room, cont, box.id, box.name)}>{design === "bauhaus" ? "R" : "✏️"}</button>
+                        <button class="card-action-btn" title="Change Color" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => openChangeBoxColorForm(room, cont, box.id)}>{design === "bauhaus" ? "C" : "🎨"}</button>
+                        <button class="card-action-btn danger" title="Delete Box" style="padding: 2px 4px; font-size: 0.7rem;" onclick={() => deleteShelf(box)}>{design === "bauhaus" ? "D" : "🗑️"}</button>
                       </div>
                     {/if}
                   </div>
@@ -416,10 +419,10 @@
                   <div class="box-chemicals-section" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem; background: rgba(255,255,255,0.015); box-shadow: inset 0 0 10px rgba(0,0,0,0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
                       <h4 style="margin: 0; color: var(--text-primary); font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem;">
-                        <span style={`color: ${box.color ?? "#3b82f6"};`}>📦</span> {box.name} Chemicals
+                        <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span> {box.name} Chemicals
                       </h4>
                       {#if canManage}
-                        <button class="btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.7rem; margin: 0; height: auto; display: inline-flex; align-items: center; gap: 0.25rem;" onclick={() => openChemicalRadioPrompt(room, cont, box.id)}>➕ Add Chemical</button>
+                        <button class="btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.7rem; margin: 0; height: auto; display: inline-flex; align-items: center; gap: 0.25rem;" onclick={() => openChemicalRadioPrompt(room, cont, box.id)}>{design === "bauhaus" ? "+ Add Chemical" : "➕ Add Chemical"}</button>
                       {/if}
                     </div>
                     {#if boxChems.length > 0}
@@ -455,7 +458,7 @@
     </div>
   {/if}
   <div id="detail-empty" class="empty-state" style={`display: ${showEmpty ? "block" : "none"};`}>
-      <div class="empty-icon">🧪</div><h2>No chemicals yet</h2><p>Add your first chemical</p>
+      <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-circle-blue" aria-hidden="true"></span>{:else}🧪{/if}</div><h2>No chemicals yet</h2><p>Add your first chemical</p>
       <button class="btn-primary add-chem-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
   </div>
 {/if}

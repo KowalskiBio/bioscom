@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Container } from "@bioscom/shared";
   import { renderFormulaHtml, normalizeFormula } from "../../lib/inventoryUtils";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   let {
     form,
@@ -59,7 +62,7 @@
             <optgroup label={parentShelf.name}>
               <option value={parentShelf.id}>Directly on {parentShelf.name} (no box)</option>
               {#each boxes as box (box.id)}
-                <option value={box.id}>📦 {box.name}</option>
+                <option value={box.id}>{design === "bauhaus" ? "" : "📦 "}{box.name}</option>
               {/each}
             </optgroup>
           {:else}

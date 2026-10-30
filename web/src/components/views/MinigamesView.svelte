@@ -7,6 +7,9 @@
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { opCreateGame, opChessMove, opFrogAnswer, opFinishGame } from "../../lib/featureOps";
   import { CHESS_INITIAL_BOARD, CHESS_PIECE_MAP, getChessValidMoves, getPieceColor, applyChessMove, type ChessBoard } from "../../lib/chess";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   interface Member {
     uid: string;
@@ -153,7 +156,7 @@
         if (await opChessMove(activeGame.id, board, nextTurn)) {
           chessSelected = null;
           if (kingCaptured) {
-            showToast("🏆 You captured the King! You win!");
+            showToast(design === "bauhaus" ? "You captured the King! You win!" : "🏆 You captured the King! You win!");
             activeGameId = null;
           }
         }
@@ -222,17 +225,17 @@
         <div class="form-group">
             <label class="form-label">Select Game</label>
             <select class="form-select" id="game-type-select" bind:value={gameType}>
-                <option value="frog">🐸 Frog CAPTCHA Quiz</option>
-                <option value="chess">🧬 Biochemical Chess</option>
+                <option value="frog">{design === "bauhaus" ? "Frog CAPTCHA Quiz" : "🐸 Frog CAPTCHA Quiz"}</option>
+                <option value="chess">{design === "bauhaus" ? "Biochemical Chess" : "🧬 Biochemical Chess"}</option>
             </select>
         </div>
-        <button class="btn-primary" id="btn-send-game-challenge" style="margin-top: 0.5rem; width: 100%;" onclick={() => void sendChallenge()}>🚀 Send Challenge</button>
+        <button class="btn-primary" id="btn-send-game-challenge" style="margin-top: 0.5rem; width: 100%;" onclick={() => void sendChallenge()}>{design === "bauhaus" ? "Send Challenge" : "🚀 Send Challenge"}</button>
 
         <h2 style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">Pending Challenges</h2>
         <div id="game-pending-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;">
             {#each pending as game (game.id)}
                 <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem;">
-                    <span style="font-size:0.85rem;">{game.gameType === "chess" ? "🧬" : "🐸"} from <strong>{game.challengerName}</strong></span>
+                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} from <strong>{game.challengerName}</strong></span>
                     <button class="btn-inline" onclick={() => void acceptChallenge(game.id)}>Accept</button>
                 </div>
             {:else}
@@ -246,7 +249,7 @@
         <div id="game-active-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto;">
             {#each active as game (game.id)}
                 <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem;">
-                    <span style="font-size:0.85rem;">{game.gameType === "chess" ? "🧬" : "🐸"} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
+                    <span style="font-size:0.85rem;">{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
                     <button class="btn-inline" onclick={() => openGame(game.id)}>Play</button>
                 </div>
             {:else}
@@ -258,8 +261,8 @@
         <div id="game-completed-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;">
             {#each completed as game (game.id)}
                 <div style="display:flex; justify-content:space-between; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.5rem 0.75rem; font-size:0.85rem;">
-                    <span>{game.gameType === "chess" ? "🧬" : "🐸"} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
-                    <span style={game.winnerUid === uid ? "color: var(--accent-green);" : game.winnerUid ? "color: var(--accent-red);" : "color: var(--text-muted);"}>{game.winnerUid === uid ? "🏆 Won" : game.winnerUid ? "❌ Lost" : "🤝 Draw"}</span>
+                    <span>{design === "bauhaus" ? "" : (game.gameType === "chess" ? "🧬" : "🐸")} vs <strong>{game.challengerUid === uid ? game.opponentName : game.challengerName}</strong></span>
+                    <span style={game.winnerUid === uid ? "color: var(--accent-green);" : game.winnerUid ? "color: var(--accent-red);" : "color: var(--text-muted);"}>{game.winnerUid === uid ? (design === "bauhaus" ? "Won" : "🏆 Won") : game.winnerUid ? (design === "bauhaus" ? "Lost" : "❌ Lost") : (design === "bauhaus" ? "Draw" : "🤝 Draw")}</span>
                 </div>
             {:else}
                 <div style="color: var(--text-muted); font-size: 0.85rem;">No completed matches</div>
@@ -275,13 +278,13 @@
             {@const myScore = activeGame.frogScores?.[uid] ?? 0}
             {#if (activeGame.frogStatus?.[uid] ?? "playing") === "completed"}
                 <div style="text-align:center;">
-                    <h2>🐸 Frog Quiz Complete!</h2>
+                    <h2>{design === "bauhaus" ? "Frog Quiz Complete!" : "🐸 Frog Quiz Complete!"}</h2>
                     <p style="font-size:1.2rem;margin:1rem 0;">Your Score: <strong>{myScore}/5</strong></p>
                     <button class="btn-secondary" style="margin-top:1rem;" onclick={closeWorkspace}>Close</button>
                 </div>
             {:else}
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-                    <h2 style="margin:0;">🐸 Frog CAPTCHA Quiz — Round {myRound + 1}/5</h2>
+                    <h2 style="margin:0;">{design === "bauhaus" ? "Frog CAPTCHA Quiz" : "🐸 Frog CAPTCHA Quiz"} — Round {myRound + 1}/5</h2>
                     <div style="display:flex;gap:1rem;align-items:center;">
                         <span style="font-weight:600;">Score: {myScore}/5</span>
                         <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={closeWorkspace}>Close</button>
@@ -301,29 +304,29 @@
             {/if}
         {:else if chessBoard !== null}
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-                <h2 style="margin:0;">🧬 Biochemical Chess vs {otherName}</h2>
+                <h2 style="margin:0;">{design === "bauhaus" ? "Biochemical Chess" : "🧬 Biochemical Chess"} vs {otherName}</h2>
                 <div style="display:flex;gap:1rem;align-items:center;">
-                    {#if isMyTurn}<span style="color:var(--accent-green);font-weight:700;">🟢 Your turn ({myColor})</span>{:else}<span style="color:var(--text-muted);">⏳ Waiting for {otherName}...</span>{/if}
-                    <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={resign}>🏳️ Resign</button>
+                    {#if isMyTurn}<span style="color:var(--accent-green);font-weight:700;">{design === "bauhaus" ? "" : "🟢 "}Your turn ({myColor})</span>{:else}<span style="color:var(--text-muted);">{design === "bauhaus" ? "" : "⏳ "}Waiting for {otherName}...</span>{/if}
+                    <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={resign}>{design === "bauhaus" ? "Resign" : "🏳️ Resign"}</button>
                     <button class="btn-secondary" style="padding:0.3rem 0.7rem;font-size:0.8rem;" onclick={closeWorkspace}>Close</button>
                 </div>
             </div>
             <div style="display:flex;justify-content:center;align-items:center;gap:2rem;">
                 <div>
-                    <div style="text-align:center;margin-bottom:0.5rem;font-weight:600;font-size:0.85rem;">{myColor === "white" ? "🧬 Synthesis (White)" : "🦠 Pathogens (Black)"}</div>
+                    <div style="text-align:center;margin-bottom:0.5rem;font-weight:600;font-size:0.85rem;">{myColor === "white" ? (design === "bauhaus" ? "Synthesis (White)" : "🧬 Synthesis (White)") : (design === "bauhaus" ? "Pathogens (Black)" : "🦠 Pathogens (Black)")}</div>
                     <div class="chess-board" id="chess-board-grid">
                         {#each Array.from({ length: 8 }, (_, ri) => ri) as ri (ri)}
                             {@const r = myColor === "black" ? 7 - ri : ri}
                             {#each Array.from({ length: 8 }, (_, ci) => ci) as ci (ci)}
                                 {@const c = myColor === "black" ? 7 - ci : ci}
                                 {@const piece = chessBoard[r]?.[c] ?? ""}
-                                <div class={squareClasses(r, c)} data-row={r} data-col={c} onclick={() => void onSquareClick(r, c)}>{piece !== "" ? (CHESS_PIECE_MAP[piece] ?? piece) : ""}</div>
+                                <div class={squareClasses(r, c)} data-row={r} data-col={c} onclick={() => void onSquareClick(r, c)}>{piece !== "" ? (design === "bauhaus" ? piece.toUpperCase() : (CHESS_PIECE_MAP[piece] ?? piece)) : ""}</div>
                             {/each}
                         {/each}
                     </div>
                     <div style="display:flex;justify-content:space-between;margin-top:0.75rem;">
-                        <div style="font-size:0.75rem;color:var(--text-muted);">White: 🧬P 🏭R 🔬N 🧪B ⚗️Q 👨‍🔬K</div>
-                        <div style="font-size:0.75rem;color:var(--text-muted);">Black: 🦠p 💊r 🧫n ☣️b ☠️q 🧟k</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">{design === "bauhaus" ? "White: P R N B Q K" : "White: 🧬P 🏭R 🔬N 🧪B ⚗️Q 👨‍🔬K"}</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">{design === "bauhaus" ? "Black: P R N B Q K" : "Black: 🦠p 💊r 🧫n ☣️b ☠️q 🧟k"}</div>
                     </div>
                 </div>
             </div>

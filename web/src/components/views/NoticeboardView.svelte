@@ -7,6 +7,9 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
     import { opDeleteNotice, opAddReaction, opDeleteReaction } from "../../lib/featureOps";
   import { countWords } from "../../lib/inventoryUtils";
+  import { theme } from "../../lib/theme.svelte";
+
+  const design = $derived(theme.design);
   
   const notices = $derived([...noticeList.items].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)));
   const isSuperadmin = $derived(session.user?.role === "superadmin");
@@ -22,6 +25,12 @@
     issue: "⚠️ Issue",
     info: "ℹ️ Info",
     general: "📌 General",
+  };
+  const categoryPlainLabels: Record<string, string> = {
+    suggestion: "Suggestion",
+    issue: "Issue",
+    info: "Info",
+    general: "General",
   };
 
   function deleteNotice(id: string, title: string): void {
@@ -76,7 +85,7 @@
         <div class="protocol-card fade-in" style={`border-left: 4px solid ${cat === "suggestion" ? "var(--accent-green)" : cat === "issue" ? "var(--accent-red, #ef4444)" : cat === "info" ? "var(--accent-blue)" : "var(--border-subtle)"};`}>
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
                 <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem;">
-                    <span style={`font-size: 0.7rem; background: ${categoryColors[cat] ?? categoryColors.general}; padding: 0.15rem 0.4rem; border-radius: 3px; font-weight: 600; margin-right: 0.25rem;`}>{categoryLabels[cat] ?? categoryLabels.general}</span>
+                    <span style={`font-size: 0.7rem; background: ${categoryColors[cat] ?? categoryColors.general}; padding: 0.15rem 0.4rem; border-radius: 3px; font-weight: 600; margin-right: 0.25rem;`}>{design === "bauhaus" ? (categoryPlainLabels[cat] ?? categoryPlainLabels.general) : (categoryLabels[cat] ?? categoryLabels.general)}</span>
                     {#if n.authorName}<span style="font-weight: 600; color: var(--accent-blue); display: inline-flex; align-items: center;">{#if n.authorAvatar}<img src={n.authorAvatar} style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-subtle); margin-right: 0.35rem;" title={n.authorName}>{/if}{n.authorName}</span>{/if}
                     {#if n.authorLab}<span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 0.5rem;">{n.authorLab}</span>{/if}
                     {#if n.timestamp}<span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 0.5rem;">{new Date(n.timestamp).toLocaleString()}</span>{/if}
@@ -104,9 +113,9 @@
                     </div>
                 {/if}
                 <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.25rem;">
-                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Thumbs Up" onclick={() => void addReaction(n.id, "👍")}>👍</button>
-                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Heart" onclick={() => void addReaction(n.id, "❤️")}>❤️</button>
-                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Check" onclick={() => void addReaction(n.id, "✅")}>✅</button>
+                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Thumbs Up" onclick={() => void addReaction(n.id, "👍")}>{#if design === "bauhaus"}<span class="glyph glyph-circle-blue" aria-hidden="true"></span>{:else}👍{/if}</button>
+                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Heart" onclick={() => void addReaction(n.id, "❤️")}>{#if design === "bauhaus"}<span class="glyph glyph-circle-red" aria-hidden="true"></span>{:else}❤️{/if}</button>
+                    <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Check" onclick={() => void addReaction(n.id, "✅")}>{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}✅{/if}</button>
                     <input type="text" id={`reaction-input-${n.id}`} placeholder="Type a comment..." style="flex:1; background:transparent; border:none; border-bottom:1px solid var(--border-subtle); color:var(--text-primary); outline:none; font-size:0.75rem; padding:0.15rem 0;" onkeydown={(e) => onReactionKeydown(e, n.id)}>
                     <button class="btn-inline" style="padding:0.15rem 0.4rem; font-size:0.75rem; color:var(--accent-blue);" onclick={() => void addReaction(n.id)}>Send</button>
                 </div>
@@ -115,5 +124,5 @@
     {/each}
 </div>
 <div id="noticeboard-empty" class="empty-state" style={`display: ${notices.length === 0 ? "block" : "none"};`}>
-    <div class="empty-icon">📝</div><h2>No notes yet</h2><p>Add the first note or suggestion for your lab team</p>
+    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📝{/if}</div><h2>No notes yet</h2><p>Add the first note or suggestion for your lab team</p>
 </div>

@@ -10,12 +10,14 @@
     highlightHtml,
     normalizeFormula,
   } from "../lib/inventoryUtils";
+  import { theme } from "../lib/theme.svelte";
 
   let inputEl = $state<HTMLInputElement | null>(null);
   let open = $state(false);
 
   const route = $derived(router.route);
   const q = $derived(searchState.query.trim().toLowerCase());
+  const design = $derived(theme.design);
 
   interface SearchItem {
     kind: "chemical" | "protocol" | "asset" | "instrument" | "printCatalog" | "printRequest";
@@ -59,7 +61,7 @@
           kind: "protocol",
           name: p.title ?? "",
           detail: (p.content ?? "").replace(/\n/g, " ").slice(0, 60),
-          badge: "📖 Protocol",
+          badge: design === "bauhaus" ? "Protocol" : "📖 Protocol",
           itemId: p.id,
         });
       }
@@ -74,7 +76,7 @@
           kind: "asset",
           name: a.name ?? "",
           detail: a.model ?? "Asset",
-          badge: "📦 Asset",
+          badge: design === "bauhaus" ? "Asset" : "📦 Asset",
           itemId: a.id,
         });
       }
@@ -89,7 +91,7 @@
           kind: "instrument",
           name: inst.name ?? "",
           detail: inst.location ?? "",
-          badge: "🔬 Instrument",
+          badge: design === "bauhaus" ? "Instrument" : "🔬 Instrument",
           itemId: inst.id,
         });
       }
@@ -105,7 +107,7 @@
           kind: "printCatalog",
           name: item.name ?? "",
           detail: `${item.category ?? ""} | ${item.material ?? ""}`,
-          badge: "🖨️ 3D Catalog",
+          badge: design === "bauhaus" ? "3D Catalog" : "🖨️ 3D Catalog",
           itemId: item.id,
         });
       }
@@ -119,7 +121,7 @@
           kind: "printRequest",
           name: r.catalogItemName ?? "",
           detail: r.note ?? "",
-          badge: "🖨️ 3D Request",
+          badge: design === "bauhaus" ? "3D Request" : "🖨️ 3D Request",
           itemId: r.id,
         });
       }

@@ -6,7 +6,9 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { opDeleteProtocol, roleCanWrite } from "../../lib/ops";
   import { openProtocolForm } from "../../lib/forms";
+  import { theme } from "../../lib/theme.svelte";
 
+  const design = $derived(theme.design);
   const protocols = $derived(inventory.tree?.protocols ?? []);
   const isReader = $derived(session.user?.role === "reader");
 
@@ -45,5 +47,5 @@
     {/each}
 </div>
 <div id="protocols-empty" class="empty-state" style={`display: ${protocols.length === 0 ? "block" : "none"};`}>
-    <div class="empty-icon">📖</div><h2>No protocols yet</h2><p>Add your first standard solution or protocol</p>
+    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-blue" aria-hidden="true"></span>{:else}📖{/if}</div><h2>No protocols yet</h2><p>Add your first standard solution or protocol</p>
 </div>
