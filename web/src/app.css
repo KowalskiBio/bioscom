@@ -2009,6 +2009,19 @@ textarea:focus-visible {
 @media (max-width:1100px) { .dash-grid { grid-template-columns:1fr; } .dash-span2 { grid-column:auto; } }
 @media (max-width:480px) { .stat-value { font-size:1.5rem; } }
 
+/* Modal sizes */
+.modal.modal-wide { max-width:640px; width:95vw; }
+.modal.modal-xwide { max-width:920px; width:95vw; }
+@media (max-width:900px) {
+    .modal.modal-wide,
+    .modal.modal-xwide { width:95vw; max-width:95vw; }
+}
+
+/* Form columns */
+.form-cols { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0 1.25rem; }
+.form-cols > .span-2 { grid-column:1 / -1; }
+@media (max-width:700px) { .form-cols { grid-template-columns:1fr; } }
+
 /* Bauhaus Theme — Tokens, Type & Controls */
 
 /* Tokens */
@@ -2218,7 +2231,7 @@ body[data-design="bauhaus"] .form-select {
 }
 body[data-design="bauhaus"] .form-select {
     padding-right: 2rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23171512' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+    background: #FFFFFF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23171512' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E") no-repeat right 0.75rem center / 12px 12px;
 }
 body[data-design="bauhaus"] .form-input:focus,
 body[data-design="bauhaus"] .form-select:focus,

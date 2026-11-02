@@ -2,6 +2,8 @@ import type { Component } from "svelte";
 
 type AnyComponent = Component<any>;
 
+export type ModalSize = "default" | "wide" | "xwide";
+
 export interface ModalState {
   open: boolean;
   title: string;
@@ -10,6 +12,7 @@ export interface ModalState {
   props: Record<string, unknown>;
   btnText: string | null;
   onConfirm: (() => void) | null;
+  size?: ModalSize;
 }
 
 let state = $state.raw<ModalState>({
@@ -20,6 +23,7 @@ let state = $state.raw<ModalState>({
   props: {},
   btnText: null,
   onConfirm: null,
+  size: "default",
 });
 
 export const modal = {
@@ -35,6 +39,7 @@ export interface OpenModalOptions {
   props?: Record<string, unknown>;
   btnText?: string | null;
   onConfirm?: (() => void) | null;
+  size?: ModalSize;
 }
 
 export function openModal(options: OpenModalOptions): void {
@@ -46,6 +51,7 @@ export function openModal(options: OpenModalOptions): void {
     props: options.props ?? {},
     btnText: options.btnText ?? null,
     onConfirm: options.onConfirm ?? null,
+    size: options.size ?? "default",
   };
   setTimeout(() => {
     const first = document.querySelector("#modal-body input, #modal-body select, #modal-body textarea");
@@ -64,6 +70,7 @@ export function closeModal(): void {
     props: {},
     btnText: null,
     onConfirm: null,
+    size: "default",
   };
 }
 

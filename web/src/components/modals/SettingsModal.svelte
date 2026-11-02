@@ -1,6 +1,7 @@
 <script lang="ts">
   import { theme, setDesign, type DesignTheme } from "../../lib/theme.svelte";
   import { NAV_ITEMS, navPrefs } from "../../lib/stores/navPrefs.svelte";
+  import { prefs, setRadioMode } from "../../lib/stores/prefs.svelte";
 
   const OPTIONS: Array<{ value: DesignTheme; name: string; desc: string }> = [
     { value: "original", name: "Original", desc: "The classic BioSCom look" },
@@ -41,4 +42,29 @@
         </label>
     {/each}
     <p class="form-hint">Dashboard and Chemicals are always shown. These options take effect in the Bauhaus theme; Original always shows everything.</p>
+</div>
+
+<div class="form-group">
+    <span class="form-label">Radio</span>
+    <label class="nav-toggle" id="radio-toggle-ask">
+        <input
+            type="radio"
+            id="radio-mode-ask"
+            name="radio-mode"
+            checked={prefs.radioMode === "ask"}
+            onchange={() => setRadioMode("ask")}
+        >
+        <span>Ask when adding chemicals (background music prompt)</span>
+    </label>
+    <label class="nav-toggle" id="radio-toggle-never">
+        <input
+            type="radio"
+            id="radio-mode-never"
+            name="radio-mode"
+            checked={prefs.radioMode === "never"}
+            onchange={() => setRadioMode("never")}
+        >
+        <span>Never show the music prompt</span>
+    </label>
+    <p class="form-hint">Controls the Laboratory Background Radio prompt shown before adding a chemical.</p>
 </div>

@@ -52,6 +52,7 @@ import {
   opUpdateProfile,
 } from "./featureOps";
 import { session } from "./stores/session.svelte";
+import { prefs } from "./stores/prefs.svelte";
 
 function isBauhaus(): boolean {
   return document.body.dataset.design === "bauhaus";
@@ -593,6 +594,7 @@ export function openChemicalForm(
     component: ChemicalFormModal,
     props: { form, container: cont },
     btnText: opts.editChemId !== undefined ? "Save" : "Add",
+    size: "xwide",
     onConfirm: async () => {
       const attributes: Record<string, string | number | boolean | null> = {};
       for (const [key, value] of Object.entries(form.attributes)) {
@@ -714,6 +716,10 @@ export function openChemicalForm(
 }
 
 export function openChemicalRadioPrompt(room: Room, cont: Container, preSelectedShelfId?: string): void {
+  if (prefs.radioMode === "never") {
+    openChemicalForm(room, cont, { shelfId: preSelectedShelfId });
+    return;
+  }
   const bauhaus = document.body.dataset.design === "bauhaus";
   openModal({
     title: "Laboratory Background Radio",

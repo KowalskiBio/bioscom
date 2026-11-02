@@ -89,9 +89,10 @@
   }
 </script>
 
+<div class="form-cols">
 {#if isCooling}
   {#if container.type === "deepfreezer"}
-    <div class="form-group">
+    <div class="form-group span-2">
       <label class="form-label">Box *</label>
       <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
         {#each container.shelves ?? [] as shelf (shelf.id)}
@@ -100,7 +101,7 @@
       </select>
     </div>
   {:else}
-    <div class="form-group">
+    <div class="form-group span-2">
       <label class="form-label">Shelf / Box *</label>
       <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
         {#each parentShelves as parentShelf (parentShelf.id)}
@@ -120,7 +121,7 @@
     </div>
   {/if}
 {:else if isCabinet}
-  <div class="form-group">
+  <div class="form-group span-2">
     <label class="form-label">Shelf placement *</label>
     <select class="form-select" id="f-cab-shelf" style="cursor: pointer;" bind:value={form.cabinetShelf}>
       {#if canAuto}
@@ -143,18 +144,19 @@
   </select>
 </div>
 
-<div class="form-group"><label class="form-label">Chemical name *</label><input class="form-input" id="f-cn2" placeholder="e.g. Hydrochloric acid" bind:value={form.name}></div>
+<div class="form-group span-2"><label class="form-label">Chemical name *</label><input class="form-input" id="f-cn2" placeholder="e.g. Hydrochloric acid" bind:value={form.name}></div>
 {#if form.type === "chemical"}
   <div class="form-group">
     <label class="form-label">Formula</label>
     <input class="form-input" id="f-cf" placeholder="e.g. H2SO4, Na2CO3" bind:value={form.formula}>
     <div id="f-cf-preview" style="margin-top:0.4rem;padding:0.4rem 0.6rem;font-size:1.1rem;color:var(--text-secondary);min-height:1.5em;letter-spacing:0.02em;font-style:italic;"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html formulaPreview}</div>
   </div>
+  <div class="form-group"><label class="form-label">CAS number</label><input class="form-input" id="f-cc" placeholder="e.g. 7647-01-0" bind:value={form.cas}></div>
 {/if}
 
 {#if descriptorFields.length > 0}
   {#each descriptorFields as field (field.key)}
-    <div class="form-group">
+    <div class="form-group" class:span-2={field.dataType === "text" || field.dataType === "sequence"}>
       {#if field.dataType === "boolean"}
         <label class="form-label" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
           <input type="checkbox" id={`f-attr-${field.key}`} checked={form.attributes[field.key] === true} onchange={(e) => setAttrChecked(field.key, e.currentTarget.checked)}>
@@ -198,11 +200,8 @@
   <div class="form-group"><label class="form-label">Concentration</label><input class="form-input" id="f-cconc" type="number" step="any" min="0" placeholder="e.g. 1.5" bind:value={form.concentration}></div>
   <div class="form-group"><label class="form-label">Conc. Unit</label><select class="form-select" id="f-ccu" bind:value={form.concUnit}>{#each concUnits as unit (unit)}<option value={unit}>{unit === "" ? "—" : unit}</option>{/each}</select></div>
 </div>
-{#if form.type === "chemical"}
-  <div class="form-group"><label class="form-label">CAS number</label><input class="form-input" id="f-cc" placeholder="e.g. 7647-01-0" bind:value={form.cas}></div>
-{/if}
 
-<div class="form-group">
+<div class="form-group span-2">
   <span class="form-label">Commercial product (optional)</span>
   <div class="form-row">
     <div class="form-group"><label class="form-label" for="f-p-manufacturer">Manufacturer</label><input class="form-input" id="f-p-manufacturer" placeholder="e.g. Sigma-Aldrich" bind:value={form.product.manufacturer}></div>
@@ -215,7 +214,7 @@
   <div class="form-group"><label class="form-label" for="f-p-variant">Variant</label><input class="form-input" id="f-p-variant" placeholder="e.g. 100 µL vial" bind:value={form.product.variant}></div>
 </div>
 
-<div class="form-group">
+<div class="form-group span-2">
   <span class="form-label">Batch / lot (optional)</span>
   <div class="form-row">
     <div class="form-group"><label class="form-label" for="f-b-lot">Lot code</label><input class="form-input" id="f-b-lot" placeholder="e.g. LOT-2026-01" bind:value={form.batch.lotCode}></div>
@@ -228,4 +227,5 @@
   <div class="form-group"><label class="form-label" for="f-b-preparedby">Prepared by</label><input class="form-input" id="f-b-preparedby" placeholder="e.g. J. Novák" bind:value={form.batch.preparedBy}></div>
 </div>
 
-<div class="form-group"><label class="form-label">Note</label><textarea class="form-textarea" id="f-cno" placeholder="Optional note" bind:value={form.note}></textarea></div>
+<div class="form-group span-2"><label class="form-label">Note</label><textarea class="form-textarea" id="f-cno" placeholder="Optional note" bind:value={form.note}></textarea></div>
+</div>
