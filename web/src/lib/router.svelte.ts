@@ -5,6 +5,7 @@ export const TOP_VIEWS = [
   "rooms",
   "protocols",
   "assets",
+  "catalog",
   "noticeboard",
   "instruments",
   "printing",

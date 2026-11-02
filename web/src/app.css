@@ -2009,6 +2009,19 @@ textarea:focus-visible {
 @media (max-width:1100px) { .dash-grid { grid-template-columns:1fr; } .dash-span2 { grid-column:auto; } }
 @media (max-width:480px) { .stat-value { font-size:1.5rem; } }
 
+/* Catalog view */
+.catalog-filters { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:1.25rem; }
+.catalog-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem; }
+.catalog-counts { display:flex; gap:0.9rem; font-size:0.75rem; color:var(--text-muted); margin-top:0.6rem; }
+.detail-defs { display:grid; grid-template-columns:1fr 1fr; gap:0.35rem 1.25rem; margin-bottom:1rem; }
+.detail-def-key { font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); }
+.detail-def-val { font-size:0.85rem; color:var(--text-primary); }
+.detail-section-title { font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-secondary); margin:1.1rem 0 0.5rem; }
+.detail-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+.detail-table th { text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); padding:0.3rem 0.5rem; border-bottom:1px solid var(--border-subtle); }
+.detail-table td { padding:0.45rem 0.5rem; border-bottom:1px solid var(--border-subtle); color:var(--text-secondary); }
+@media (max-width:768px) { .detail-defs { grid-template-columns:1fr; } }
+
 /* Modal sizes */
 .modal.modal-wide { max-width:640px; width:95vw; }
 .modal.modal-xwide { max-width:920px; width:95vw; }
@@ -3543,6 +3556,7 @@ body[data-design="bauhaus"] #tab-dashboard { order: 11; --c: #DE2C1E; }
 body[data-design="bauhaus"] .nav-section-c { order: 20; }
 body[data-design="bauhaus"] #tab-inventory { order: 21; }
 body[data-design="bauhaus"] #tab-assets { order: 22; }
+body[data-design="bauhaus"] #tab-catalog { order: 23; --c: #1D4FA2; }
 body[data-design="bauhaus"] .nav-section-b { order: 30; }
 body[data-design="bauhaus"] #tab-protocols { order: 31; }
 body[data-design="bauhaus"] #tab-instruments { order: 32; }

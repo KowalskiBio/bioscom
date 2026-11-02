@@ -40,6 +40,7 @@ import InstrumentFormModal from "../components/modals/InstrumentFormModal.svelte
 import BookingModal from "../components/modals/BookingModal.svelte";
 import CatalogFormModal from "../components/modals/CatalogFormModal.svelte";
 import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
+import MaterialDetailModal from "../components/modals/MaterialDetailModal.svelte";
 import {
   opCreateNotice,
   opUpdateNotice,
@@ -53,6 +54,7 @@ import {
 } from "./featureOps";
 import { session } from "./stores/session.svelte";
 import { prefs } from "./stores/prefs.svelte";
+import { catalog } from "./stores/catalog.svelte";
 
 function isBauhaus(): boolean {
   return document.body.dataset.design === "bauhaus";
@@ -191,6 +193,17 @@ export function openPrintRequestModal(item?: { id: string; name: string }): void
         showToast("Print request sent");
       }
     },
+  });
+}
+
+export function openMaterialDetailModal(materialId: string): void {
+  const material = catalog.items.find((item) => item.id === materialId);
+  openModal({
+    title: material?.name ?? "Material",
+    size: "xwide",
+    component: MaterialDetailModal,
+    props: { materialId },
+    btnText: null,
   });
 }
 

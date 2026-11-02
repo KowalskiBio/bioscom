@@ -11,6 +11,7 @@ import { clearInstruments } from "./stores/instruments.svelte";
 import { clearPrint } from "./stores/print.svelte";
 import { clearGames } from "./stores/game.svelte";
 import { clearHistory, fetchHistory, fetchBackups } from "./stores/history.svelte";
+import { clearCatalog } from "./stores/catalog.svelte";
 import { showToast } from "./stores/toast.svelte";
 
 let ws: WsClient | null = null;
@@ -89,6 +90,7 @@ export async function logout(): Promise<void> {
     clearPrint();
     clearGames();
     clearHistory();
+    clearCatalog();
     showToast("Logged out", "info");
   }
 }

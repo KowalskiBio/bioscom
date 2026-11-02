@@ -11,6 +11,7 @@ export interface NavItemDef {
 export const NAV_ITEMS: NavItemDef[] = [
   { view: "protocols", tabId: "tab-protocols", label: "Solutions & Protocols", labelBauhaus: "Protocols", defaultVisible: true },
   { view: "assets", tabId: "tab-assets", label: "Inventory", labelBauhaus: "Inventory", defaultVisible: true },
+  { view: "catalog", tabId: "tab-catalog", label: "Catalog", labelBauhaus: "Catalog", defaultVisible: true },
   { view: "noticeboard", tabId: "tab-noticeboard", label: "Notice Board", labelBauhaus: "Notice Board", defaultVisible: true },
   { view: "instruments", tabId: "tab-instruments", label: "Instruments", labelBauhaus: "Reservations", defaultVisible: true },
   { view: "history", tabId: "tab-history", label: "History & Backups", labelBauhaus: "History", defaultVisible: true },

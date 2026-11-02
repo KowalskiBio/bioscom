@@ -258,6 +258,18 @@ Status — increment 4 (flip-read parity tooling) DONE:
   assets/protocols stay doc-only by design for now.
 - Tests: server 100/100 (+4 parity).
 
+Status — Phase B 1 (Materials catalog UI) DONE:
+
+- New top-level Catalog view: type filter pills (All + 7 registry types), debounced name
+  search, paginated card list (25/page) with type chips, descriptor summaries and
+  stock/location/product counts; xwide material-detail modal (attributes, products,
+  batches with lot/origin/expiry + ≤60-day expiry hint, stocks with location paths and
+  status chips). Consumes the Phase A read APIs unchanged. Group-scoped lazy loading +
+  clear-on-logout. Default-visible nav toggle "Catalog" (bauhaus nav: after Inventory in
+  Assets with blue edge; original nav appended alongside).
+- Gates: typecheck 0 errors, a11y warnings at 113 baseline, builds pass, web tests 9/9;
+  live DOM verification of nav placement + route activation.
+
 Remaining in target order:
 
 1. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile →

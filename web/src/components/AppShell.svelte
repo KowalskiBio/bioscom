@@ -4,11 +4,13 @@
   import { groupList } from "../lib/stores/groups.svelte";
   import { currentGroup } from "../lib/stores/currentGroup.svelte";
   import { inventory } from "../lib/stores/inventory.svelte";
+  import { catalog } from "../lib/stores/catalog.svelte";
   import { searchState } from "../lib/stores/search.svelte";
   import { navPrefs } from "../lib/stores/navPrefs.svelte";
   import { logout, switchGroup } from "../lib/app";
   import { api } from "../lib/api";
   import { theme, toggleTheme } from "../lib/theme.svelte";
+  import { materialTypeLabels } from "@bioscom/shared";
   import { closeLabRadio, toggleRadioPlay, setRadioVolume } from "../lib/radio";
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
@@ -36,6 +38,7 @@
   import DetailView from "./views/DetailView.svelte";
   import ProtocolsView from "./views/ProtocolsView.svelte";
   import AssetsView from "./views/AssetsView.svelte";
+  import CatalogView from "./views/CatalogView.svelte";
   import NoticeboardView from "./views/NoticeboardView.svelte";
   import InstrumentsView from "./views/InstrumentsView.svelte";
   import PrintingView from "./views/PrintingView.svelte";
@@ -59,6 +62,7 @@
     detail: "tab-inventory",
     protocols: "tab-protocols",
     assets: "tab-assets",
+    catalog: "tab-catalog",
     noticeboard: "tab-noticeboard",
     instruments: "tab-instruments",
     printing: "tab-printing",
@@ -73,6 +77,9 @@
   const badgeVisible = $derived(session.user !== null);
   const isReader = $derived(session.user?.role === "reader");
   const isSuperadmin = $derived(session.user?.role === "superadmin");
+  const catalogTypeLabel = $derived(
+    catalog.typeFilter === "" ? "all types" : (materialTypeLabels()[catalog.typeFilter] ?? catalog.typeFilter),
+  );
 
   const containersRoomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
   const containersRoom = $derived(
@@ -87,6 +94,7 @@
     rooms: "Chemicals",
     protocols: "Protocols",
     assets: "Inventory",
+    catalog: "Catalog",
     noticeboard: "Notice Board",
     instruments: "Reservations",
     printing: "3D Print",
@@ -453,6 +461,12 @@
                             Inventory
                         </a>
                         {/if}
+                        {#if design !== "bauhaus" || navPrefs.visible("catalog")}
+                        <a class="nav-tab" id="tab-catalog" data-label="Catalog" class:active={activeTab === "tab-catalog"} role="button" tabindex="0" onclick={() => onTabClick("catalog")} onkeydown={(e) => e.key === "Enter" && onTabClick("catalog")}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>
+                            Catalog
+                        </a>
+                        {/if}
                         {#if design !== "bauhaus" || navPrefs.visible("noticeboard")}
                         <a class="nav-tab" id="tab-noticeboard" data-label="Notice Board" class:active={activeTab === "tab-noticeboard"} role="button" tabindex="0" onclick={() => onTabClick("noticeboard")} onkeydown={(e) => e.key === "Enter" && onTabClick("noticeboard")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -573,6 +587,14 @@
                 </div>
             </div>
             <AssetsView bind:searchQuery={assetSearch} />
+        </section>
+
+        <!-- Materials Catalog View -->
+        <section id="view-catalog" class="view" class:active={route.view === "catalog"}>
+            <div class="view-header">
+                <div><h1>Materials catalog</h1><p class="view-subtitle">{catalog.loaded ? `${catalog.total} materials · ${catalogTypeLabel}` : "Browse all materials in the lab"}</p></div>
+            </div>
+            <CatalogView />
         </section>
 
         <!-- Notice Board View -->
