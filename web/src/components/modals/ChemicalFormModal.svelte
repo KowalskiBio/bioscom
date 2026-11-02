@@ -1,19 +1,23 @@
 <script lang="ts">
-  import type { Container } from "@bioscom/shared";
+  import type { Container, Room } from "@bioscom/shared";
   import { MATERIAL_TYPES } from "@bioscom/shared";
   import type { MaterialFieldDef, MaterialTypeDef } from "@bioscom/shared";
   import { renderFormulaHtml, normalizeFormula } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
+  import { untrack } from "svelte";
 
   const design = $derived(theme.design);
 
   let {
     form,
     container,
+    rooms,
   }: {
     form: {
       shelfId: string;
       cabinetShelf: string;
+      roomId?: string;
+      contId?: string;
       name: string;
       formula: string;
       quantity: number | null;
@@ -23,15 +27,12 @@
       cas: string;
       note: string;
       customPosition: string;
-      barcode: string;
       type: string;
       attributes: Record<string, string | number | boolean | null>;
+      safetyNotes?: string[];
       product: {
         manufacturer: string;
-        supplier: string;
         catalogNumber: string;
-        productName: string;
-        variant: string;
       };
       batch: {
         lotCode: string;
@@ -41,7 +42,8 @@
         preparedBy: string;
       };
     };
-    container: Container;
+    container?: Container;
+    rooms?: Room[];
   } = $props();
 
   const units = ["pcs", "g", "kg", "ml", "L", "μL", "mg"];
@@ -53,16 +55,27 @@
     { value: "unknown", label: "Unknown" },
   ];
 
-  const parentShelves = $derived((container.shelves ?? []).filter((s) => !s.parentShelfId));
-  const isCabinet = $derived(container.type === "cabinet");
+  const contextRooms = $derived([...(rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
+  let roomId = $state("");
+  let contId = $state("");
+  const selectedRoom = $derived(contextRooms.find((room) => room.id === roomId));
+  const selectedRoomContainers = $derived(selectedRoom?.containers ?? []);
+  const selectedContainerFromPicks = $derived(selectedRoomContainers.find((pick) => pick.id === contId));
+  const activeContainer = $derived(container ?? selectedContainerFromPicks);
+  const containerShelves = $derived(activeContainer?.shelves ?? []);
+
+  const parentShelves = $derived(containerShelves.filter((s) => !s.parentShelfId));
+  const isCabinet = $derived(activeContainer?.type === "cabinet");
   const isCooling = $derived(
-    container.type === "fridge" || container.type === "freezer" || container.type === "deepfreezer",
+    activeContainer?.type === "fridge" ||
+      activeContainer?.type === "freezer" ||
+      activeContainer?.type === "deepfreezer",
   );
   const isAlphabetical = $derived(
-    container.cabinetMethod === "alphabetical" ||
-      (container.cabinetMethod === "custom" && container.customRangeType === "alphabetical"),
+    activeContainer?.cabinetMethod === "alphabetical" ||
+      (activeContainer?.cabinetMethod === "custom" && activeContainer?.customRangeType === "alphabetical"),
   );
-  const hasRangeShelves = $derived((container.shelves ?? []).some((s) => s.isRangeShelf === true));
+  const hasRangeShelves = $derived(containerShelves.some((s) => s.isRangeShelf === true));
   const canAuto = $derived(isAlphabetical || hasRangeShelves);
   const formulaPreview = $derived(renderFormulaHtml(normalizeFormula(form.formula)));
   const materialDef = $derived(
@@ -88,15 +101,168 @@
   function setAttrChecked(key: string, checked: boolean): void {
     form.attributes[key] = checked;
   }
+
+  function normalizeTag(raw: string): string {
+    return raw.trim().replace(/^#+/, "").trim();
+  }
+
+  function parseSafetyTags(value: string): string[] {
+    const seen = new Set<string>();
+    const tags: string[] = [];
+    for (const part of value.split(/[\s,]+/)) {
+      const tag = normalizeTag(part);
+      if (tag === "") {
+        continue;
+      }
+      const key = tag.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      tags.push(tag);
+    }
+    return tags;
+  }
+
+  const initialSafetyTags = untrack(() =>
+    form.safetyNotes !== undefined ? [...form.safetyNotes] : parseSafetyTags(attrValue("safety_notes")),
+  );
+  let safetyTags = $state<string[]>(initialSafetyTags);
+  let tagDraft = $state("");
+
+  function writeSafetyTags(next: string[]): void {
+    safetyTags = next;
+    form.safetyNotes = [...next];
+  }
+
+  function commitTag(raw: string): void {
+    const tag = normalizeTag(raw);
+    if (tag === "" || safetyTags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+      return;
+    }
+    writeSafetyTags([...safetyTags, tag]);
+  }
+
+  function removeTag(index: number): void {
+    if (index < 0) {
+      return;
+    }
+    writeSafetyTags(safetyTags.filter((_, i) => i !== index));
+  }
+
+  function onTagInput(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const raw = input.value;
+    if (raw.includes(",")) {
+      const parts = raw.split(",");
+      const remainder = parts.pop() ?? "";
+      for (const part of parts) {
+        commitTag(part);
+      }
+      tagDraft = remainder;
+      input.value = remainder;
+    } else {
+      tagDraft = raw;
+    }
+  }
+
+  function onTagKeydown(event: KeyboardEvent): void {
+    if (event.key === "Enter") {
+      // The modal window handler would otherwise confirm the form.
+      event.preventDefault();
+      event.stopPropagation();
+      commitTag(tagDraft);
+      tagDraft = "";
+      return;
+    }
+    if (event.key === ",") {
+      event.preventDefault();
+      commitTag(tagDraft);
+      tagDraft = "";
+      return;
+    }
+    if (event.key === "Backspace" && tagDraft === "") {
+      event.preventDefault();
+      removeTag(safetyTags.length - 1);
+    }
+  }
+
+  function onTagBlur(): void {
+    commitTag(tagDraft);
+    tagDraft = "";
+  }
+
+  function onRoomChange(): void {
+    form.roomId = roomId;
+    form.contId = "";
+    contId = "";
+    form.shelfId = "";
+    form.cabinetShelf = "auto";
+  }
+
+  function onContainerChange(): void {
+    form.contId = contId;
+    const room = contextRooms.find((r) => r.id === roomId);
+    const next = (room?.containers ?? []).find((c) => c.id === contId);
+    const shelves = next?.shelves ?? [];
+    const canAutoShelf =
+      shelves.some((s) => s.isRangeShelf === true) ||
+      next?.cabinetMethod === "alphabetical" ||
+      (next?.cabinetMethod === "custom" && next.customRangeType === "alphabetical");
+    form.shelfId = shelves[0]?.id ?? "";
+    form.cabinetShelf = next?.type === "cabinet" && !canAutoShelf ? (shelves[0]?.id ?? "") : "auto";
+  }
 </script>
 
-<div class="form-cols">
+<div class="form-cols form-cols-3">
+{#if container === undefined}
+  {#if contextRooms.length === 0}
+    <div class="form-group span-2">
+      <p class="form-hint" id="f-no-rooms">Create a room and a container first to add chemicals.</p>
+    </div>
+  {:else}
+    <div class="form-group">
+      <label class="form-label" for="f-room">Room *</label>
+      <select class="form-select" id="f-room" bind:value={roomId} onchange={onRoomChange}>
+        <option value="">— Select room —</option>
+        {#each contextRooms as room (room.id)}
+          <option value={room.id}>{room.name}</option>
+        {/each}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="f-container">Container *</label>
+      <select class="form-select" id="f-container" bind:value={contId} disabled={!roomId} onchange={onContainerChange}>
+        {#if roomId && selectedRoomContainers.length === 0}
+          <option value="" disabled selected>(no containers in this room)</option>
+        {:else}
+          <option value="">— Select container —</option>
+          {#each selectedRoomContainers as pick (pick.id)}
+            <option value={pick.id}>{pick.name}</option>
+          {/each}
+        {/if}
+      </select>
+    </div>
+  {/if}
+{/if}
+
+{#if container !== undefined || contextRooms.length > 0}
+<div class="form-group">
+  <label class="form-label" for="f-type">Item type *</label>
+  <select class="form-select" id="f-type" bind:value={form.type}>
+    {#each MATERIAL_TYPES as type (type.key)}
+      <option value={type.key}>{type.label}</option>
+    {/each}
+  </select>
+</div>
+
+{#if activeContainer}
 {#if isCooling}
-  {#if container.type === "deepfreezer"}
+  {#if activeContainer.type === "deepfreezer"}
     <div class="form-group span-2">
       <label class="form-label">Box *</label>
       <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
-        {#each container.shelves ?? [] as shelf (shelf.id)}
+        {#each containerShelves as shelf (shelf.id)}
           <option value={shelf.id}>{shelf.name}</option>
         {/each}
       </select>
@@ -106,7 +272,7 @@
       <label class="form-label">Shelf / Box *</label>
       <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
         {#each parentShelves as parentShelf (parentShelf.id)}
-          {@const boxes = (container.shelves ?? []).filter((s) => s.parentShelfId === parentShelf.id)}
+          {@const boxes = containerShelves.filter((s) => s.parentShelfId === parentShelf.id)}
           {#if boxes.length > 0}
             <optgroup label={parentShelf.name}>
               <option value={parentShelf.id}>Directly on {parentShelf.name} (no box)</option>
@@ -128,29 +294,23 @@
       {#if canAuto}
         <option value="auto">Auto – alphabetically by first letter</option>
       {/if}
-      {#each container.shelves ?? [] as shelf (shelf.id)}
+      {#each containerShelves as shelf (shelf.id)}
         <option value={shelf.id}>Manual: {shelf.name}</option>
       {/each}
     </select>
     <div class="form-hint">{canAuto ? "Auto places the chemical alphabetically in the shelf matching its first letter. Manual options let you select the shelf explicitly." : "Select the shelf explicitly for the chemical."}</div>
   </div>
 {/if}
+{/if}
 
-<div class="form-group">
-  <label class="form-label" for="f-type">Item type *</label>
-  <select class="form-select" id="f-type" bind:value={form.type}>
-    {#each MATERIAL_TYPES as type (type.key)}
-      <option value={type.key}>{type.label}</option>
-    {/each}
-  </select>
-</div>
-
-<div class="form-group span-2"><label class="form-label">Chemical name *</label><input class="form-input" id="f-cn2" placeholder="e.g. Hydrochloric acid" bind:value={form.name}></div>
+<div class="form-group"><label class="form-label">Chemical name *</label><input class="form-input" id="f-cn2" placeholder="e.g. Hydrochloric acid" bind:value={form.name}></div>
 {#if form.type === "chemical"}
   <div class="form-group">
     <label class="form-label">Formula</label>
     <input class="form-input" id="f-cf" placeholder="e.g. H2SO4, Na2CO3" bind:value={form.formula}>
-    <div id="f-cf-preview" style="margin-top:0.4rem;padding:0.4rem 0.6rem;font-size:1.1rem;color:var(--text-secondary);min-height:1.5em;letter-spacing:0.02em;font-style:italic;"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html formulaPreview}</div>
+    {#if form.formula.trim() !== ""}
+      <div id="f-cf-preview" style="margin-top:0.4rem;padding:0.4rem 0.6rem;font-size:1.1rem;color:var(--text-secondary);min-height:1.5em;letter-spacing:0.02em;font-style:italic;"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html formulaPreview}</div>
+    {/if}
   </div>
   <div class="form-group"><label class="form-label">CAS number</label><input class="form-input" id="f-cc" placeholder="e.g. 7647-01-0" bind:value={form.cas}></div>
 {/if}
@@ -171,6 +331,29 @@
             <option value={option}>{option}</option>
           {/each}
         </select>
+      {:else if field.key === "safety_notes" && form.type === "chemical"}
+        <label class="form-label" for="f-attr-safety_notes">
+          {field.label}{field.required ? " *" : ""}
+          <span class="form-hint" style="display:inline;margin:0 0 0 0.4rem;font-weight:400;text-transform:none;letter-spacing:normal;">(press Enter to add)</span>
+        </label>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;">
+          {#each safetyTags as tag, index (tag)}
+            <span style="display:inline-flex;align-items:center;gap:0.1rem;border:1px solid var(--border-light);border-radius:999px;font-size:.72rem;padding:.1rem .45rem;background:transparent;">
+              {tag}
+              <button type="button" class="btn-inline" style="padding:0 .12rem;line-height:1;" aria-label={`Remove ${tag}`} onclick={() => removeTag(index)}>×</button>
+            </span>
+          {/each}
+          <input
+            class="form-input"
+            id="f-attr-safety_notes"
+            placeholder="add tag + Enter"
+            style="flex:1 1 9rem;width:auto;min-width:9rem;padding:0.4rem 0.6rem;"
+            value={tagDraft}
+            oninput={onTagInput}
+            onkeydown={onTagKeydown}
+            onblur={onTagBlur}
+          >
+        </div>
       {:else if field.dataType === "text"}
         <label class="form-label" for={`f-attr-${field.key}`}>{field.label}{field.required ? " *" : ""}</label>
         <textarea class="form-textarea" id={`f-attr-${field.key}`} rows="3" value={attrValue(field.key)} oninput={(e) => setAttrText(field.key, e.currentTarget.value)}></textarea>
@@ -202,33 +385,23 @@
   <div class="form-group"><label class="form-label">Conc. Unit</label><select class="form-select" id="f-ccu" bind:value={form.concUnit}>{#each concUnits as unit (unit)}<option value={unit}>{unit === "" ? "—" : unit}</option>{/each}</select></div>
 </div>
 
-<div class="form-group span-2">
-  <span class="form-label">Commercial product (optional)</span>
-  <div class="form-row">
-    <div class="form-group"><label class="form-label" for="f-p-manufacturer">Manufacturer</label><input class="form-input" id="f-p-manufacturer" placeholder="e.g. Sigma-Aldrich" bind:value={form.product.manufacturer}></div>
-    <div class="form-group"><label class="form-label" for="f-p-supplier">Supplier</label><input class="form-input" id="f-p-supplier" placeholder="e.g. Thermo Fisher" bind:value={form.product.supplier}></div>
-  </div>
-  <div class="form-row">
-    <div class="form-group"><label class="form-label" for="f-p-catalog">Catalog number</label><input class="form-input" id="f-p-catalog" placeholder="e.g. A1234" bind:value={form.product.catalogNumber}></div>
-    <div class="form-group"><label class="form-label" for="f-p-name">Product name</label><input class="form-input" id="f-p-name" placeholder="e.g. Anti-GAPDH antibody" bind:value={form.product.productName}></div>
-  </div>
-  <div class="form-group"><label class="form-label" for="f-p-variant">Variant</label><input class="form-input" id="f-p-variant" placeholder="e.g. 100 µL vial" bind:value={form.product.variant}></div>
+<div class="form-group" style="display:flex;flex-direction:column;gap:0.35rem;">
+  <span class="form-label" style="margin-bottom:0;">Commercial product (optional)</span>
+  <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-p-manufacturer" style="margin-bottom:0.25rem;">Manufacturer / supplier</label><input class="form-input" id="f-p-manufacturer" placeholder="e.g. Sigma-Aldrich" bind:value={form.product.manufacturer}></div>
+  <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-p-catalog" style="margin-bottom:0.25rem;">Catalog number</label><input class="form-input" id="f-p-catalog" placeholder="e.g. A1234" bind:value={form.product.catalogNumber}></div>
 </div>
 
 <div class="form-group span-2">
-  <span class="form-label">Batch / lot (optional)</span>
-  <div class="form-row">
-    <div class="form-group"><label class="form-label" for="f-b-lot">Lot code</label><input class="form-input" id="f-b-lot" placeholder="e.g. LOT-2026-01" bind:value={form.batch.lotCode}></div>
-    <div class="form-group"><label class="form-label" for="f-b-origin">Origin</label><select class="form-select" id="f-b-origin" bind:value={form.batch.originType}><option value="">—</option>{#each batchOriginOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}</select></div>
+  <span class="form-label" style="margin-bottom:0.25rem;">Batch / lot (optional)</span>
+  <div class="form-cols form-cols-3" style="gap:0.35rem 0.85rem;">
+    <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-lot" style="margin-bottom:0.25rem;">Lot code</label><input class="form-input" id="f-b-lot" placeholder="e.g. LOT-2026-01" bind:value={form.batch.lotCode}></div>
+    <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-origin" style="margin-bottom:0.25rem;">Origin</label><select class="form-select" id="f-b-origin" bind:value={form.batch.originType}><option value="">—</option>{#each batchOriginOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}</select></div>
+    <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-expiry" style="margin-bottom:0.25rem;">Expiry date</label><input class="form-input" type="date" id="f-b-expiry" bind:value={form.batch.expiresAt}></div>
+    <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-received" style="margin-bottom:0.25rem;">Received date</label><input class="form-input" type="date" id="f-b-received" bind:value={form.batch.receivedAt}></div>
+    <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-preparedby" style="margin-bottom:0.25rem;">Prepared by</label><input class="form-input" id="f-b-preparedby" placeholder="e.g. J. Novák" bind:value={form.batch.preparedBy}></div>
   </div>
-  <div class="form-row">
-    <div class="form-group"><label class="form-label" for="f-b-expiry">Expiry date</label><input class="form-input" type="date" id="f-b-expiry" bind:value={form.batch.expiresAt}></div>
-    <div class="form-group"><label class="form-label" for="f-b-received">Received date</label><input class="form-input" type="date" id="f-b-received" bind:value={form.batch.receivedAt}></div>
-  </div>
-  <div class="form-group"><label class="form-label" for="f-b-preparedby">Prepared by</label><input class="form-input" id="f-b-preparedby" placeholder="e.g. J. Novák" bind:value={form.batch.preparedBy}></div>
 </div>
 
-<div class="form-group span-2"><label class="form-label">Note</label><textarea class="form-textarea" id="f-cno" placeholder="Optional note" bind:value={form.note}></textarea></div>
-
-<div class="form-group"><label class="form-label" for="f-barcode">Barcode (optional)</label><input class="form-input" id="f-barcode" placeholder="e.g. BSC-0042 (unique across the lab)" bind:value={form.barcode}></div>
+<div class="form-group span-2"><label class="form-label">Note</label><textarea class="form-textarea" id="f-cno" placeholder="Optional note" style="min-height:3.25rem;" bind:value={form.note}></textarea></div>
+{/if}
 </div>

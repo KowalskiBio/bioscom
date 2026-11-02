@@ -152,6 +152,41 @@ describe("typed item write flows", () => {
     expect(one<{ n: number }>("SELECT COUNT(*) AS n FROM products WHERE id = ?", `p-${antibodyId}`).n).toBe(0);
   });
 
+  it("typed attribute edits preserve hidden product fields on partial product update", async () => {
+    const created = await request(baseUrl)
+      .post("/api/groups/group-t/inventory/chemicals")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", containerId: "c-1", shelfId: "s-1", name: "Catalog chem", product: { manufacturer: "Merck", supplier: "VWR", catalogNumber: "C-1", productName: "Old name", variant: "500g" } });
+    expect(created.status).toBe(201);
+    const id = created.body.tree.rooms[0].containers[0].shelves[0].chemicals.at(-1).id;
+    const res = await request(baseUrl)
+      .put(`/api/groups/group-t/inventory/chemicals/${id}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", containerId: "c-1", shelfId: "s-1", product: { catalogNumber: "C-2" } });
+    expect(res.status).toBe(200);
+    const row = res.body.tree.rooms[0].containers[0].shelves[0].chemicals.find((c: { id: string }) => c.id === id);
+    expect(row.product).toMatchObject({ manufacturer: "Merck", supplier: "VWR", catalogNumber: "C-2", productName: "Old name", variant: "500g" });
+    const product = one<{ supplier_name: string; catalog_number: string; variant: string }>(
+      "SELECT * FROM products WHERE id = ?",
+      `p-${id}`,
+    );
+    expect(product.supplier_name).toBe("VWR");
+    expect(product.catalog_number).toBe("C-2");
+    expect(product.variant).toBe("500g");
+    const cleared = await request(baseUrl)
+      .put(`/api/groups/group-t/inventory/chemicals/${id}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", containerId: "c-1", shelfId: "s-1", product: { supplier: "", variant: "" } });
+    expect(cleared.status).toBe(200);
+    const clearedRow = cleared.body.tree.rooms[0].containers[0].shelves[0].chemicals.find((c: { id: string }) => c.id === id);
+    expect(clearedRow.product.supplier).toBeUndefined();
+    expect(clearedRow.product.variant).toBeUndefined();
+    expect(clearedRow.product.manufacturer).toBe("Merck");
+  });
+
   it("edit validates merged attribute updates server-side", async () => {
     const ok = await request(baseUrl)
       .put(`/api/groups/group-t/inventory/chemicals/${antibodyId}`)

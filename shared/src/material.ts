@@ -53,8 +53,6 @@ export const MATERIAL_TYPES = [
         required: false,
         unit: "g/mol",
       },
-      { key: "purity", label: "Purity", dataType: "string", required: false },
-      { key: "grade", label: "Grade", dataType: "string", required: false },
       { key: "safety_notes", label: "Safety notes", dataType: "text", required: false },
     ],
   },

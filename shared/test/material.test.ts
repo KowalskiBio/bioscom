@@ -42,8 +42,6 @@ describe("MATERIAL_TYPES", () => {
       "cas_number",
       "molecular_formula",
       "molecular_weight",
-      "purity",
-      "grade",
       "safety_notes",
     ]);
     expect(primer?.fields.map((field) => field.key)).toEqual([

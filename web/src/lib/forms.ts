@@ -58,6 +58,7 @@ import {
 import { session } from "./stores/session.svelte";
 import { prefs } from "./stores/prefs.svelte";
 import { catalog } from "./stores/catalog.svelte";
+import { inventory } from "./stores/inventory.svelte";
 
 function isBauhaus(): boolean {
   return document.body.dataset.design === "bauhaus";
@@ -591,24 +592,57 @@ function parseDateInputUtc(value: string): number | undefined {
 type ChemicalFormState = ChemicalFormValues & {
   shelfId: string;
   cabinetShelf: string;
-  product: { manufacturer: string; supplier: string; catalogNumber: string; productName: string; variant: string };
+  roomId: string;
+  contId: string;
+  product: { manufacturer: string; catalogNumber: string };
   batch: { lotCode: string; originType: string; expiresAt: string; receivedAt: string; preparedBy: string };
+  safetyNotes: string[];
 };
 
+function parseSafetyTags(value: unknown): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of value.split(/[\s,]+/)) {
+    const tag = part.replace(/^#+/, "").trim();
+    if (tag === "") {
+      continue;
+    }
+    const key = tag.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
 export function openChemicalForm(
-  room: Room,
-  cont: Container,
+  room?: Room,
+  cont?: Container,
   opts: { shelfId?: string; editChemId?: string } = {},
 ): void {
+  const contextRooms =
+    cont === undefined
+      ? [...(inventory.tree?.rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      : [];
   const editChem =
-    opts.editChemId !== undefined
+    opts.editChemId !== undefined && cont !== undefined
       ? (cont.shelves ?? []).flatMap((sh) => (sh.chemicals ?? []).map((ch) => ({ sh, ch }))).find((e) => e.ch.id === opts.editChemId)
       : undefined;
-  const initialShelf = opts.shelfId ?? editChem?.sh.id ?? (cont.shelves ?? [])[0]?.id ?? "";
+  const initialShelf = opts.shelfId ?? editChem?.sh.id ?? (cont?.shelves ?? [])[0]?.id ?? "";
   const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
+  const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
+  const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
+  delete initialAttributes.safety_notes;
   const form: ChemicalFormState = {
     shelfId: initialShelf,
     cabinetShelf: "auto",
+    roomId: room?.id ?? "",
+    contId: cont?.id ?? "",
     name: editChem?.ch.name ?? "",
     formula: editChem?.ch.formula ?? "",
     quantity: editChem?.ch.quantity ?? null,
@@ -618,15 +652,12 @@ export function openChemicalForm(
     cas: editChem?.ch.cas ?? "",
     note: editChem?.ch.note ?? "",
     customPosition: editChem?.ch.customPosition ?? "",
-    barcode: editChem?.ch.barcode ?? "",
     type: editChem?.ch.type ?? "chemical",
-    attributes: { ...(editChem?.ch.attributes ?? {}) },
+    attributes: initialAttributes,
+    safetyNotes,
     product: {
       manufacturer: editChem?.ch.product?.manufacturer ?? "",
-      supplier: editChem?.ch.product?.supplier ?? "",
       catalogNumber: editChem?.ch.product?.catalogNumber ?? "",
-      productName: editChem?.ch.product?.productName ?? "",
-      variant: editChem?.ch.product?.variant ?? "",
     },
     batchInfo: {
       lotCode: editChem?.ch.batchInfo?.lotCode ?? undefined,
@@ -647,7 +678,7 @@ export function openChemicalForm(
   openModal({
     title: opts.editChemId !== undefined ? "Edit Chemical" : "Add Chemical",
     component: ChemicalFormModal,
-    props: { form, container: cont },
+    props: { form, container: cont, rooms: cont === undefined ? contextRooms : undefined },
     btnText: opts.editChemId !== undefined ? "Save" : "Add",
     size: "xwide",
     onConfirm: async () => {
@@ -662,6 +693,14 @@ export function openChemicalForm(
       // canonical attributes from them, so never send them from the descriptor map.
       delete attributes.cas_number;
       delete attributes.molecular_formula;
+      // The tag editor stores safety notes as string[] in form state; the
+      // payload/validator contract stays a single whitespace-joined string.
+      const safetyNotes = form.safetyNotes.map((tag) => tag.trim()).filter((tag) => tag !== "");
+      if (form.type === "chemical" && safetyNotes.length > 0) {
+        attributes.safety_notes = safetyNotes.join(" ");
+      } else {
+        delete attributes.safety_notes;
+      }
       const attributeValidation = validateAttributes(form.type, attributes);
       if (!attributeValidation.ok) {
         showToast(`Invalid fields: ${attributeValidation.errors.join("; ")}`, "error");
@@ -687,7 +726,7 @@ export function openChemicalForm(
       }
       const productDraft: NonNullable<ChemicalFormValues["product"]> = {};
       let hasProduct = false;
-      for (const key of ["manufacturer", "supplier", "catalogNumber", "productName", "variant"] as const) {
+      for (const key of ["manufacturer", "catalogNumber"] as const) {
         const value = form.product[key].trim();
         if (value !== "") {
           productDraft[key] = value;
@@ -735,33 +774,50 @@ export function openChemicalForm(
         cas: form.type === "chemical" ? casVal : "",
         note: form.note.trim(),
         customPosition: form.customPosition.trim(),
-        barcode: form.barcode.trim(),
         type: form.type,
         attributes: attributeValidation.value,
         product: productValue,
         batchInfo: batchValue,
       };
       let shelfId = form.shelfId;
-      if (cont.type === "cabinet") {
+      const activeRoom = cont !== undefined ? room : contextRooms.find((r) => r.id === form.roomId);
+      const activeCont = cont ?? (activeRoom?.containers ?? []).find((c) => c.id === form.contId);
+      if (activeRoom === undefined) {
+        showToast("Select a room before adding a chemical", "error");
+        return;
+      }
+      if (activeCont === undefined) {
+        showToast("Select a container before adding a chemical", "error");
+        return;
+      }
+      if (activeCont.type === "cabinet") {
         const isAlphabetical =
-          cont.cabinetMethod === "alphabetical" ||
-          (cont.cabinetMethod === "custom" && cont.customRangeType === "alphabetical");
-        const hasRangeShelves = (cont.shelves ?? []).some((s) => s.isRangeShelf === true);
+          activeCont.cabinetMethod === "alphabetical" ||
+          (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
+        const hasRangeShelves = (activeCont.shelves ?? []).some((s) => s.isRangeShelf === true);
         const canAuto = isAlphabetical || hasRangeShelves;
         if (form.cabinetShelf === "auto" && canAuto) {
-          shelfId = resolveAutoShelf(cont, name) ?? shelfId;
-        } else {
+          shelfId = resolveAutoShelf(activeCont, name) ?? shelfId;
+        } else if (form.cabinetShelf !== "") {
           shelfId = form.cabinetShelf;
         }
       }
+      if (shelfId === "") {
+        showToast(activeCont.type === "cabinet" ? "Select a shelf placement" : "Select a shelf or box", "error");
+        return;
+      }
       if (opts.editChemId !== undefined) {
-        const ok = await opEditChemical(room.id, cont.id, editChem!.sh.id, opts.editChemId, values, shelfId);
+        if (editChem === undefined) {
+          showToast("Chemical not found", "error");
+          return;
+        }
+        const ok = await opEditChemical(activeRoom.id, activeCont.id, editChem.sh.id, opts.editChemId, values, shelfId);
         if (ok) {
           closeModal();
           showToast("Chemical saved");
         }
       } else {
-        const ok = await opAddChemical(room.id, cont.id, shelfId, values);
+        const ok = await opAddChemical(activeRoom.id, activeCont.id, shelfId, values);
         if (ok) {
           closeModal();
           showToast(`Chemical "${isBauhaus() ? stripEmoji(name) : name}" added`);

@@ -143,7 +143,7 @@ export interface ChemicalFormValues {
   cas: string;
   note: string;
   customPosition: string;
-  barcode: string;
+  barcode?: string;
   type: string;
   attributes: Record<string, string | number | boolean | null>;
   product?: ChemicalProductFormValue | null;

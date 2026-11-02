@@ -5,7 +5,7 @@
   import { historyData } from "../../lib/stores/history.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { quantityClass, stripEmoji } from "../../lib/inventoryUtils";
-  import { exportPDF } from "../../lib/exports";
+  import { openChemicalForm } from "../../lib/forms";
   import { navigateTo } from "../../lib/router.svelte";
   import { theme } from "../../lib/theme.svelte";
 
@@ -154,9 +154,9 @@
         <p class="view-subtitle" id="dashboard-subtitle">{design === "bauhaus" ? stripEmoji(labName) : labName} · {dateLine}</p>
     </div>
     <div class="view-header-actions">
-        <button class="btn-secondary" id="btn-dash-export" onclick={() => { if (inventory.tree !== null) exportPDF(inventory.tree); }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>Inventory report</span>
+        <button class="btn-secondary" id="btn-dash-add-chemical" onclick={() => openChemicalForm()}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Add chemical</span>
         </button>
         <button class="btn-primary" id="btn-dash-reserve" onclick={() => navigateTo("instruments")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>

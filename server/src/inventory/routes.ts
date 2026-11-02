@@ -511,7 +511,22 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           chemical.attributes = body.data.attributes;
         }
         if (body.data.product !== undefined) {
-          chemical.product = body.data.product ?? undefined;
+          if (body.data.product === null) {
+            chemical.product = undefined;
+          } else {
+            const merged: Record<string, unknown> = { ...(chemical.product ?? {}) };
+            const src = body.data.product as unknown as Record<string, unknown>;
+            for (const key of ["manufacturer", "supplier", "catalogNumber", "productName", "variant"]) {
+              const value = src[key];
+              if (value === undefined) continue;
+              if (typeof value === "string" && value.trim() === "") {
+                delete merged[key];
+              } else {
+                merged[key] = value;
+              }
+            }
+            chemical.product = merged as Chemical["product"];
+          }
         }
         if (body.data.batchInfo !== undefined) {
           chemical.batchInfo = body.data.batchInfo;
