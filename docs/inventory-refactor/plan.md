@@ -214,14 +214,32 @@ Implemented and verified:
 
 ## 6. Next increments (target order)
 
-1. **Typed read APIs** (`/api/groups/:id/materials`, `/materials/:id`, `/stocks` mixed query
-   with location/type/expiry/catalog filters; server-validated attributes on write endpoints).
-2. **Type-aware UX**: create/edit item forms with dynamic descriptors from the registry,
+Status — increment 2 (typed read APIs) DONE:
+
+- `server/src/inventory/catalog.ts` registered in `app.ts`:
+  - `GET /api/groups/:id/material-types` — DB-seeded registry (canonical 0003 fields).
+  - `GET /api/groups/:id/materials` — catalog list with products/batches/stocks/locations
+    counts, `type` + `q` filters, pagination; archived excluded by default.
+  - `GET /api/groups/:id/materials/:materialId` — material + products + batches (product
+    joined) + stocks with location path (`Room / Container / Shelf`).
+  - `GET /api/groups/:id/stocks` — mixed read model with shared columns
+    (name/type/quantity/location/batch incl. lot & expiry/product if any), recursive
+    location subtree filter, type/status/`expiresBefore` filters, attribute-aware search
+    (name, cas_number/target/sequence via `json_extract`, catalog, lot, position),
+    pagination. Same auth conventions (members + superadmin; readers allowed on GET).
+- Tests: server 90/90 (+13 catalog cases incl. mixed-fridge, subtree, filters, search
+  set, pagination, group isolation, reader access, 404s).
+- Caught during review: positional-parameter binding matters when a `WITH RECURSIVE` CTE
+  prefix precedes WHERE placeholders (fixed by explicit cte/where param order).
+
+Remaining in target order:
+
+1. **Type-aware UX**: create/edit item forms with dynamic descriptors from the registry,
    mixed location table untouched by default, typed-filter views get descriptor columns.
-3. **Product capture** in forms (optional manufacturer/catalog record creation).
-4. **Flip-read** evaluation: assemble inventory doc FROM relational data, parity-compare
+2. **Product capture** in forms (optional manufacturer/catalog record creation).
+3. **Flip-read** evaluation: assemble inventory doc FROM relational data, parity-compare
    with the doc for 1–2 weeks in prod logs before retiring the doc-to-rel direction.
-5. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile → monitor).
+4. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile → monitor).
 
 - **Local-only data:** no production reconciliation is possible here; correctness is argued
   by fixture tests + reconcile report, which also runs on boot in production and logs
