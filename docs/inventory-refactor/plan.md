@@ -247,11 +247,22 @@ Status — increment 3 (type-aware create/edit) DONE:
   FK-order caught the product-before-material sync bug), web 9/9, typecheck 0 errors and
   a11y warnings held at the 113 baseline (new fields fully label-associated).
 
+Status — increment 4 (flip-read parity tooling) DONE:
+
+- `server/src/inventory/assemble.ts` rebuilds the exact legacy inventory slice from
+  relational data (locations + shares + chemicals with attributes re-expanded, product
+  and batchInfo reattached); `checkParity(groupId)` canonical-compares for
+  missing/different/ghost rows; boot logs parity mismatches as one JSON line (any
+  non-zero output = alarm); probe endpoint `GET /api/groups/:id/inventory/parity`.
+- Only the inventory slice (rooms→containers→shelves→chemicals) participates —
+  assets/protocols stay doc-only by design for now.
+- Tests: server 100/100 (+4 parity).
+
 Remaining in target order:
 
-1. **Flip-read** evaluation: assemble inventory doc FROM relational data, parity-compare
-   with the doc for 1–2 weeks in prod logs before retiring the doc-to-rel direction.
-2. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile → monitor).
+1. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile →
+   monitor) once Phase A soaks in production for 1–2 weeks; then schedule the flip-read
+   (assemble-to-doc becomes the read driver) in a reviewed migration.
 
 - **Local-only data:** no production reconciliation is possible here; correctness is argued
   by fixture tests + reconcile report, which also runs on boot in production and logs

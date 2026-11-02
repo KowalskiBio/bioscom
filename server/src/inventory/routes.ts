@@ -30,6 +30,7 @@ import type { ServerConfig } from "../config.js";
 import { requireUser } from "../auth/guards.js";
 import type { SessionUserRow } from "../auth/sessions.js";
 import { getOrCreatePosition } from "./positions.js";
+import { ensureParityChecked } from "./assemble.js";
 import type { InventoryHub } from "./ws.js";
 import {
   OpError,
@@ -94,6 +95,17 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(404, "Inventory not found");
       }
       return { version: row.version, tree: JSON.parse(row.tree) };
+    });
+  });
+
+  app.get("/api/groups/:id/inventory/parity", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      const issues = ensureParityChecked(db(), [groupId]);
+      return { ok: issues.length === 0, issues };
     });
   });
 

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { ensureBackfilled } from "../inventory/sync.js";
+import { ensureParityChecked } from "../inventory/assemble.js";
 import { serverDir } from "../paths.js";
 
 const migrationsDir = join(serverDir, "src", "db", "migrations");
@@ -72,6 +73,14 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
       console.error(
         `[inventory-backfill] failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+    try {
+      const issues = ensureParityChecked(db);
+      if (issues.length > 0) {
+        console.error(`[inventory-parity] ${issues.length} mismatch(es): ${JSON.stringify(issues.slice(0, 20))}`);
+      }
+    } catch (error) {
+      console.error(`[inventory-parity] failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   return newlyApplied;
