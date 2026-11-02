@@ -196,6 +196,30 @@ export const AdjustQtyBodySchema = z.object({
   delta: z.number(),
 });
 
+export const BulkImportItemSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  type: z.string().trim().min(1).max(40).optional(),
+  attributes: ChemicalAttributesBodySchema.optional(),
+  cas: z.string().trim().max(32).optional(),
+  formula: z.string().trim().max(100).optional(),
+  quantity: z.number().optional(),
+  unit: z.string().trim().max(16).optional(),
+  concentration: z.number().optional(),
+  concUnit: z.string().trim().max(16).optional(),
+  position: z.string().trim().max(32).optional(),
+  customPosition: z.string().trim().max(64).optional(),
+  note: z.string().max(4000).optional(),
+  product: StockProductBodySchema.optional(),
+  batchInfo: BatchInfoBodySchema.optional(),
+});
+
+export const BulkImportBodySchema = z.object({
+  roomId: z.string().min(1),
+  containerId: z.string().min(1),
+  shelfId: z.string().min(1),
+  items: z.array(BulkImportItemSchema).min(1).max(500),
+});
+
 export const MergeMaterialsBodySchema = z.object({
   sourceMaterialId: z.string().min(1),
   targetMaterialId: z.string().min(1),
@@ -373,6 +397,8 @@ export type EditShelfBody = z.infer<typeof EditShelfBodySchema>;
 export type AddChemicalBody = z.infer<typeof AddChemicalBodySchema>;
 export type EditChemicalBody = z.infer<typeof EditChemicalBodySchema>;
 export type AdjustQtyBody = z.infer<typeof AdjustQtyBodySchema>;
+export type BulkImportItem = z.infer<typeof BulkImportItemSchema>;
+export type BulkImportBody = z.infer<typeof BulkImportBodySchema>;
 export type MergeMaterialsBody = z.infer<typeof MergeMaterialsBodySchema>;
 export type MoveChemicalBody = z.infer<typeof MoveChemicalBodySchema>;
 export type AddProtocolBody = z.infer<typeof AddProtocolBodySchema>;

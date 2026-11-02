@@ -42,6 +42,7 @@ import CatalogFormModal from "../components/modals/CatalogFormModal.svelte";
 import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
 import MaterialDetailModal from "../components/modals/MaterialDetailModal.svelte";
 import MaterialMergeModal from "../components/modals/MaterialMergeModal.svelte";
+import BulkImportModal from "../components/modals/BulkImportModal.svelte";
 import {
   opCreateNotice,
   opUpdateNotice,
@@ -214,6 +215,16 @@ export function openMaterialMergeModal(sourceMaterialId: string, sourceMaterialN
     size: "xwide",
     component: MaterialMergeModal,
     props: { sourceMaterialId, sourceMaterialName },
+    btnText: null,
+  });
+}
+
+export function openBulkImportModal(room: Room, container: Container): void {
+  openModal({
+    title: `Import items into ${container.name}`,
+    size: "xwide",
+    component: BulkImportModal,
+    props: { room, container },
     btnText: null,
   });
 }

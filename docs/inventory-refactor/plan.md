@@ -258,7 +258,7 @@ Status — increment 4 (flip-read parity tooling) DONE:
   assets/protocols stay doc-only by design for now.
 - Tests: server 100/100 (+4 parity).
 
-Status — Phase B 1 (Materials catalog UI) DONE:
+Status — Phase B 2 (duplicate-material merge) DONE:
 
 - Authority shift in sync: `legacy_chemical_map` is now the chemical→material authority
   (INSERT OR IGNORE; deterministic `m-<chemId>` derivation only for unmapped rows), so
@@ -292,6 +292,8 @@ Status — Phase B 3 (mixed stocks table) DONE:
 - Store: dedicated stocks slice with stale-request guards; cleared with catalog.
 - Gates: typecheck 0 errors / 113 baseline, builds pass, web tests 9/9.
 
+Status — Phase B 1 (Materials catalog UI) DONE:
+
 - New top-level Catalog view: type filter pills (All + 7 registry types), debounced name
   search, paginated card list (25/page) with type chips, descriptor summaries and
   stock/location/product counts; xwide material-detail modal (attributes, products,
@@ -303,6 +305,19 @@ Status — Phase B 3 (mixed stocks table) DONE:
   live DOM verification of nav placement + route activation.
 
 Status — Phase B 2 (duplicate-material merge) DONE:
+
+Status — Phase B 4 (bulk CSV import) DONE:
+
+- POST /api/groups/:id/inventory/bulk-import: single doc mutation (one bump + one
+  broadcast) creating up to 500 items into a chosen shelf; every row passes type-registry
+  validation first, invalid rows reported per-index and skipped without side effects;
+  fully-invalid payloads are a no-op. Full type/product/batchInfo support.
+- UI: "Import CSV" in the container detail header (writer-only) → xwide modal: paste →
+  quote-aware parse (BOM/CR, duplicate-header first-wins, attribute mapping,
+  client-side registry validation, 500-row cap) → valid/skipped preview → confirm →
+  created/skipped report; realtime broadcast refreshes the view automatically.
+- Tests: server 107/107 (+3 import flow), web 9/9, typecheck 0 errors / 113 baseline,
+  builds pass.
 
 Remaining in target order:
 
