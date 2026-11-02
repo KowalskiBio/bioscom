@@ -173,7 +173,110 @@ git push proxmox1:BioSCom.git main
 ssh proxmox1 'cd BioSCom && ./deploy/deploy.sh'   # git pull, npm ci, build -ws, systemctl restart
 ```
 
+## Rolling out the inventory refactor (typed materials)
+
+What the release changes under the hood: the legacy per-group **JSON inventory document
+stays the read/write driver** for now, but the schema gains a relational core
+(materials → products → batches → stocks, locations, shares), mirrored transactionally on
+every write. On the FIRST boot of this build, the server creates those tables and runs an
+**idempotent backfill** (JSON docs → relational rows) plus a **parity check**, all inside
+the same code path as normal migrations (`server/src/db/migrate.ts`). Nothing else in this
+runbook changes.
+
+### Pre-flight (before `git push proxmox1:BioSCom.git main`)
+
+1. Snapshot the only production data copy:
+   ```bash
+   ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-inventory-refactor.db\"" && sha256sum /home/kowalski/backups/bioscom-pre-inventory-refactor.db'
+   ```
+2. (Sanity re-run locally: `npm test -w server` must be green before pushing.)
+
+### Deploy
+
+Same as Routine updates:
+
+```bash
+git push proxmox1:BioSCom.git main
+ssh proxmox1 'cd BioSCom && ./deploy/deploy.sh'   # git pull, npm ci, build -ws, systemctl restart
+```
+
+### Expected boot logs (first boot of the new build)
+
+`ssh proxmox1 'journalctl -u bioscom -n 80 --no-pager'`:
+
+- The migration runner is silent for the SQL files themselves; after any newly applied
+  migration it prints one line per backfill run, per group-checked:
+  ```
+  [inventory-backfill] synced N group(s), anomalies: 0
+  ```
+  (`synced N` = how many group docs were reconciled this boot; on later boots this rule is
+  silent unless a doc version drifted or an anomaly was found — silence is the healthy state.)
+- `[inventory-parity]` must NOT appear at all. Any `[inventory-parity] ... mismatch(es)`
+  line is an alarm: it means relational and document disagree; investigate before letting
+  colleagues in (see probe below).
+- `[inventory-sync] mirror failed` lines during operation indicate a per-write mirror
+  failure — the legacy write still succeeded (document is authoritative here); investigate
+  and then just re-edit anything in that group (sync re-heals on every mutation; the boot
+  backfill also re-heals stale docs).
+
+### Verification checklist (post-release smoke, ~5 min)
+
+1. Parity probe per lab (once, needs a logged-in session cookie; a member login of that
+   lab works): visit `https://bioscom.ubch.sci.muni.cz/api/groups/<group-id>/inventory/parity`
+   in that browser session — must answer `{ "ok": true, "issues": [] }`.
+   Alternatively without cookies, on the VM:
+   ```bash
+   ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "SELECT COUNT(*) FROM inventory_sync_state"'  # 1 row per synced group
+   ```
+2. Open the app: **Catalog** tab lists your materials with types; create/edit one legacy
+   chemical (existing flow must work exactly as before); open the **Stocks** tab and
+   confirm legacy rows show CAS etc.; create one typed item (e.g. antibody with target/
+   host) via Add Chemical → Item type; confirm it appears in Catalog with a type chip.
+3. Next `systemctl restart bioscom` → journal shows NO `[inventory-backfill] synced 0`
+   anomalies and still no `[inventory-parity]` line (data converged 1:1).
+
+### Rollback for this release
+
+The legacy document, history, shares, exports and percents of current writes all live in
+the old schema and remain authoritative; the relational side is a transactional mirror.
+- **Rollback**: deploy previous tag (standard "Bad app release" above). The new tables
+  (`materials`, `products`, `batches`, `stocks`, `locations`, `container_shares`,
+  `batch_inputs`, `legacy_chemical_map`, `inventory_sync_state`, `schema_migrations`) are
+  simply ignored by the old build and carry **no unique data** yet (everything in them is
+  derivable from the doc). Nothing needs reversal or conversion.
+- A boot killed mid-migration cannot half-apply a migration (each applies inside its own
+  transaction) or half-sync a group (per-group transactions).
+- If the newer build already created typed items (antibodies etc.) BEFORE you roll back:
+  those rows exist as extended fields inside the JSON document rows, which the old build
+  parses as legacy chemicals (extra fields are preserved as-is by the legacy zod tolerance)
+  — usable, but the typed experience disappears with the old build. Data is not lost.
+
+### Soak gate before the flip-read review (Phase C)
+
+Watch the journal for **1–2 weeks**:
+
+```bash
+ssh proxmox1 'journalctl -u bioscom --since "24 hours ago" | grep -E "inventory-(backfill|sync|parity)"'
+```
+
+Expected: only `[inventory-backfill]` lines with `anomalies: 0` (or silence). The
+**flip-read** (making the relational core the read driver; assemble-to-document path
+already exists and is parity-checked at boot) is scheduled in a **separately reviewed
+rear-guard step** after clean soak + this checklist passes, not from this deployment.
+
+Execution log (fill during rollout):
+
+- [ ] pre-refactor DB snapshot taken (path + sha256)
+- [ ] deploy.sh completed, unit restarted
+- [ ] first-boot journal: no `[inventory-parity]`, backfill anomalies: 0
+- [ ] parity probe `{ok: true}` per lab in browser session
+- [ ] legacy chem edit OK; one typed item created; Catalog renders it
+- [ ] next-boot journal: anomalies: 0, no parity alarm
+- [ ] 1–2 week soak journal clean (flip-read review date: ____)
+
 ## Backups
+
+
 
 ```bash
 ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-$(date +%Y%m%d).db\"" && sha256sum /home/kowalski/backups/bioscom-*.db'
