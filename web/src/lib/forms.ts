@@ -1,4 +1,5 @@
 import type { Container, Room } from "@bioscom/shared";
+import { validateAttributes } from "@bioscom/shared";
 import { openModal, closeModal } from "./modal.svelte";
 import { showToast } from "./stores/toast.svelte";
 import {
@@ -514,6 +515,31 @@ export function openChangeBoxColorForm(room: Room, cont: Container, shelfId: str
   });
 }
 
+function epochToDateInput(value: number | null | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return "";
+  }
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function parseDateInputUtc(value: string): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (match === null) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return Date.UTC(year, month - 1, day);
+}
+
+type ChemicalFormState = ChemicalFormValues & {
+  shelfId: string;
+  cabinetShelf: string;
+  product: { manufacturer: string; supplier: string; catalogNumber: string; productName: string; variant: string };
+  batch: { lotCode: string; originType: string; expiresAt: string; receivedAt: string; preparedBy: string };
+};
+
 export function openChemicalForm(
   room: Room,
   cont: Container,
@@ -524,7 +550,8 @@ export function openChemicalForm(
       ? (cont.shelves ?? []).flatMap((sh) => (sh.chemicals ?? []).map((ch) => ({ sh, ch }))).find((e) => e.ch.id === opts.editChemId)
       : undefined;
   const initialShelf = opts.shelfId ?? editChem?.sh.id ?? (cont.shelves ?? [])[0]?.id ?? "";
-  const form: ChemicalFormValues & { shelfId: string; cabinetShelf: string } = {
+  const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
+  const form: ChemicalFormState = {
     shelfId: initialShelf,
     cabinetShelf: "auto",
     name: editChem?.ch.name ?? "",
@@ -536,6 +563,30 @@ export function openChemicalForm(
     cas: editChem?.ch.cas ?? "",
     note: editChem?.ch.note ?? "",
     customPosition: editChem?.ch.customPosition ?? "",
+    type: editChem?.ch.type ?? "chemical",
+    attributes: { ...(editChem?.ch.attributes ?? {}) },
+    product: {
+      manufacturer: editChem?.ch.product?.manufacturer ?? "",
+      supplier: editChem?.ch.product?.supplier ?? "",
+      catalogNumber: editChem?.ch.product?.catalogNumber ?? "",
+      productName: editChem?.ch.product?.productName ?? "",
+      variant: editChem?.ch.product?.variant ?? "",
+    },
+    batchInfo: {
+      lotCode: editChem?.ch.batchInfo?.lotCode ?? undefined,
+      originType: editChem?.ch.batchInfo?.originType ?? undefined,
+      receivedAt: editChem?.ch.batchInfo?.receivedAt ?? undefined,
+      preparedAt: editChem?.ch.batchInfo?.preparedAt ?? undefined,
+      preparedBy: editChem?.ch.batchInfo?.preparedBy ?? undefined,
+      expiresAt: editChem?.ch.batchInfo?.expiresAt ?? undefined,
+    },
+    batch: {
+      lotCode: editChem?.ch.batchInfo?.lotCode ?? "",
+      originType: editChem?.ch.batchInfo?.originType ?? "",
+      expiresAt: epochToDateInput(editChem?.ch.batchInfo?.expiresAt),
+      receivedAt: epochToDateInput(editChem?.ch.batchInfo?.receivedAt),
+      preparedBy: editChem?.ch.batchInfo?.preparedBy ?? "",
+    },
   };
   openModal({
     title: opts.editChemId !== undefined ? "Edit Chemical" : "Add Chemical",
@@ -543,6 +594,22 @@ export function openChemicalForm(
     props: { form, container: cont },
     btnText: opts.editChemId !== undefined ? "Save" : "Add",
     onConfirm: async () => {
+      const attributes: Record<string, string | number | boolean | null> = {};
+      for (const [key, value] of Object.entries(form.attributes)) {
+        if (value === "" || value === undefined) {
+          continue;
+        }
+        attributes[key] = value;
+      }
+      // CAS/formula are legacy dedicated fields on chemicals; sync derives the
+      // canonical attributes from them, so never send them from the descriptor map.
+      delete attributes.cas_number;
+      delete attributes.molecular_formula;
+      const attributeValidation = validateAttributes(form.type, attributes);
+      if (!attributeValidation.ok) {
+        showToast(`Invalid fields: ${attributeValidation.errors.join("; ")}`, "error");
+        return;
+      }
       const name = form.name.trim();
       if (name === "" || name.length > 100) {
         showToast("Chemical name is required (max 100 chars)", "error");
@@ -553,7 +620,7 @@ export function openChemicalForm(
         return;
       }
       const casVal = form.cas.trim();
-      if (casVal !== "" && !/^\d{1,7}-\d{2}-\d$/.test(casVal)) {
+      if (form.type === "chemical" && casVal !== "" && !/^\d{1,7}-\d{2}-\d$/.test(casVal)) {
         showToast("Invalid CAS number format (e.g. 7647-01-0)", "error");
         return;
       }
@@ -561,16 +628,60 @@ export function openChemicalForm(
         showToast("Quantity must be a non-negative number", "error");
         return;
       }
+      const productDraft: NonNullable<ChemicalFormValues["product"]> = {};
+      let hasProduct = false;
+      for (const key of ["manufacturer", "supplier", "catalogNumber", "productName", "variant"] as const) {
+        const value = form.product[key].trim();
+        if (value !== "") {
+          productDraft[key] = value;
+          hasProduct = true;
+        }
+      }
+      const productValue: ChemicalFormValues["product"] | undefined = hasProduct
+        ? productDraft
+        : opts.editChemId !== undefined && hadProduct
+          ? null
+          : undefined;
+      const batchDraft: NonNullable<ChemicalFormValues["batchInfo"]> = {};
+      const lotCode = form.batch.lotCode.trim();
+      if (lotCode !== "") {
+        batchDraft.lotCode = lotCode;
+      }
+      const originType = form.batch.originType.trim();
+      if (originType !== "") {
+        batchDraft.originType = originType as NonNullable<ChemicalFormValues["batchInfo"]>["originType"];
+      }
+      const expiresAt = parseDateInputUtc(form.batch.expiresAt);
+      if (expiresAt !== undefined) {
+        batchDraft.expiresAt = expiresAt;
+      }
+      const receivedAt = parseDateInputUtc(form.batch.receivedAt);
+      if (receivedAt !== undefined) {
+        batchDraft.receivedAt = receivedAt;
+      }
+      const preparedBy = form.batch.preparedBy.trim();
+      if (preparedBy !== "") {
+        batchDraft.preparedBy = preparedBy;
+      }
+      const existingPreparedAt = editChem?.ch.batchInfo?.preparedAt;
+      if (typeof existingPreparedAt === "number") {
+        batchDraft.preparedAt = existingPreparedAt;
+      }
+      const batchValue = Object.keys(batchDraft).length > 0 ? batchDraft : undefined;
       const values: ChemicalFormValues = {
         name,
-        formula: form.formula.trim(),
+        formula: form.type === "chemical" ? form.formula.trim() : "",
         quantity: form.quantity,
         unit: form.unit,
         concentration: form.concentration,
         concUnit: form.concUnit,
-        cas: casVal,
+        cas: form.type === "chemical" ? casVal : "",
         note: form.note.trim(),
         customPosition: form.customPosition.trim(),
+        type: form.type,
+        attributes: attributeValidation.value,
+        product: productValue,
+        batchInfo: batchValue,
       };
       let shelfId = form.shelfId;
       if (cont.type === "cabinet") {

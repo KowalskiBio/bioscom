@@ -116,6 +116,23 @@ export function opChangeBoxColor(roomId: string, containerId: string, shelfId: s
   return opEditShelfMeta(roomId, containerId, shelfId, { color });
 }
 
+export type ChemicalProductFormValue = {
+  manufacturer?: string;
+  supplier?: string;
+  catalogNumber?: string;
+  productName?: string;
+  variant?: string;
+};
+
+export type ChemicalBatchInfoFormValue = {
+  lotCode?: string;
+  originType?: "purchased" | "prepared" | "derived" | "unknown";
+  expiresAt?: number;
+  receivedAt?: number;
+  preparedAt?: number;
+  preparedBy?: string;
+};
+
 export interface ChemicalFormValues {
   name: string;
   formula: string;
@@ -126,6 +143,10 @@ export interface ChemicalFormValues {
   cas: string;
   note: string;
   customPosition: string;
+  type: string;
+  attributes: Record<string, string | number | boolean | null>;
+  product?: ChemicalProductFormValue | null;
+  batchInfo?: ChemicalBatchInfoFormValue;
 }
 
 export function opAddChemical(
@@ -148,6 +169,10 @@ export function opAddChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition === "" ? undefined : values.customPosition,
       note: values.note === "" ? undefined : values.note,
+      type: values.type,
+      attributes: values.attributes,
+      ...(values.product !== null && values.product !== undefined ? { product: values.product } : {}),
+      ...(values.batchInfo !== undefined ? { batchInfo: values.batchInfo } : {}),
     }),
   );
 }
@@ -174,6 +199,14 @@ export function opEditChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition,
       note: values.note,
+      type: values.type,
+      attributes: values.attributes,
+      batchInfo: values.batchInfo,
+      ...(values.product === null
+        ? { product: null }
+        : values.product !== undefined
+          ? { product: values.product }
+          : {}),
     });
     if (moveTargetShelfId !== undefined && moveTargetShelfId !== shelfId) {
       await api.post(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/move`, {

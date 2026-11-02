@@ -232,14 +232,26 @@ Status — increment 2 (typed read APIs) DONE:
 - Caught during review: positional-parameter binding matters when a `WITH RECURSIVE` CTE
   prefix precedes WHERE placeholders (fixed by explicit cte/where param order).
 
+Status — increment 3 (type-aware create/edit) DONE:
+
+- Shared: `ChemicalSchema` doc row extended (`type`, `attributes`, `product`, `batchInfo`);
+  Add/Edit chemical body schemas accept the same; `product: null` on edit detaches.
+- Server: mirror maps rows into typed materials (validated attributes; legacy extras under
+  `legacy_fields`), single deterministic product per stock (`p-<chemId>`, orphan-pruned when
+  detached), batch lot/origin/dates/expiry; create/edit endpoints validate attributes
+  server-side against the registry, incl. unknown type keys (400 with field errors).
+- Web: type picker + dynamic descriptor fields per registry (string/text/number/boolean/
+  date/enum/sequence), CAS/formula stay chemical-only, optional Commercial product and
+  Batch/lot sections, UTC-safe date handling, type chips in the chemical tables.
+- Tests: server 96/96 (+6 typed-ops incl. 400s, detach semantics, merged edit validation,
+  FK-order caught the product-before-material sync bug), web 9/9, typecheck 0 errors and
+  a11y warnings held at the 113 baseline (new fields fully label-associated).
+
 Remaining in target order:
 
-1. **Type-aware UX**: create/edit item forms with dynamic descriptors from the registry,
-   mixed location table untouched by default, typed-filter views get descriptor columns.
-2. **Product capture** in forms (optional manufacturer/catalog record creation).
-3. **Flip-read** evaluation: assemble inventory doc FROM relational data, parity-compare
+1. **Flip-read** evaluation: assemble inventory doc FROM relational data, parity-compare
    with the doc for 1–2 weeks in prod logs before retiring the doc-to-rel direction.
-4. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile → monitor).
+2. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile → monitor).
 
 - **Local-only data:** no production reconciliation is possible here; correctness is argued
   by fixture tests + reconcile report, which also runs on boot in production and logs

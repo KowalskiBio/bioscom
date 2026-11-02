@@ -90,6 +90,28 @@ export const EditShelfBodySchema = z
   })
   .refine((value) => value.name !== undefined || value.color !== undefined, { message: "empty update" });
 
+export const StockProductBodySchema = z.object({
+  manufacturer: z.string().trim().max(100).optional(),
+  supplier: z.string().trim().max(100).optional(),
+  catalogNumber: z.string().trim().max(64).optional(),
+  productName: z.string().trim().max(160).optional(),
+  variant: z.string().trim().max(100).optional(),
+});
+
+export const BatchInfoBodySchema = z.object({
+  lotCode: z.string().trim().max(64).optional(),
+  originType: z.enum(["purchased", "prepared", "derived", "unknown"]).optional(),
+  receivedAt: z.number().int().nonnegative().optional(),
+  preparedAt: z.number().int().nonnegative().optional(),
+  preparedBy: z.string().trim().max(120).optional(),
+  expiresAt: z.number().int().nonnegative().optional(),
+});
+
+export const ChemicalAttributesBodySchema = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
+
 export const AddChemicalBodySchema = z.object({
   roomId: z.string().min(1),
   containerId: z.string().min(1),
@@ -105,6 +127,10 @@ export const AddChemicalBodySchema = z.object({
   customPosition: z.string().trim().max(64).optional(),
   note: z.string().max(4000).optional(),
   shelfOverride: z.string().min(1).optional(),
+  type: z.string().trim().min(1).max(40).optional(),
+  attributes: ChemicalAttributesBodySchema.optional(),
+  product: StockProductBodySchema.optional(),
+  batchInfo: BatchInfoBodySchema.optional(),
 });
 
 export const EditChemicalBodySchema = z
@@ -123,6 +149,10 @@ export const EditChemicalBodySchema = z
     customPosition: z.string().trim().max(64).optional(),
     note: z.string().max(4000).optional(),
     shelfOverride: z.string().min(1).optional(),
+    type: z.string().trim().min(1).max(40).optional(),
+    attributes: ChemicalAttributesBodySchema.optional(),
+    product: StockProductBodySchema.nullable().optional(),
+    batchInfo: BatchInfoBodySchema.optional(),
   })
   .refine(
     (value) =>
@@ -136,7 +166,11 @@ export const EditChemicalBodySchema = z
       value.position !== undefined ||
       value.customPosition !== undefined ||
       value.note !== undefined ||
-      value.shelfOverride !== undefined,
+      value.shelfOverride !== undefined ||
+      value.type !== undefined ||
+      value.attributes !== undefined ||
+      value.product !== undefined ||
+      value.batchInfo !== undefined,
     { message: "empty update" },
   );
 

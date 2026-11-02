@@ -20,6 +20,7 @@ import {
   EditAssetRoomBodySchema,
   AddAssetBodySchema,
   EditAssetBodySchema,
+  validateAttributes as validateMaterialAttributes,
   type Chemical,
   type Container,
   type InventoryTree,
@@ -362,6 +363,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
         checkSharedContainerAccess(user, groupId, container, context, isMember);
         const shelf = findShelfOrThrow(tree, body.data.roomId, body.data.containerId, body.data.shelfId);
+        const typeKey = body.data.type ?? "chemical";
+        if (body.data.type !== undefined || body.data.attributes !== undefined) {
+          const validation = validateMaterialAttributes(typeKey, body.data.attributes ?? {});
+          if (!validation.ok) {
+            throw new OpError(400, `Invalid attributes for type "${typeKey}": ${validation.errors.join("; ")}`);
+          }
+        }
         const position =
           body.data.position ??
           body.data.customPosition ??
@@ -378,9 +386,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           position,
           customPosition: body.data.customPosition,
           note: body.data.note,
+          type: body.data.type,
+          attributes: body.data.attributes,
+          product: body.data.product,
+          batchInfo: body.data.batchInfo,
         };
         shelf.chemicals.push(chemical);
-        return `Added chemical "${body.data.name}" to container "${container.name}"`;
+        return `Added ${typeKey === "chemical" ? "chemical" : typeKey} "${body.data.name}" to container "${container.name}"`;
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);
@@ -409,6 +421,14 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           body.data.shelfId,
           chemicalId,
         );
+        const typeKey = body.data.type ?? chemical.type ?? "chemical";
+        if (body.data.attributes !== undefined || body.data.type !== undefined) {
+          const merged = { ...(chemical.attributes ?? {}), ...(body.data.attributes ?? {}) };
+          const validation = validateMaterialAttributes(typeKey, merged);
+          if (!validation.ok) {
+            throw new OpError(400, `Invalid attributes for type "${typeKey}": ${validation.errors.join("; ")}`);
+          }
+        }
         if (body.data.name !== undefined) {
           chemical.name = body.data.name;
         }
@@ -438,6 +458,18 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.note !== undefined) {
           chemical.note = body.data.note;
+        }
+        if (body.data.type !== undefined) {
+          chemical.type = body.data.type;
+        }
+        if (body.data.attributes !== undefined) {
+          chemical.attributes = body.data.attributes;
+        }
+        if (body.data.product !== undefined) {
+          chemical.product = body.data.product ?? undefined;
+        }
+        if (body.data.batchInfo !== undefined) {
+          chemical.batchInfo = body.data.batchInfo;
         }
         return `Edited chemical "${chemical.name}"`;
       });

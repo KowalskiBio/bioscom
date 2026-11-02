@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { InventoryTreeSchema, type Chemical, type InventoryTree } from "@bioscom/shared";
+import { InventoryTreeSchema, validateAttributes as validateMaterialAttributes, type Chemical, type InventoryTree } from "@bioscom/shared";
 import { loadDoc } from "./doc.js";
 
 const KNOWN_CHEMICAL_KEYS = new Set([
@@ -43,13 +43,21 @@ function legacyFields(ch: Chemical): Record<string, unknown> {
   return out;
 }
 
+function chemicalTypeKey(ch: Chemical): string {
+  return typeof ch.type === "string" && ch.type.trim() !== "" ? ch.type : "chemical";
+}
+
 function chemicalAttributes(ch: Chemical): Record<string, unknown> {
-  const attributes: Record<string, unknown> = {};
-  if (ch.cas !== undefined && ch.cas !== null && ch.cas !== "") attributes.cas_number = ch.cas;
-  if (ch.formula !== undefined && ch.formula !== null && ch.formula !== "") attributes.molecular_formula = ch.formula;
+  const type = chemicalTypeKey(ch);
+  const source: Record<string, unknown> = { ...(ch.attributes ?? {}) };
+  if (type === "chemical") {
+    if (ch.cas !== undefined && ch.cas !== null && ch.cas !== "") source.cas_number = ch.cas;
+    if (ch.formula !== undefined && ch.formula !== null && ch.formula !== "") source.molecular_formula = ch.formula;
+  }
   const legacy = legacyFields(ch);
-  if (Object.keys(legacy).length > 0) attributes.legacy_fields = legacy;
-  return attributes;
+  if (Object.keys(legacy).length > 0) source.legacy_fields = legacy;
+  const validation = validateMaterialAttributes(type, source);
+  return validation.ok ? (validation.value as Record<string, unknown>) : source;
 }
 
 interface LocationInsert {
@@ -101,8 +109,31 @@ ON CONFLICT(id) DO UPDATE SET
 const UPSERT_BATCH_SQL = `
 INSERT INTO batches (id, material_id, product_id, lot_code, origin_type, received_at, prepared_at,
   prepared_by, expires_at, attributes, created_at, updated_at)
-VALUES (@id, @material_id, NULL, NULL, 'unknown', NULL, NULL, NULL, NULL, '{}', @created_at, @updated_at)
-ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`;
+VALUES (@id, @material_id, @product_id, @lot_code, @origin_type, @received_at, @prepared_at,
+  @prepared_by, @expires_at, '{}', @created_at, @updated_at)
+ON CONFLICT(id) DO UPDATE SET
+  product_id = excluded.product_id, lot_code = excluded.lot_code, origin_type = excluded.origin_type,
+  received_at = excluded.received_at, prepared_at = excluded.prepared_at,
+  prepared_by = excluded.prepared_by, expires_at = excluded.expires_at,
+  updated_at = excluded.updated_at`;
+
+const UPSERT_PRODUCT_SQL = `
+INSERT INTO products (id, material_id, manufacturer_name, supplier_name, catalog_number, product_name,
+  variant, attributes, created_at, updated_at)
+VALUES (@id, @material_id, @manufacturer_name, @supplier_name, @catalog_number, @product_name,
+  @variant, '{}', @created_at, @updated_at)
+ON CONFLICT(id) DO UPDATE SET
+  manufacturer_name = excluded.manufacturer_name, supplier_name = excluded.supplier_name,
+  catalog_number = excluded.catalog_number, product_name = excluded.product_name,
+  variant = excluded.variant, updated_at = excluded.updated_at`;
+
+function productFieldsPresent(ch: Chemical): boolean {
+  if (ch.product === undefined || ch.product === null) return false;
+  const p = ch.product as Record<string, unknown>;
+  return ["manufacturer", "supplier", "catalogNumber", "productName", "variant"].some(
+    (key) => typeof p[key] === "string" && (p[key] as string).trim() !== "",
+  );
+}
 
 const UPSERT_STOCK_SQL = `
 INSERT INTO stocks (id, group_id, batch_id, location_id, position, custom_position, shelf_override,
@@ -140,6 +171,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
   const upsertLocation = db.prepare(UPSERT_LOCATION_SQL);
   const upsertMaterial = db.prepare(UPSERT_MATERIAL_SQL);
   const upsertBatch = db.prepare(UPSERT_BATCH_SQL);
+  const upsertProduct = db.prepare(UPSERT_PRODUCT_SQL);
+  const deleteOrphanProduct = db.prepare(
+    "DELETE FROM products WHERE id = ? AND NOT EXISTS (SELECT 1 FROM batches WHERE product_id = ?)",
+  );
   const upsertStock = db.prepare(UPSERT_STOCK_SQL);
   const insertShare = db.prepare(
     "INSERT OR IGNORE INTO container_shares (container_location_id, group_id) VALUES (?, ?)",
@@ -238,17 +273,48 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
           docChemicalIds.add(ch.id);
           const materialId = `m-${ch.id}`;
           const batchId = `b-${ch.id}`;
+          const productId = `p-${ch.id}`;
+          const hasProduct = productFieldsPresent(ch);
           upsertMaterial.run({
             id: materialId,
             group_id: groupId,
-            type_key: "chemical",
+            type_key: chemicalTypeKey(ch),
             name: ch.name ?? "",
             description: null,
             attributes: JSON.stringify(chemicalAttributes(ch)),
             created_at: now,
             updated_at: now,
           });
-          upsertBatch.run({ id: batchId, material_id: materialId, created_at: now, updated_at: now });
+          if (hasProduct) {
+            upsertProduct.run({
+              id: productId,
+              material_id: materialId,
+              manufacturer_name: ch.product?.manufacturer ?? null,
+              supplier_name: ch.product?.supplier ?? null,
+              catalog_number: ch.product?.catalogNumber ?? null,
+              product_name: ch.product?.productName ?? null,
+              variant: ch.product?.variant ?? null,
+              created_at: now,
+              updated_at: now,
+            });
+          }
+          const batchInfo = ch.batchInfo;
+          upsertBatch.run({
+            id: batchId,
+            material_id: materialId,
+            product_id: hasProduct ? productId : null,
+            lot_code: batchInfo?.lotCode ?? null,
+            origin_type: batchInfo?.originType ?? "unknown",
+            received_at: batchInfo?.receivedAt ?? null,
+            prepared_at: batchInfo?.preparedAt ?? null,
+            prepared_by: batchInfo?.preparedBy ?? null,
+            expires_at: batchInfo?.expiresAt ?? null,
+            created_at: now,
+            updated_at: now,
+          });
+          if (!hasProduct) {
+            deleteOrphanProduct.run(productId, productId);
+          }
           upsertStock.run({
             id: ch.id,
             group_id: groupId,

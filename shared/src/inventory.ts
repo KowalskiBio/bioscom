@@ -14,6 +14,28 @@ import { PrintCatalogItemSchema, PrintRequestSchema } from "./print.js";
 
 export const ContainerTypeSchema = z.enum(["cabinet", "fridge", "freezer", "deepfreezer"]);
 
+export const StockProductSchema = z.looseObject({
+  manufacturer: optionalTextSchema,
+  supplier: optionalTextSchema,
+  catalogNumber: optionalTextSchema,
+  productName: optionalTextSchema,
+  variant: optionalTextSchema,
+});
+
+export const BatchInfoSchema = z.looseObject({
+  lotCode: optionalTextSchema,
+  originType: z.enum(["purchased", "prepared", "derived", "unknown"]).optional(),
+  receivedAt: optionalNumberSchema,
+  preparedAt: optionalNumberSchema,
+  preparedBy: optionalTextSchema,
+  expiresAt: optionalNumberSchema,
+});
+
+const ChemicalAttributesDocSchema = z
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+  .nullish()
+  .catch(undefined);
+
 export const ChemicalSchema = z.looseObject({
   id: idSchema,
   name: looseTextSchema,
@@ -27,6 +49,10 @@ export const ChemicalSchema = z.looseObject({
   customPosition: optionalTextSchema,
   _shelfOverride: optionalTextSchema,
   note: optionalTextSchema,
+  type: optionalTextSchema,
+  attributes: ChemicalAttributesDocSchema,
+  product: StockProductSchema.nullish().catch(undefined),
+  batchInfo: BatchInfoSchema.nullish().catch(undefined),
 });
 
 export const ShelfSchema = z.looseObject({
@@ -107,6 +133,8 @@ export const InventoryTreeSchema = z.looseObject({
 export const SandboxTreeSchema = InventoryTreeSchema;
 
 export type Chemical = z.infer<typeof ChemicalSchema>;
+export type StockProduct = z.infer<typeof StockProductSchema>;
+export type BatchInfo = z.infer<typeof BatchInfoSchema>;
 export type Shelf = z.infer<typeof ShelfSchema>;
 export type Container = z.infer<typeof ContainerSchema>;
 export type SharedContainerRef = z.infer<typeof SharedContainerRefSchema>;
