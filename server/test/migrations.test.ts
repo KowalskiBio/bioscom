@@ -69,6 +69,7 @@ describe("migration runner", () => {
       { version: 1, name: "migration_0001.sql" },
       { version: 2, name: "migration_0002_seed_types.sql" },
       { version: 3, name: "migration_0003_canonicalize_type_fields.sql" },
+      { version: 4, name: "migration_0004_stock_barcodes.sql" },
     ]);
 
     const chemFields = JSON.parse(types.find((t) => t.key === "chemical")!.fields) as Array<Record<string, unknown>>;
@@ -92,7 +93,7 @@ describe("migration runner", () => {
     expect(tableNames(raw).has("materials")).toBe(false);
 
     const applied = runMigrations(raw);
-    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3]);
+    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4]);
 
     const tables = tableNames(raw);
     expect(tables.has("groups")).toBe(true);

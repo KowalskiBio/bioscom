@@ -49,6 +49,7 @@ export const ChemicalSchema = z.looseObject({
   customPosition: optionalTextSchema,
   _shelfOverride: optionalTextSchema,
   note: optionalTextSchema,
+  barcode: optionalTextSchema,
   type: optionalTextSchema,
   attributes: ChemicalAttributesDocSchema,
   product: StockProductSchema.nullish().catch(undefined),

@@ -35,6 +35,7 @@ interface StockJoinRow {
   concentration: number | null;
   concentration_unit: string | null;
   note: string | null;
+  barcode: string | null;
   status: string;
   container_type: string | null;
   material_name: string;
@@ -90,6 +91,7 @@ function chemFromRow(row: StockJoinRow): Chemical {
   if (row.custom_position !== null) out.customPosition = row.custom_position;
   if (row.shelf_override !== null) out._shelfOverride = row.shelf_override;
   if (row.note !== null) out.note = row.note;
+  if (row.barcode !== null) out.barcode = row.barcode;
   if (row.type_key !== "chemical") out.type = row.type_key;
   if (Object.keys(rest).length > 0) out.attributes = rest;
   if (row.product_id !== null) {
@@ -249,6 +251,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
             customPosition: ch.customPosition ?? null,
             _shelfOverride: ch._shelfOverride ?? null,
             note: ch.note ?? null,
+            barcode: ch.barcode ?? null,
             type: ch.type ?? "chemical",
             attributes: ch.attributes ?? null,
             product: ch.product ?? null,

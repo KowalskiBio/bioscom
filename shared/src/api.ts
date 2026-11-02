@@ -127,6 +127,7 @@ export const AddChemicalBodySchema = z.object({
   customPosition: z.string().trim().max(64).optional(),
   note: z.string().max(4000).optional(),
   shelfOverride: z.string().min(1).optional(),
+  barcode: z.string().trim().max(64).optional(),
   type: z.string().trim().min(1).max(40).optional(),
   attributes: ChemicalAttributesBodySchema.optional(),
   product: StockProductBodySchema.optional(),
@@ -149,6 +150,7 @@ export const EditChemicalBodySchema = z
     customPosition: z.string().trim().max(64).optional(),
     note: z.string().max(4000).optional(),
     shelfOverride: z.string().min(1).optional(),
+    barcode: z.string().trim().max(64).optional(),
     type: z.string().trim().min(1).max(40).optional(),
     attributes: ChemicalAttributesBodySchema.optional(),
     product: StockProductBodySchema.nullable().optional(),
@@ -167,6 +169,7 @@ export const EditChemicalBodySchema = z
       value.customPosition !== undefined ||
       value.note !== undefined ||
       value.shelfOverride !== undefined ||
+      value.barcode !== undefined ||
       value.type !== undefined ||
       value.attributes !== undefined ||
       value.product !== undefined ||
@@ -209,6 +212,7 @@ export const BulkImportItemSchema = z.object({
   position: z.string().trim().max(32).optional(),
   customPosition: z.string().trim().max(64).optional(),
   note: z.string().max(4000).optional(),
+  barcode: z.string().trim().max(64).optional(),
   product: StockProductBodySchema.optional(),
   batchInfo: BatchInfoBodySchema.optional(),
 });

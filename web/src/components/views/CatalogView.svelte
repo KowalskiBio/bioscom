@@ -5,12 +5,16 @@
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { router } from "../../lib/router.svelte";
   import { openMaterialDetailModal } from "../../lib/forms";
+  import { openModal, closeModal } from "../../lib/modal.svelte";
+  import { showToast } from "../../lib/stores/toast.svelte";
+  import { savedViews } from "../../lib/stores/savedViews.svelte";
 
   const labels = materialTypeLabels();
 
   let tab = $state<"materials" | "stocks">("materials");
   let searchText = $state("");
   let stockSearchText = $state("");
+  let selectedViewId = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let stockDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -108,6 +112,56 @@
   function onStockExpiryChange(event: Event): void {
     catalog.setStockExpDays((event.currentTarget as HTMLSelectElement).value as StockExpDays);
     void catalog.fetchStocks(1);
+  }
+
+  function applySavedView(event: Event): void {
+    const id = (event.currentTarget as HTMLSelectElement).value;
+    selectedViewId = id;
+    const view = savedViews.views.find((entry) => entry.id === id);
+    if (view === undefined) {
+      return;
+    }
+    catalog.setTypeFilter(view.type);
+    catalog.setStockQuery(view.q);
+    catalog.setStockStatus(view.status);
+    catalog.setStockExpDays(view.expDays as StockExpDays);
+    stockSearchText = view.q;
+    void catalog.fetchStocks(1);
+  }
+
+  function openSaveViewPrompt(): void {
+    openModal({
+      title: "Name this view",
+      bodyHtml: `<div class="form-group"><label class="form-label" for="sv-name">View name</label><input class="form-input" id="sv-name" placeholder="e.g. Expiring reagents"></div>`,
+      btnText: "Save view",
+      onConfirm: () => {
+        const input = document.getElementById("sv-name") as HTMLInputElement | null;
+        const name = (input?.value ?? "").trim();
+        if (name === "") {
+          showToast("Enter a view name", "error");
+          return;
+        }
+        savedViews.saveView({
+          name,
+          type: catalog.typeFilter,
+          q: catalog.stockQuery,
+          status: catalog.stockStatus,
+          expDays: catalog.stockExpDays,
+        });
+        closeModal();
+        showToast(`View "${name}" saved`);
+      },
+    });
+  }
+
+  function deleteSelectedView(): void {
+    const view = savedViews.views.find((entry) => entry.id === selectedViewId);
+    if (view === undefined) {
+      return;
+    }
+    savedViews.deleteView(view.id);
+    selectedViewId = "";
+    showToast(`View "${view.name}" deleted`);
   }
 
   function descriptorSummary(material: CatalogMaterial): string {
@@ -289,6 +343,14 @@
             <option value="60">≤60 days</option>
             <option value="90">≤90 days</option>
         </select>
+        <select id="stocks-saved-view" class="form-select" value={selectedViewId} onchange={applySavedView}>
+            <option value="">Saved views…</option>
+            {#each savedViews.views as view (view.id)}
+                <option value={view.id}>{view.name}</option>
+            {/each}
+        </select>
+        <button id="btn-save-stock-view" class="btn-secondary" style="padding: 0.45rem 0.75rem; font-size: 0.8rem;" onclick={openSaveViewPrompt}>Save view</button>
+        <button id="btn-delete-stock-view" class="btn-inline" title="Delete saved view" aria-label="Delete saved view" disabled={selectedViewId === ""} onclick={deleteSelectedView}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
 
     {#if catalog.stocksLoading && catalog.stockItems.length === 0}

@@ -43,6 +43,7 @@ import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
 import MaterialDetailModal from "../components/modals/MaterialDetailModal.svelte";
 import MaterialMergeModal from "../components/modals/MaterialMergeModal.svelte";
 import BulkImportModal from "../components/modals/BulkImportModal.svelte";
+import StockLabelModal from "../components/modals/StockLabelModal.svelte";
 import {
   opCreateNotice,
   opUpdateNotice,
@@ -215,6 +216,24 @@ export function openMaterialMergeModal(sourceMaterialId: string, sourceMaterialN
     size: "xwide",
     component: MaterialMergeModal,
     props: { sourceMaterialId, sourceMaterialName },
+    btnText: null,
+  });
+}
+
+export function openStockLabelModal(input: {
+  name: string;
+  barcode: string;
+  type?: string;
+  locationText?: string;
+  position?: string | null;
+  lotCode?: string | null;
+  expiresAt?: number | null;
+}): void {
+  openModal({
+    title: "Stock label",
+    size: "wide",
+    component: StockLabelModal,
+    props: input,
     btnText: null,
   });
 }
@@ -599,6 +618,7 @@ export function openChemicalForm(
     cas: editChem?.ch.cas ?? "",
     note: editChem?.ch.note ?? "",
     customPosition: editChem?.ch.customPosition ?? "",
+    barcode: editChem?.ch.barcode ?? "",
     type: editChem?.ch.type ?? "chemical",
     attributes: { ...(editChem?.ch.attributes ?? {}) },
     product: {
@@ -715,6 +735,7 @@ export function openChemicalForm(
         cas: form.type === "chemical" ? casVal : "",
         note: form.note.trim(),
         customPosition: form.customPosition.trim(),
+        barcode: form.barcode.trim(),
         type: form.type,
         attributes: attributeValidation.value,
         product: productValue,

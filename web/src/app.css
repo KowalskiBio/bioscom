@@ -2025,6 +2025,22 @@ textarea:focus-visible {
 .stocks-mono { font-family:var(--font-family); font-variant-numeric:tabular-nums; }
 @media (max-width:768px) { .detail-defs { grid-template-columns:1fr; } }
 
+/* Stock label */
+.stock-label-card { width:4in; max-width:100%; margin:0 auto; box-sizing:border-box; background:#fff; border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.8rem 0.9rem; color:#111; }
+.stock-label-name { font-weight:600; font-size:1rem; line-height:1.25; color:#111; }
+.stock-label-barcode-text { font-family:'IBM Plex Mono',monospace; font-size:0.78rem; letter-spacing:0.06em; color:#111; margin-top:0.15rem; word-break:break-all; }
+.stock-label-barcode { display:block; width:100%; height:1.1in; background:#fff; margin-top:0.35rem; }
+.stock-label-meta { font-family:'IBM Plex Mono',monospace; font-size:0.7rem; line-height:1.5; color:#111; }
+.stock-label-actions { display:flex; justify-content:center; margin-top:0.9rem; }
+.stock-label-print { display:none; }
+@media print {
+  body.printing-label #app,
+  body.printing-label .toast-container { display:none !important; }
+  body.printing-label .stock-label-print { display:block !important; }
+  body.printing-label .stock-label-card { position:fixed; inset:0; border:none; border-radius:0; width:auto; }
+  body.printing-label .stock-label-actions { display:none !important; }
+}
+
 /* Modal sizes */
 .modal.modal-wide { max-width:640px; width:95vw; }
 .modal.modal-xwide { max-width:920px; width:95vw; }

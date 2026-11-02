@@ -23,6 +23,7 @@
       cas: string;
       note: string;
       customPosition: string;
+      barcode: string;
       type: string;
       attributes: Record<string, string | number | boolean | null>;
       product: {
@@ -228,4 +229,6 @@
 </div>
 
 <div class="form-group span-2"><label class="form-label">Note</label><textarea class="form-textarea" id="f-cno" placeholder="Optional note" bind:value={form.note}></textarea></div>
+
+<div class="form-group"><label class="form-label" for="f-barcode">Barcode (optional)</label><input class="form-input" id="f-barcode" placeholder="e.g. BSC-0042 (unique across the lab)" bind:value={form.barcode}></div>
 </div>

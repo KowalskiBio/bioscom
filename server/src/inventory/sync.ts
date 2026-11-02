@@ -15,6 +15,17 @@ const KNOWN_CHEMICAL_KEYS = new Set([
   "customPosition",
   "_shelfOverride",
   "note",
+  "barcode",
+  "type",
+  "attributes",
+  "product",
+  "lotCode",
+  "originType",
+  "expiresAt",
+  "receivedAt",
+  "preparedAt",
+  "preparedBy",
+  "batchInfo",
 ]);
 
 interface Count {
@@ -137,10 +148,10 @@ function productFieldsPresent(ch: Chemical): boolean {
 
 const UPSERT_STOCK_SQL = `
 INSERT INTO stocks (id, group_id, batch_id, location_id, position, custom_position, shelf_override,
-  current_quantity, quantity_unit, concentration, concentration_unit, note, status, container_type,
+  current_quantity, quantity_unit, concentration, concentration_unit, note, barcode, status, container_type,
   created_at, updated_at)
 VALUES (@id, @group_id, @batch_id, @location_id, @position, @custom_position, @shelf_override,
-  @current_quantity, @quantity_unit, @concentration, @concentration_unit, @note, 'available', NULL,
+  @current_quantity, @quantity_unit, @concentration, @concentration_unit, @note, @barcode, 'available', NULL,
   @created_at, @updated_at)
 ON CONFLICT(id) DO UPDATE SET
   group_id = excluded.group_id, batch_id = excluded.batch_id, location_id = excluded.location_id,
@@ -148,7 +159,7 @@ ON CONFLICT(id) DO UPDATE SET
   shelf_override = excluded.shelf_override, current_quantity = excluded.current_quantity,
   quantity_unit = excluded.quantity_unit, concentration = excluded.concentration,
   concentration_unit = excluded.concentration_unit, note = excluded.note,
-  status = excluded.status, updated_at = excluded.updated_at`;
+  barcode = excluded.barcode, status = excluded.status, updated_at = excluded.updated_at`;
 
 function countChemsInTree(tree: InventoryTree): { rooms: number; containers: number; shelves: number; chemicals: number } {
   let containers = 0;
@@ -334,6 +345,7 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
             concentration: typeof ch.concentration === "number" && Number.isFinite(ch.concentration) ? ch.concentration : null,
             concentration_unit: ch.concUnit ?? null,
             note: ch.note ?? null,
+            barcode: typeof ch.barcode === "string" && ch.barcode.trim() !== "" ? ch.barcode.trim() : null,
             created_at: now,
             updated_at: now,
           });

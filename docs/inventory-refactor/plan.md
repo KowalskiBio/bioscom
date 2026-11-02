@@ -304,8 +304,6 @@ Status — Phase B 1 (Materials catalog UI) DONE:
 - Gates: typecheck 0 errors, a11y warnings at 113 baseline, builds pass, web tests 9/9;
   live DOM verification of nav placement + route activation.
 
-Status — Phase B 2 (duplicate-material merge) DONE:
-
 Status — Phase B 4 (bulk CSV import) DONE:
 
 - POST /api/groups/:id/inventory/bulk-import: single doc mutation (one bump + one
@@ -315,9 +313,28 @@ Status — Phase B 4 (bulk CSV import) DONE:
 - UI: "Import CSV" in the container detail header (writer-only) → xwide modal: paste →
   quote-aware parse (BOM/CR, duplicate-header first-wins, attribute mapping,
   client-side registry validation, 500-row cap) → valid/skipped preview → confirm →
-  created/skipped report; realtime broadcast refreshes the view automatically.
+   created/skipped report; realtime broadcast refreshes the view automatically.
 - Tests: server 107/107 (+3 import flow), web 9/9, typecheck 0 errors / 113 baseline,
   builds pass.
+
+Status — Phase B 5 (barcodes + saved views) DONE:
+
+- Per-stock barcodes end-to-end: migration 0004 (`stocks.barcode` + index), doc row +
+  write-path field, uniqueness enforced server-side (readable 400s naming the owner,
+  incl. bulk dedupe inside payload + against doc), mirrored, exposed in /stocks and its
+  search; parity canonicalized; assemble round-trips it.
+- UI barcode: field in the type-aware item form, "Print label" action per stock row
+  (xwide label card: name/code/type/location/position/lot/expiry + CODE128 rendered
+  with the existing JsBarcode recipe, print-isolated via @media print clone wrapper).
+- Saved views for the Stocks table (name/apply/delete current filters incl. type pills /
+  search / status / expiry window), persisted locally in `bioscom-stocks-views-v1`
+  (last-save-wins on name collision).
+- Cheatsheet note for future lenders: join projections enumerate columns explicitly —
+  STOCK_SELECT is a manual column list, so a new `stocks.*` column is invisible to
+  /stocks JSON until added in two more places (interface + select + json map). Route the
+  workflow through the parity probe + a marker test.
+- Tests: server 111/111 (+4 barcode flows), web 9/9, shared 44+1, typecheck 0 errors /
+  113 baseline, builds pass.
 
 Remaining in target order:
 

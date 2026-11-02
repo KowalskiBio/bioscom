@@ -143,6 +143,7 @@ export interface ChemicalFormValues {
   cas: string;
   note: string;
   customPosition: string;
+  barcode: string;
   type: string;
   attributes: Record<string, string | number | boolean | null>;
   product?: ChemicalProductFormValue | null;
@@ -169,6 +170,7 @@ export function opAddChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition === "" ? undefined : values.customPosition,
       note: values.note === "" ? undefined : values.note,
+      barcode: values.barcode === "" ? undefined : values.barcode,
       type: values.type,
       attributes: values.attributes,
       ...(values.product !== null && values.product !== undefined ? { product: values.product } : {}),
@@ -199,6 +201,7 @@ export function opEditChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition,
       note: values.note,
+      barcode: values.barcode,
       type: values.type,
       attributes: values.attributes,
       batchInfo: values.batchInfo,

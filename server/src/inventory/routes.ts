@@ -75,6 +75,21 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
     }
   };
 
+  function findBarcodeOwner(tree: InventoryTree, barcode: string, excludeChemicalId: string | null): string | undefined {
+    for (const room of tree.rooms) {
+      for (const container of room.containers) {
+        for (const shelf of container.shelves ?? []) {
+          for (const ch of shelf.chemicals ?? []) {
+            if (ch.id !== excludeChemicalId && typeof ch.barcode === "string" && ch.barcode.trim() === barcode) {
+              return ch.name ?? "another item";
+            }
+          }
+        }
+      }
+    }
+    return undefined;
+  }
+
   const broadcastResult = (groupId: string, result: MutationResult): void => {
     hub.broadcast(groupId, { groupId, version: result.version, tree: result.tree });
     if (result.mirrorGroupId !== null) {
@@ -386,6 +401,12 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           body.data.position ??
           body.data.customPosition ??
           getOrCreatePosition(container, shelf, body.data.name);
+        if (body.data.barcode !== undefined && body.data.barcode.trim() !== "") {
+          const owner = findBarcodeOwner(tree, body.data.barcode.trim(), null);
+          if (owner !== undefined) {
+            throw new OpError(400, `Barcode "${body.data.barcode}" is already used by "${owner}"`);
+          }
+        }
         const chemical: Chemical = {
           id: genId(),
           name: body.data.name,
@@ -398,6 +419,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           position,
           customPosition: body.data.customPosition,
           note: body.data.note,
+          barcode: body.data.barcode !== undefined && body.data.barcode.trim() !== "" ? body.data.barcode.trim() : undefined,
           type: body.data.type,
           attributes: body.data.attributes,
           product: body.data.product,
@@ -439,6 +461,17 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           const validation = validateMaterialAttributes(typeKey, merged);
           if (!validation.ok) {
             throw new OpError(400, `Invalid attributes for type "${typeKey}": ${validation.errors.join("; ")}`);
+          }
+        }
+        if (body.data.barcode !== undefined) {
+          if (body.data.barcode.trim() !== "") {
+            const owner = findBarcodeOwner(tree, body.data.barcode.trim(), chemicalId);
+            if (owner !== undefined) {
+              throw new OpError(400, `Barcode "${body.data.barcode}" is already used by "${owner}"`);
+            }
+            chemical.barcode = body.data.barcode.trim();
+          } else {
+            chemical.barcode = undefined;
           }
         }
         if (body.data.name !== undefined) {

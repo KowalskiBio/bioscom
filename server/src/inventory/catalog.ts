@@ -18,6 +18,7 @@ interface StockRow {
   concentration: number | null;
   concentration_unit: string | null;
   note: string | null;
+  barcode: string | null;
   status: string;
   container_type: string | null;
   material_id: string;
@@ -56,7 +57,7 @@ interface MaterialRow {
 
 const STOCK_SELECT = `
   SELECT s.id, s.group_id, s.batch_id, s.location_id, s.position, s.custom_position, s.shelf_override,
-         s.current_quantity, s.quantity_unit, s.concentration, s.concentration_unit, s.note, s.status,
+         s.current_quantity, s.quantity_unit, s.concentration, s.concentration_unit, s.note, s.barcode, s.status,
          s.container_type,
          m.id AS material_id, m.name AS material_name, m.type_key AS type_key, m.attributes AS material_attributes,
          b.lot_code, b.origin_type, b.expires_at, b.received_at, b.prepared_at,
@@ -84,6 +85,7 @@ function stockToJson(row: StockRow) {
     concentration: row.concentration,
     concentrationUnit: row.concentration_unit,
     note: row.note,
+    barcode: row.barcode,
     status: row.status,
     position: row.position,
     customPosition: row.custom_position,
@@ -324,9 +326,9 @@ export function registerCatalogRoutes(app: FastifyInstance, config: ServerConfig
     if (typeof query.q === "string" && query.q.trim() !== "") {
       const like = `%${query.q.trim()}%`;
       where.push(
-        "(m.name LIKE ? COLLATE NOCASE OR json_extract(m.attributes, '$.cas_number') LIKE ? OR json_extract(m.attributes, '$.target') LIKE ? OR json_extract(m.attributes, '$.sequence') LIKE ? OR p.catalog_number LIKE ? OR b.lot_code LIKE ? OR s.position LIKE ? OR s.custom_position LIKE ?)",
+        "(m.name LIKE ? COLLATE NOCASE OR json_extract(m.attributes, '$.cas_number') LIKE ? OR json_extract(m.attributes, '$.target') LIKE ? OR json_extract(m.attributes, '$.sequence') LIKE ? OR p.catalog_number LIKE ? OR b.lot_code LIKE ? OR s.position LIKE ? OR s.custom_position LIKE ? OR s.barcode LIKE ?)",
       );
-      whereParams.push(like, like, like, like, like, like, like, like);
+      whereParams.push(like, like, like, like, like, like, like, like, like);
     }
 
     const whereSql = where.join(" AND ");

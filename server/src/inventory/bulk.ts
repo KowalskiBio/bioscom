@@ -37,6 +37,8 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const itemValidationErrors: Array<{ index: number; name: string; error: string }> = [];
+      const payloadBarcodes = new Set<string>();
+      const payloadOwners = new Map<string, number>();
       body.data.items.forEach((item, index) => {
         const typeKey = item.type ?? "chemical";
         if (item.type !== undefined) {
@@ -48,6 +50,17 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
           const validation = validateMaterialAttributes(typeKey, item.attributes);
           if (!validation.ok) {
             itemValidationErrors.push({ index, name: item.name, error: validation.errors.join("; ") });
+          }
+        }
+        if (!itemValidationErrors.some((entry) => entry.index === index) && typeof item.barcode === "string") {
+          const code = item.barcode.trim();
+          if (code !== "") {
+            if (payloadOwners.has(code)) {
+              itemValidationErrors.push({ index, name: item.name, error: `duplicate barcode "${code}" in payload` });
+            } else {
+              payloadOwners.set(code, index);
+              payloadBarcodes.add(code);
+            }
           }
         }
       });
@@ -64,13 +77,31 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
         };
       }
 
+      let createdCount = 0;
       const result = mutate(groupId, user, (tree, context) => {
         const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
         checkSharedContainerAccess(user, groupId, container, context, isMember);
         const shelf = findShelfOrThrow(tree, body.data.roomId, body.data.containerId, body.data.shelfId);
+        const treeBarcodeOwners = new Map<string, string>();
+        for (const room of tree.rooms) {
+          for (const cont of room.containers) {
+            for (const sh of cont.shelves ?? []) {
+              for (const ch of sh.chemicals ?? []) {
+                if (typeof ch.barcode === "string" && payloadBarcodes.has(ch.barcode.trim())) {
+                  treeBarcodeOwners.set(ch.barcode.trim(), ch.name ?? "existing item");
+                }
+              }
+            }
+          }
+        }
         let created = 0;
         for (const index of mutableIndexes) {
           const item = body.data.items[index]!;
+          const code = typeof item.barcode === "string" && item.barcode.trim() !== "" ? item.barcode.trim() : null;
+          if (code !== null && treeBarcodeOwners.has(code)) {
+            itemValidationErrors.push({ index, name: item.name, error: `barcode "${code}" already used by "${treeBarcodeOwners.get(code)}"` });
+            continue;
+          }
           const chemical: Chemical = {
             id: genId(),
             name: item.name,
@@ -83,6 +114,7 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
             position: item.position ?? item.customPosition ?? getOrCreatePosition(container, shelf, item.name),
             customPosition: item.customPosition,
             note: item.note,
+            barcode: code ?? undefined,
             type: item.type,
             attributes: item.attributes,
             product: item.product,
@@ -90,6 +122,7 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
           };
           shelf.chemicals.push(chemical);
           created += 1;
+          createdCount += 1;
         }
         return `Imported ${created} items into "${shelf.name}" of container "${container.name}"`;
       });
@@ -98,7 +131,7 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
         hub.broadcast(result.mirrorGroupId, { groupId, version: result.version, tree: result.tree });
       }
       return {
-        created: mutableIndexes.length,
+        created: createdCount,
         skipped: itemValidationErrors,
         location: { roomId: body.data.roomId, containerId: body.data.containerId, shelfId: body.data.shelfId },
       };
