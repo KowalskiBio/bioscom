@@ -2020,6 +2020,9 @@ textarea:focus-visible {
 .detail-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
 .detail-table th { text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); padding:0.3rem 0.5rem; border-bottom:1px solid var(--border-subtle); }
 .detail-table td { padding:0.45rem 0.5rem; border-bottom:1px solid var(--border-subtle); color:var(--text-secondary); }
+.catalog-tabs-nav { display:flex; gap:1.25rem; border-bottom:1px solid var(--border-subtle); margin-bottom:1rem; padding-bottom:0.25rem; }
+.stocks-dim { color:var(--text-muted); }
+.stocks-mono { font-family:var(--font-family); font-variant-numeric:tabular-nums; }
 @media (max-width:768px) { .detail-defs { grid-template-columns:1fr; } }
 
 /* Modal sizes */

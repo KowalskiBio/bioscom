@@ -280,6 +280,18 @@ Status — Phase B 1 (Materials catalog UI) DONE:
   `shared` after editing `shared/src` BEFORE running server tests (the stale-dist 500s
   confound otherwise).
 
+Status — Phase B 3 (mixed stocks table) DONE:
+
+- Catalog view tabs Materials | Stocks: the Stocks tab shows every physical stock across
+  locations in one table (Name/Type/Quantity/Location path+position chip/Lot/Expires with
+  60-day aging colors/Status), from GET /stocks with shared type pills + independent
+  search / status / expiry-window filters and 25-page pagination; row click opens the
+  material detail. Type-dependent descriptor columns (registry-driven) appear only when
+  a type filter is active (chemical: CAS+MW; others: first two descriptor fields), so the
+  mixed view never shows misleading values for non-applicable rows.
+- Store: dedicated stocks slice with stale-request guards; cleared with catalog.
+- Gates: typecheck 0 errors / 113 baseline, builds pass, web tests 9/9.
+
 - New top-level Catalog view: type filter pills (All + 7 registry types), debounced name
   search, paginated card list (25/page) with type chips, descriptor summaries and
   stock/location/product counts; xwide material-detail modal (attributes, products,

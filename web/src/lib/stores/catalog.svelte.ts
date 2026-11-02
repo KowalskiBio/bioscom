@@ -96,6 +96,15 @@ interface CatalogPage {
   limit: number;
 }
 
+interface StocksPage {
+  stocks: CatalogStock[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type StockExpDays = "" | "30" | "60" | "90";
+
 const PAGE_SIZE = 25;
 
 let items = $state<CatalogMaterial[]>([]);
@@ -110,6 +119,17 @@ let detail = $state<CatalogDetail | null>(null);
 let detailLoading = $state(false);
 let pageRequest = 0;
 let detailRequest = 0;
+
+let stockItems = $state<CatalogStock[]>([]);
+let stocksTotal = $state(0);
+let stocksPage = $state(1);
+let stocksLoading = $state(false);
+let stocksLoaded = $state(false);
+let stocksLoadedGroupId = $state<string | null>(null);
+let stockQuery = $state("");
+let stockStatus = $state("");
+let stockExpDays = $state<StockExpDays>("");
+let stocksRequest = 0;
 
 export const catalog = {
   get items(): CatalogMaterial[] {
@@ -142,10 +162,42 @@ export const catalog = {
   get detailLoading(): boolean {
     return detailLoading;
   },
+  get stockItems(): CatalogStock[] {
+    return stockItems;
+  },
+  get stocksTotal(): number {
+    return stocksTotal;
+  },
+  get stocksPage(): number {
+    return stocksPage;
+  },
+  get stocksLoading(): boolean {
+    return stocksLoading;
+  },
+  get stocksLoaded(): boolean {
+    return stocksLoaded;
+  },
+  get stocksLoadedGroupId(): string | null {
+    return stocksLoadedGroupId;
+  },
+  get stockQuery(): string {
+    return stockQuery;
+  },
+  get stockStatus(): string {
+    return stockStatus;
+  },
+  get stockExpDays(): StockExpDays {
+    return stockExpDays;
+  },
   fetchCatalog,
   fetchMaterialDetail,
+  fetchStocks,
   setQuery,
   setTypeFilter,
+  setStockQuery,
+  setStockStatus,
+  setStockExpDays,
+  clearStockState,
   clearCatalog,
 };
 
@@ -155,6 +207,18 @@ export function setQuery(value: string): void {
 
 export function setTypeFilter(value: string): void {
   typeFilter = value;
+}
+
+export function setStockQuery(value: string): void {
+  stockQuery = value;
+}
+
+export function setStockStatus(value: string): void {
+  stockStatus = value;
+}
+
+export function setStockExpDays(value: StockExpDays): void {
+  stockExpDays = value;
 }
 
 export async function fetchCatalog(page_ = 1): Promise<boolean> {
@@ -196,6 +260,51 @@ export async function fetchCatalog(page_ = 1): Promise<boolean> {
   }
 }
 
+export async function fetchStocks(page_ = 1): Promise<boolean> {
+  const groupId = currentGroup.groupId;
+  if (groupId === null) {
+    return false;
+  }
+  const requestId = ++stocksRequest;
+  stocksLoading = true;
+  try {
+    const params = new URLSearchParams({ page: String(page_), limit: String(PAGE_SIZE) });
+    if (typeFilter !== "") {
+      params.set("type", typeFilter);
+    }
+    if (stockStatus !== "") {
+      params.set("status", stockStatus);
+    }
+    if (stockExpDays !== "") {
+      params.set("expiresBefore", String(Date.now() + Number(stockExpDays) * 86_400_000));
+    }
+    if (stockQuery.trim() !== "") {
+      params.set("q", stockQuery.trim());
+    }
+    const body = await api.get<StocksPage>(
+      `/api/groups/${encodeURIComponent(groupId)}/stocks?${params.toString()}`,
+    );
+    if (requestId !== stocksRequest) {
+      return false;
+    }
+    stockItems = body.stocks;
+    stocksTotal = body.total;
+    stocksPage = body.page;
+    stocksLoaded = true;
+    stocksLoadedGroupId = groupId;
+    return true;
+  } catch {
+    if (requestId === stocksRequest) {
+      showToast("Failed to load stocks", "error");
+    }
+    return false;
+  } finally {
+    if (requestId === stocksRequest) {
+      stocksLoading = false;
+    }
+  }
+}
+
 export async function fetchMaterialDetail(id: string): Promise<boolean> {
   const groupId = currentGroup.groupId;
   if (groupId === null) {
@@ -225,6 +334,19 @@ export async function fetchMaterialDetail(id: string): Promise<boolean> {
   }
 }
 
+export function clearStockState(): void {
+  stocksRequest += 1;
+  stockItems = [];
+  stocksTotal = 0;
+  stocksPage = 1;
+  stocksLoading = false;
+  stocksLoaded = false;
+  stocksLoadedGroupId = null;
+  stockQuery = "";
+  stockStatus = "";
+  stockExpDays = "";
+}
+
 export function clearCatalog(): void {
   pageRequest += 1;
   detailRequest += 1;
@@ -238,4 +360,5 @@ export function clearCatalog(): void {
   loadedGroupId = null;
   detail = null;
   detailLoading = false;
+  clearStockState();
 }
