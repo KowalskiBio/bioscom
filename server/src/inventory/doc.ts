@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { InventoryTreeSchema, type Container, type InventoryTree, type Room, type Shelf, type Chemical } from "@bioscom/shared";
 import type { SessionUserRow } from "../auth/sessions.js";
+import { syncGroupInventoryDocument, markSynced } from "./sync.js";
 
 export class OpError extends Error {
   constructor(
@@ -114,6 +115,14 @@ export function createMutator(dbAccessor: () => Database.Database) {
       dbAccessor()
         .prepare("UPDATE group_inventory_docs SET tree = ?, version = ? WHERE group_id = ?")
         .run(JSON.stringify(tree), nextVersion, groupId);
+      try {
+        syncGroupInventoryDocument(dbAccessor(), groupId, tree);
+        markSynced(dbAccessor(), groupId, nextVersion);
+      } catch (error) {
+        console.error(
+          `[inventory-sync] mirror failed for group ${groupId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       const baseName = user.name ?? user.uid;
       const insertHistory = dbAccessor().prepare(
         "INSERT INTO history (group_id, timestamp, user_name, action) VALUES (?, ?, ?, ?)",

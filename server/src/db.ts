@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { schemaSqlPath } from "./paths.js";
+import { runMigrations } from "./db/migrate.js";
 
 let cached: { path: string; db: Database.Database } | null = null;
 
@@ -17,6 +18,7 @@ export function getDatabase(dbPath: string): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.exec(readFileSync(schemaSqlPath, "utf8"));
+  runMigrations(db);
   cached = { path: dbPath, db };
   return db;
 }

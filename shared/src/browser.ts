@@ -9,4 +9,5 @@ export * from "./instrument.js";
 export * from "./print.js";
 export * from "./game.js";
 export * from "./inventory.js";
+export * from "./material.js";
 export * from "./legacy.js";
