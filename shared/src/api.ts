@@ -196,6 +196,11 @@ export const AdjustQtyBodySchema = z.object({
   delta: z.number(),
 });
 
+export const MergeMaterialsBodySchema = z.object({
+  sourceMaterialId: z.string().min(1),
+  targetMaterialId: z.string().min(1),
+});
+
 export const MoveChemicalBodySchema = z.object({
   fromRoomId: z.string().min(1),
   fromContainerId: z.string().min(1),
@@ -368,6 +373,7 @@ export type EditShelfBody = z.infer<typeof EditShelfBodySchema>;
 export type AddChemicalBody = z.infer<typeof AddChemicalBodySchema>;
 export type EditChemicalBody = z.infer<typeof EditChemicalBodySchema>;
 export type AdjustQtyBody = z.infer<typeof AdjustQtyBodySchema>;
+export type MergeMaterialsBody = z.infer<typeof MergeMaterialsBodySchema>;
 export type MoveChemicalBody = z.infer<typeof MoveChemicalBodySchema>;
 export type AddProtocolBody = z.infer<typeof AddProtocolBodySchema>;
 export type EditProtocolBody = z.infer<typeof EditProtocolBodySchema>;

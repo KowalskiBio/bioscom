@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { MATERIAL_TYPES, materialTypeLabels, type MaterialFieldDef } from "@bioscom/shared";
   import { catalog } from "../../lib/stores/catalog.svelte";
+  import { session } from "../../lib/stores/session.svelte";
+  import { openMaterialMergeModal } from "../../lib/forms";
 
   let { materialId }: { materialId: string } = $props();
 
@@ -117,6 +119,15 @@
         <h3 style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">{material.name}</h3>
         <span class="chem-pos">{labels[material.type] ?? material.type}</span>
         <span style="font-size: 0.75rem; color: var(--text-muted);">Created {formatDate(material.createdAt)}</span>
+        {#if session.user?.role !== "reader"}
+            <button
+                type="button"
+                class="btn-secondary"
+                id="material-merge-open"
+                style="margin-left: auto; padding: 0.3rem 0.7rem; font-size: 0.8rem;"
+                onclick={() => openMaterialMergeModal(material.id, material.name)}
+            >Merge into…</button>
+        {/if}
     </div>
     {#if material.description}
         <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;">{material.description}</p>

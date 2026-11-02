@@ -180,11 +180,14 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
     "INSERT OR IGNORE INTO container_shares (container_location_id, group_id) VALUES (?, ?)",
   );
   const deleteShares = db.prepare("DELETE FROM container_shares WHERE container_location_id = ?");
-  const upsertMap = db.prepare(`
-    INSERT INTO legacy_chemical_map (group_id, chemical_id, material_id, batch_id, stock_id, migrated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(group_id, chemical_id) DO UPDATE SET
-      material_id = excluded.material_id, batch_id = excluded.batch_id, stock_id = excluded.stock_id`);
+  const upsertMap = db.prepare(
+    `INSERT OR IGNORE INTO legacy_chemical_map (group_id, chemical_id, material_id, batch_id, stock_id, migrated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const existingMapRows = db
+    .prepare("SELECT chemical_id, material_id FROM legacy_chemical_map WHERE group_id = ?")
+    .all(groupId) as Array<{ chemical_id: string; material_id: string }>;
+  const materialResolution = new Map<string, string>(existingMapRows.map((row) => [row.chemical_id, row.material_id]));
 
   const docLocationIds = new Set<string>();
   const docChemicalIds = new Set<string>();
@@ -271,20 +274,23 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
 
         for (const ch of shelf.chemicals ?? []) {
           docChemicalIds.add(ch.id);
-          const materialId = `m-${ch.id}`;
+          const derivedMaterialId = `m-${ch.id}`;
+          const materialId = materialResolution.get(ch.id) ?? derivedMaterialId;
           const batchId = `b-${ch.id}`;
           const productId = `p-${ch.id}`;
           const hasProduct = productFieldsPresent(ch);
-          upsertMaterial.run({
-            id: materialId,
-            group_id: groupId,
-            type_key: chemicalTypeKey(ch),
-            name: ch.name ?? "",
-            description: null,
-            attributes: JSON.stringify(chemicalAttributes(ch)),
-            created_at: now,
-            updated_at: now,
-          });
+          if (materialId === derivedMaterialId) {
+            upsertMaterial.run({
+              id: materialId,
+              group_id: groupId,
+              type_key: chemicalTypeKey(ch),
+              name: ch.name ?? "",
+              description: null,
+              attributes: JSON.stringify(chemicalAttributes(ch)),
+              created_at: now,
+              updated_at: now,
+            });
+          }
           if (hasProduct) {
             upsertProduct.run({
               id: productId,
@@ -337,23 +343,35 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
     });
   });
 
-  const staleMapRows = db
+  const existingRows = db
     .prepare("SELECT chemical_id, material_id, batch_id, stock_id FROM legacy_chemical_map WHERE group_id = ?")
     .all(groupId) as Array<{ chemical_id: string; material_id: string; batch_id: string; stock_id: string }>;
+  const staleRows = existingRows.filter((row) => !docChemicalIds.has(row.chemical_id));
   const deleteStock = db.prepare("DELETE FROM stocks WHERE id = ?");
   const deleteBatch = db.prepare("DELETE FROM batches WHERE id = ?");
   const deleteMaterial = db.prepare("DELETE FROM materials WHERE id = ?");
   const deleteMapRow = db.prepare("DELETE FROM legacy_chemical_map WHERE group_id = ? AND chemical_id = ?");
   const deleteInputsByStock = db.prepare("DELETE FROM batch_inputs WHERE source_stock_id = ?");
   const deleteInputsByBatch = db.prepare("DELETE FROM batch_inputs WHERE output_batch_id = ?");
-  for (const stale of staleMapRows) {
-    if (docChemicalIds.has(stale.chemical_id)) continue;
+  const countMapReferences = db.prepare("SELECT COUNT(*) AS n FROM legacy_chemical_map WHERE material_id = ?");
+  const staleBatchIds = new Set<string>();
+  const candidateMaterialIds = new Set<string>();
+  for (const stale of staleRows) {
     deleteInputsByStock.run(stale.stock_id);
     deleteInputsByBatch.run(stale.batch_id);
     deleteStock.run(stale.stock_id);
-    deleteBatch.run(stale.batch_id);
-    deleteMaterial.run(stale.material_id);
+    staleBatchIds.add(stale.batch_id);
+    candidateMaterialIds.add(stale.material_id);
     deleteMapRow.run(groupId, stale.chemical_id);
+  }
+  for (const batchId of staleBatchIds) {
+    deleteBatch.run(batchId);
+  }
+  for (const materialId of candidateMaterialIds) {
+    const referenced = (countMapReferences.get(materialId) as { n: number }).n > 0;
+    if (!referenced) {
+      deleteMaterial.run(materialId);
+    }
   }
 
   const dbLocations = db

@@ -41,6 +41,7 @@ import BookingModal from "../components/modals/BookingModal.svelte";
 import CatalogFormModal from "../components/modals/CatalogFormModal.svelte";
 import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
 import MaterialDetailModal from "../components/modals/MaterialDetailModal.svelte";
+import MaterialMergeModal from "../components/modals/MaterialMergeModal.svelte";
 import {
   opCreateNotice,
   opUpdateNotice,
@@ -203,6 +204,16 @@ export function openMaterialDetailModal(materialId: string): void {
     size: "xwide",
     component: MaterialDetailModal,
     props: { materialId },
+    btnText: null,
+  });
+}
+
+export function openMaterialMergeModal(sourceMaterialId: string, sourceMaterialName: string): void {
+  openModal({
+    title: "Merge material",
+    size: "xwide",
+    component: MaterialMergeModal,
+    props: { sourceMaterialId, sourceMaterialName },
     btnText: null,
   });
 }

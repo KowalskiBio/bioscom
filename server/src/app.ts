@@ -14,6 +14,7 @@ import { InventoryHub, registerInventoryWs } from "./inventory/ws.js";
 import { registerInventoryRoutes } from "./inventory/routes.js";
 import { registerSharedContainerRoutes } from "./inventory/shared.js";
 import { registerCatalogRoutes } from "./inventory/catalog.js";
+import { registerMaterialMergeRoutes } from "./inventory/merge.js";
 import { registerNoticeRoutes } from "./features/notices.js";
 import { registerInstrumentRoutes } from "./features/instruments.js";
 import { registerPrintRoutes } from "./features/print.js";
@@ -83,6 +84,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   registerInventoryRoutes(app, config, hub);
   registerSharedContainerRoutes(app, config, hub);
   registerCatalogRoutes(app, config);
+  registerMaterialMergeRoutes(app, config);
   registerNoticeRoutes(app, config, hub);
   registerInstrumentRoutes(app, config, hub);
   registerPrintRoutes(app, config, hub);

@@ -260,6 +260,26 @@ Status — increment 4 (flip-read parity tooling) DONE:
 
 Status — Phase B 1 (Materials catalog UI) DONE:
 
+- Authority shift in sync: `legacy_chemical_map` is now the chemical→material authority
+  (INSERT OR IGNORE; deterministic `m-<chemId>` derivation only for unmapped rows), so
+  user-performed merges survive every resync; merged materials (>1 chemicals linked) are
+  never overwritten by the mirror; prune deletes a source chemical's batch/stock but
+  spares a merged target material (guarded by remaining map references); type mismatch,
+  same-id, archived and foreign rows are rejected.
+- POST /api/groups/:id/materials/merge: atomic transaction moving products (+ batches,
+  whose stocks ride along), re-linking the map, archiving the source material, logging a
+  history entry; returns moved counts. Reader/role enforcement identical to other writes.
+- UI: "Merge into…" action on the material detail (hidden for readers) → merge modal with
+  debounced same-type candidate search, counts per candidate, confirm flow, error recovery;
+  on success the catalog refreshes (merge modal replaces detail modal — single openModal
+  state).
+- Tests: server 104/104 (+4 merge: validation, relocation + resync-no-resurrect,
+  cross-type/archived rejects, permissions). typecheck 0 errors, a11y 113 baseline,
+  builds pass, web 9/9.
+- Gotcha worth remembering locally: server consumes shared's built `dist/` — rebuild
+  `shared` after editing `shared/src` BEFORE running server tests (the stale-dist 500s
+  confound otherwise).
+
 - New top-level Catalog view: type filter pills (All + 7 registry types), debounced name
   search, paginated card list (25/page) with type chips, descriptor summaries and
   stock/location/product counts; xwide material-detail modal (attributes, products,
@@ -269,6 +289,8 @@ Status — Phase B 1 (Materials catalog UI) DONE:
   Assets with blue edge; original nav appended alongside).
 - Gates: typecheck 0 errors, a11y warnings at 113 baseline, builds pass, web tests 9/9;
   live DOM verification of nav placement + route activation.
+
+Status — Phase B 2 (duplicate-material merge) DONE:
 
 Remaining in target order:
 
