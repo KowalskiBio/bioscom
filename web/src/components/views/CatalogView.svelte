@@ -290,28 +290,45 @@
             <p>Try a different search or material type.</p>
         </div>
     {:else}
-        <div id="catalog-grid" class="catalog-grid">
-            {#each catalog.items as material (material.id)}
-                <div class="card" data-material-id={material.id} role="button" tabindex="0" onclick={() => openMaterialDetailModal(material.id)} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openMaterialDetailModal(material.id)}>
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
-                        <div class="card-title">{material.name}</div>
-                        <span class="chem-pos">{labels[material.type] ?? material.type}</span>
-                    </div>
-                    {#if material.description}
-                        <div class="card-description">{material.description}</div>
-                    {/if}
-                    {#if descriptorSummary(material) !== ""}
-                        <div class="card-description" style="margin-bottom: 0;">{descriptorSummary(material)}</div>
-                    {/if}
-                    <div class="catalog-counts">
-                        <span>{material.counts.stocks} stocks</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{material.counts.locations} locations</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{material.counts.products} {material.counts.products === 1 ? "product" : "products"}</span>
-                    </div>
-                </div>
-            {/each}
+        <div style="overflow-x: auto;">
+            <table class="detail-table" id="materials-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Descriptors</th>
+                        <th style="text-align: right;">Products</th>
+                        <th style="text-align: right;">Batches</th>
+                        <th style="text-align: right;">Stocks</th>
+                        <th style="text-align: right;">Locations</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each catalog.items as material (material.id)}
+                        <tr
+                            data-material-id={material.id}
+                            role="button"
+                            tabindex="0"
+                            style="cursor: pointer;"
+                            onclick={() => openMaterialDetailModal(material.id)}
+                            onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openMaterialDetailModal(material.id)}
+                        >
+                            <td>
+                                <strong>{material.name}</strong>
+                                {#if material.description}
+                                    <div class="stocks-dim" style="font-size: 0.75rem; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;">{material.description}</div>
+                                {/if}
+                            </td>
+                            <td><span class="chem-pos">{labels[material.type] ?? material.type}</span></td>
+                            <td class="stocks-mono">{descriptorSummary(material) || "—"}</td>
+                            <td class="stocks-mono" style="text-align: right;">{material.counts.products}</td>
+                            <td class="stocks-mono" style="text-align: right;">{material.counts.batches}</td>
+                            <td class="stocks-mono" style="text-align: right;">{material.counts.stocks}</td>
+                            <td class="stocks-mono" style="text-align: right;">{material.counts.locations}</td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
         </div>
         <div id="catalog-pagination" style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.5rem;">
             <button class="btn-icon" title="Previous page" aria-label="Previous page" disabled={catalog.page <= 1} onclick={() => void catalog.fetchCatalog(catalog.page - 1)}>
