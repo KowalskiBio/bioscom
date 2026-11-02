@@ -2783,13 +2783,7 @@ body[data-design="bauhaus"] .view-header h1 {
     color: #171512;
 }
 body[data-design="bauhaus"] .view-header h1::before {
-    content: '';
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    background: #DE2C1E;
-    margin-right: 0.6rem;
-    vertical-align: baseline;
+    content: none;
 }
 body[data-design="bauhaus"] .view-subtitle {
     font-family: var(--bauhaus-font-mono);
@@ -3632,14 +3626,14 @@ body[data-design="bauhaus"] .chess-board .chess-square {
     body[data-design="bauhaus"] .chess-square { font-size: 0.8rem !important; } /* beats the theme-agnostic 1.3rem squeeze */
 }
 
-/* Bauhaus Theme — Stat Card Accents (specificity fix) */
+/* Bauhaus Theme ï¿½ Stat Card Accents (specificity fix) */
 body[data-design="bauhaus"] .card.stat-card { border-top-width: 10px; border-top-style: solid; border-top-color: var(--dash-accent, var(--accent-blue)); }
 body[data-design="bauhaus"] .card.stat-card.s-red { --dash-accent: var(--accent-red); }
 body[data-design="bauhaus"] .card.stat-card.s-blue { --dash-accent: var(--accent-blue); }
 body[data-design="bauhaus"] .card.stat-card.s-yellow { --dash-accent: var(--accent-amber); }
 body[data-design="bauhaus"] .card.stat-card.s-ink { --dash-accent: var(--text-primary); }
 
-/* Bauhaus Theme — Topbar & Width */
+/* Bauhaus Theme ï¿½ Topbar & Width */
 body[data-design="bauhaus"] .topbar {
     position: fixed;
     top: 0;
