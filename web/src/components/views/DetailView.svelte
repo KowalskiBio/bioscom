@@ -27,8 +27,10 @@
   import {
     openChemicalForm,
     openChemicalRadioPrompt,
-    openAddBoxForm,
-    openAddShelfForm,
+  openAddBoxForm,
+  openAddDeepFreezerBoxForm,
+  openAddDeepFreezerRackForm,
+  openAddShelfForm,
     openRenameShelfForm,
     openChangeBoxColorForm,
     openStockLabelModal,
@@ -390,7 +392,7 @@
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Rack</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>{design === "bauhaus" ? "+ Add Rack" : "➕ Add Rack"}</button>
+              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerRackForm(cont)}>{design === "bauhaus" ? "+ Add Rack" : "➕ Add Rack"}</button>
             {/if}
           </div>
         </div>
@@ -427,7 +429,7 @@
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Box</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddShelfForm(room, cont)}>{design === "bauhaus" ? "+ Add Box" : "➕ Add Box"}</button>
+              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerBoxForm(cont, selectedRack!)}>{design === "bauhaus" ? "+ Add Box" : "➕ Add Box"}</button>
             {/if}
           </div>
         </div>

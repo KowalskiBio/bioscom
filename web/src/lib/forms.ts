@@ -9,6 +9,8 @@ import {
   opAddContainer,
   opEditContainer,
   opAddDeepFreezer,
+  opAddDeepFreezerRack,
+  opAddDeepFreezerBox,
   opShareContainer,
   roleCanWrite,
   type ShelfSpec,
@@ -534,6 +536,46 @@ export function openAddShelfForm(room: Room, cont: Container, onDone?: () => voi
       if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, type: shelfType })) {
         closeModal();
         showToast(`Shelf "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openAddDeepFreezerRackForm(cont: Container, onDone?: () => void): void {
+  const form = { name: "" };
+  openModal({
+    title: "Add Rack",
+    component: SimplePromptModal,
+    props: { form, kind: "shelf" as const },
+    btnText: "Add",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      if (name === "") {
+        showToast("Enter rack name", "error");
+        return;
+      }
+      if (await opAddDeepFreezerRack(cont.id, name)) {
+        closeModal();
+        showToast(`Rack "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openAddDeepFreezerBoxForm(cont: Container, rackName: string, onDone?: () => void): void {
+  const form = { color: "" };
+  openModal({
+    title: `Add Box to Rack ${rackName}`,
+    component: SimplePromptModal,
+    props: { form, kind: "color" as const },
+    btnText: "Add",
+    onConfirm: async () => {
+      const color = form.color.trim();
+      if (await opAddDeepFreezerBox(cont.id, rackName, color !== "" ? color : undefined)) {
+        closeModal();
+        showToast("Box added");
         onDone?.();
       }
     },

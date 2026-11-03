@@ -75,6 +75,15 @@ export const EditContainerBodySchema = z
     message: "empty update",
   });
 
+export const AddDeepFreezerRackBodySchema = z.object({
+  name: z.string().trim().min(1).max(50),
+});
+
+export const AddDeepFreezerBoxBodySchema = z.object({
+  rackName: z.string().trim().min(1).max(50),
+  color: z.string().trim().max(32).optional(),
+});
+
 export const AddShelfBodySchema = z.object({
   roomId: z.string().min(1),
   containerId: z.string().min(1),

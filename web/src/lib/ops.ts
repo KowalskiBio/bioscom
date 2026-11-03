@@ -98,6 +98,37 @@ export async function opAddDeepFreezer(
   }
 }
 
+export async function opAddDeepFreezerRack(freezerId: string, name: string): Promise<boolean> {
+  try {
+    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks`, { name });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add rack", "error");
+    }
+    return false;
+  }
+}
+
+export async function opAddDeepFreezerBox(freezerId: string, rackName: string, color?: string): Promise<boolean> {
+  try {
+    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/boxes`, {
+      rackName,
+      ...(color !== undefined && color !== "" ? { color } : {}),
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add box", "error");
+    }
+    return false;
+  }
+}
+
 export function opAddShelf(body: {
   roomId: string;
   containerId: string;

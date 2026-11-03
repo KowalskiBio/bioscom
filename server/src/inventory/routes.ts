@@ -3,6 +3,8 @@ import type Database from "better-sqlite3";
 import {
   AddRoomBodySchema,
   AddDeepFreezerBodySchema,
+  AddDeepFreezerRackBodySchema,
+  AddDeepFreezerBoxBodySchema,
   EditRoomBodySchema,
   AddContainerBodySchema,
   EditContainerBodySchema,
@@ -100,6 +102,88 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       hub.broadcast(result.mirrorGroupId, { groupId, version: result.version, tree: result.tree });
     }
   };
+
+  app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/racks", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const deepfreezerId = (request.params as { deepfreezerId: string }).deepfreezerId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = AddDeepFreezerRackBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
+        if (freezer === undefined) {
+          throw new OpError(404, "Deep freezer not found");
+        }
+        const name = body.data.name.trim();
+        const positions: Record<string, number> = { ...(freezer.rackPositions ?? {}) };
+        if (Object.prototype.hasOwnProperty.call(positions, name)) {
+          throw new OpError(400, `Rack "${name}" already exists`);
+        }
+        const usedSlots = new Set(Object.values(positions));
+        let freeSlot = -1;
+        for (let slot = 0; slot < 32; slot += 1) {
+          if (!usedSlots.has(slot)) {
+            freeSlot = slot;
+            break;
+          }
+        }
+        if (freeSlot === -1) {
+          throw new OpError(409, "Deep freezer is full (no free rack slots)");
+        }
+        freezer.rackPositions = { ...positions, [name]: freeSlot };
+        return `Added rack "${name}" to deep freezer "${freezer.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/boxes", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const deepfreezerId = (request.params as { deepfreezerId: string }).deepfreezerId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = AddDeepFreezerBoxBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
+        if (freezer === undefined) {
+          throw new OpError(404, "Deep freezer not found");
+        }
+        const rackName = body.data.rackName.trim();
+        const rackLocations = freezer.rackPositions ?? {};
+        if (!Object.prototype.hasOwnProperty.call(rackLocations, rackName)) {
+          throw new OpError(404, `Rack "${rackName}" not found`);
+        }
+        const rackChildren = (freezer.shelves ?? []).filter(
+          (sh) => (sh.rackName ?? "") === rackName,
+        );
+        const used = new Set(rackChildren.map((sh) => sh.boxName ?? "").filter((b) => b !== ""));
+        let nextBox = 1;
+        while (used.has(String(nextBox))) nextBox += 1;
+        (freezer.shelves ??= []).push({
+          id: genId(),
+          name: `Rack ${rackName} / Box ${nextBox}`,
+          rackName,
+          boxName: String(nextBox),
+          color: body.data.color,
+          chemicals: [],
+        });
+        return `Added box "${nextBox}" to rack "${rackName}" in deep freezer "${freezer.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
 
   app.post("/api/groups/:id/inventory/deepfreezers", async (request, reply) => {
     const user = requireUser(db(), request, reply);
