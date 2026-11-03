@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { closeDatabase, getDatabase } from "../src/db.js";
 import { runMigrations } from "../src/db/migrate.js";
+import { ensureBackfilled } from "../src/inventory/sync.js";
 import { schemaSqlPath } from "../src/paths.js";
 
 function tempDbPath(): string {
@@ -106,8 +107,48 @@ describe("migration runner", () => {
     raw.close();
   });
 
-  it("accepts a trial relational insert across the new tables", () => {
+  it("re-run of ensureBackfilled re-heals stale inventory docs every single call (T1-3 idempotent boot AGENTS AGENTS reconcile)", () => {
     const db = getDatabase(tempDbPath());
+    db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('g1', ?, 1)").run(
+      JSON.stringify({
+        rooms: [
+          {
+            id: "r1",
+            name: "A",
+            containers: [{ id: "c1", name: "B", type: "cabinet", shelves: [{ id: "s1", name: "T", chemicals: [{ id: "chem-1", name: "Legacy salt" }] }] }],
+          },
+        ],
+        assetRooms: [],
+        assets: [],
+        protocols: [],
+      }),
+    );
+
+    const firstReports = ensureBackfilled(db);
+    expect(firstReports.length).toBe(1);
+    expect(firstReports[0]!.ok).toBe(true);
+    expect(firstReports[0]!.chemicals).toEqual({ doc: 1, db: 1 });
+    expect((db.prepare("SELECT doc_version FROM inventory_sync_state WHERE group_id = 'g1'").get() as { doc_version: number }).doc_version).toBe(1);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM legacy_chemical_map WHERE group_id = 'g1' AND chemical_id = 'chem-1'").get() as { n: number }).n).toBe(1);
+
+    const updated = JSON.parse((db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree) as {
+      rooms: Array<{ containers: Array<{ shelves: Array<{ chemicals: unknown[] }> }> }>;
+    };
+    updated.rooms[0]!.containers[0]!.shelves[0]!.chemicals = [];
+    db.prepare("UPDATE group_inventory_docs SET tree = ?, version = ? WHERE group_id = 'g1'").run(JSON.stringify(updated), 2);
+
+    const secondReports = ensureBackfilled(db);
+    expect(secondReports.length).toBe(1);
+    expect(secondReports[0]!.ok).toBe(true);
+    expect(secondReports[0]!.chemicals).toEqual({ doc: 0, db: 0 });
+    expect((db.prepare("SELECT doc_version FROM inventory_sync_state WHERE group_id = 'g1'").get() as { doc_version: number }).doc_version).toBe(2);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM legacy_chemical_map WHERE group_id = 'g1' AND chemical_id = 'chem-1'").get() as { n: number }).n).toBe(0);
+
+    const thirdReports = ensureBackfilled(db);
+    expect(thirdReports).toEqual([]);
+  });
+
+  it("accepts a trial relational insert across the new tables", () => {    const db = getDatabase(tempDbPath());
 
     db.prepare("INSERT INTO materials (id, group_id, type_key, name) VALUES (?, ?, ?, ?)").run(
       "m-chem-1",

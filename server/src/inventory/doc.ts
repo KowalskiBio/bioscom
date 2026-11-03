@@ -47,9 +47,13 @@ export function findRoomOrThrow(tree: InventoryTree, roomId: string): Room {
   }
   const freezer = tree.deepFreezers?.find((candidate) => candidate.id === roomId);
   if (freezer !== undefined) {
-    return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] } as Room;
+    return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer], __pseudo: true } as Room;
   }
   throw new OpError(404, "Room not found");
+}
+
+export function isPseudoRoom(room: Room | undefined | null): room is Room & { __pseudo: true } {
+  return room !== undefined && room !== null && (room as unknown as { __pseudo?: boolean }).__pseudo === true;
 }
 
 export function findContainerOrThrow(tree: InventoryTree, roomId: string, containerId: string): Container {
@@ -68,6 +72,46 @@ export function findShelfOrThrow(tree: InventoryTree, roomId: string, containerI
     throw new OpError(404, "Shelf not found");
   }
   return shelf;
+}
+
+export function findBarcodeOwner(tree: InventoryTree, barcode: string, excludeChemicalId: string | null): string | undefined {
+  const check = (chem: Chemical, contextName: string): string | undefined => {
+    if (chem.id !== excludeChemicalId && typeof chem.barcode === "string" && chem.barcode === barcode) {
+      return chem.name ?? contextName;
+    }
+    return undefined;
+  };
+  for (const room of tree.rooms) {
+    for (const ch of room.chemicals ?? []) {
+      const hit = check(ch, `room-level of ${room.name ?? room.id}`);
+      if (hit !== undefined) return hit;
+    }
+    for (const container of room.containers) {
+      for (const ch of container.chemicals ?? []) {
+        const hit = check(ch, `direct-in-${container.name ?? container.id}`);
+        if (hit !== undefined) return hit;
+      }
+      for (const shelf of container.shelves ?? []) {
+        for (const ch of shelf.chemicals ?? []) {
+          const hit = check(ch, `shelf ${shelf.name ?? shelf.id}`);
+          if (hit !== undefined) return hit;
+        }
+      }
+    }
+  }
+  for (const freezer of tree.deepFreezers ?? []) {
+    for (const ch of freezer.chemicals ?? []) {
+      const hit = check(ch, `direct-in-${freezer.name ?? freezer.id}`);
+      if (hit !== undefined) return hit;
+    }
+    for (const shelf of freezer.shelves ?? []) {
+      for (const ch of shelf.chemicals ?? []) {
+        const hit = check(ch, `rack-box ${shelf.name ?? shelf.id}`);
+        if (hit !== undefined) return hit;
+      }
+    }
+  }
+  return undefined;
 }
 
 export function findChemicalOrThrow(
@@ -100,7 +144,13 @@ export function resolveStockTarget(
   boxId?: string | null,
 ): ResolvedStockTarget {
   const room = findRoomOrThrow(tree, roomId);
+  if (isPseudoRoom(room) && containerId !== room.id) {
+    throw new OpError(404, "Room not found");
+  }
   if (containerId === undefined || containerId === null || containerId === "") {
+    if (isPseudoRoom(room)) {
+      throw new OpError(404, "Room not found");
+    }
     return { room, container: null, shelf: null, box: null };
   }
   const container = room.containers.find((candidate) => candidate.id === containerId);
@@ -209,12 +259,15 @@ export function createMutator(dbAccessor: () => Database.Database) {
       dbAccessor()
         .prepare("UPDATE group_inventory_docs SET tree = ?, version = ? WHERE group_id = ?")
         .run(JSON.stringify(tree), nextVersion, groupId);
-      try {
+      const savepoint = dbAccessor().transaction((): void => {
         syncGroupInventoryDocument(dbAccessor(), groupId, tree);
         markSynced(dbAccessor(), groupId, nextVersion);
+      });
+      try {
+        savepoint();
       } catch (error) {
         console.error(
-          `[inventory-sync] mirror failed for group ${groupId}: ${error instanceof Error ? error.message : String(error)}`,
+          `[inventory-sync] mirror failed for group ${groupId} (will re-sync at next boot): ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       const baseName = user.name ?? user.uid;

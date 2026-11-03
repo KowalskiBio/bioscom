@@ -60,28 +60,26 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
     newlyApplied.push(migration);
   }
 
-  if (newlyApplied.length > 0) {
-    try {
-      const reports = ensureBackfilled(db);
-      const anomalies = reports.filter((r) => !r.ok);
-      if (reports.length > 0 || anomalies.length > 0) {
-        console.log(
-          `[inventory-backfill] synced ${reports.length} group(s), anomalies: ${anomalies.length}${anomalies.length > 0 ? " :: " + JSON.stringify(anomalies) : ""}`,
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[inventory-backfill] failed: ${error instanceof Error ? error.message : String(error)}`,
+  try {
+    const reports = ensureBackfilled(db);
+    const anomalies = reports.filter((r) => !r.ok);
+    if (reports.length > 0 || anomalies.length > 0) {
+      console.log(
+        `[inventory-backfill] synced ${reports.length} group(s), anomalies: ${anomalies.length}${anomalies.length > 0 ? " :: " + JSON.stringify(anomalies) : ""}`,
       );
     }
-    try {
-      const issues = ensureParityChecked(db);
-      if (issues.length > 0) {
-        console.error(`[inventory-parity] ${issues.length} mismatch(es): ${JSON.stringify(issues.slice(0, 20))}`);
-      }
-    } catch (error) {
-      console.error(`[inventory-parity] failed: ${error instanceof Error ? error.message : String(error)}`);
+  } catch (error) {
+    console.error(
+      `[inventory-backfill] failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    const issues = ensureParityChecked(db);
+    if (issues.length > 0) {
+      console.error(`[inventory-parity] ${issues.length} mismatch(es): ${JSON.stringify(issues.slice(0, 20))}`);
     }
+  } catch (error) {
+    console.error(`[inventory-parity] failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   return newlyApplied;
 }

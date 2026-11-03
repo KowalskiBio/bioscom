@@ -43,9 +43,11 @@ import {
   findContainerOrThrow,
   findRoomOrThrow,
   findShelfOrThrow,
+  findBarcodeOwner as findBarcodeOwnerHelper,
   findChemicalAnywhere,
   genId,
   isMemberOrSuperadmin,
+  isPseudoRoom,
   locationChemicals,
   resolveStockTarget,
   type MutationResult,
@@ -81,21 +83,6 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
     }
   };
 
-  function findBarcodeOwner(tree: InventoryTree, barcode: string, excludeChemicalId: string | null): string | undefined {
-    for (const room of tree.rooms) {
-      for (const container of room.containers) {
-        for (const shelf of container.shelves ?? []) {
-          for (const ch of shelf.chemicals ?? []) {
-            if (ch.id !== excludeChemicalId && typeof ch.barcode === "string" && ch.barcode.trim() === barcode) {
-              return ch.name ?? "another item";
-            }
-          }
-        }
-      }
-    }
-    return undefined;
-  }
-
   const broadcastResult = (groupId: string, result: MutationResult): void => {
     hub.broadcast(groupId, { groupId, version: result.version, tree: result.tree });
     if (result.mirrorGroupId !== null) {
@@ -114,11 +101,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       if (!body.success) {
         throw new OpError(400, "Invalid request");
       }
-      const result = mutate(groupId, user, (tree) => {
+      const isMember = isMemberOrSuperadmin(user, groupId);
+      const result = mutate(groupId, user, (tree, context) => {
         const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
         if (freezer === undefined) {
           throw new OpError(404, "Deep freezer not found");
         }
+        checkSharedContainerAccess(user, groupId, freezer, context, isMember);
         const name = body.data.name.trim();
         const positions: Record<string, number> = { ...(freezer.rackPositions ?? {}) };
         if (Object.prototype.hasOwnProperty.call(positions, name)) {
@@ -154,11 +143,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       if (!body.success) {
         throw new OpError(400, "Invalid request");
       }
-      const result = mutate(groupId, user, (tree) => {
+      const isMember = isMemberOrSuperadmin(user, groupId);
+      const result = mutate(groupId, user, (tree, context) => {
         const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
         if (freezer === undefined) {
           throw new OpError(404, "Deep freezer not found");
         }
+        checkSharedContainerAccess(user, groupId, freezer, context, isMember);
         const rackName = body.data.rackName.trim();
         const rackLocations = freezer.rackPositions ?? {};
         if (!Object.prototype.hasOwnProperty.call(rackLocations, rackName)) {
@@ -274,6 +265,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const result = mutate(groupId, user, (tree) => {
         const room = findRoomOrThrow(tree, roomId);
+        if (isPseudoRoom(room)) {
+          throw new OpError(404, "Room not found");
+        }
         const oldName = room.name;
         if (body.data.name !== undefined) {
           room.name = body.data.name;
@@ -298,6 +292,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       if (!requireWriter(user, reply)) return;
       const result = mutate(groupId, user, (tree) => {
         const room = findRoomOrThrow(tree, roomId);
+        if (isPseudoRoom(room)) {
+          throw new OpError(404, "Room not found");
+        }
         tree.rooms = tree.rooms.filter((candidate) => candidate.id !== roomId);
         return `Deleted room "${room.name}"`;
       });
@@ -319,6 +316,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const result = mutate(groupId, user, (tree) => {
         const room = findRoomOrThrow(tree, body.data.roomId);
+        if (isPseudoRoom(room)) {
+          throw new OpError(404, "Room not found");
+        }
         const container: Container = {
           id: genId(),
           name: body.data.name,
@@ -527,7 +527,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
             ? getOrCreatePosition(target.container, target.shelf, body.data.name)
             : undefined);
         if (body.data.barcode !== undefined && body.data.barcode.trim() !== "") {
-          const owner = findBarcodeOwner(tree, body.data.barcode.trim(), null);
+          const owner = findBarcodeOwnerHelper(tree, body.data.barcode.trim(), null);
           if (owner !== undefined) {
             throw new OpError(400, `Barcode "${body.data.barcode}" is already used by "${owner}"`);
           }
@@ -589,7 +589,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.barcode !== undefined) {
           if (body.data.barcode.trim() !== "") {
-            const owner = findBarcodeOwner(tree, body.data.barcode.trim(), chemicalId);
+            const owner = findBarcodeOwnerHelper(tree, body.data.barcode.trim(), chemicalId);
             if (owner !== undefined) {
               throw new OpError(400, `Barcode "${body.data.barcode}" is already used by "${owner}"`);
             }

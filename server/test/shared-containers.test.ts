@@ -18,6 +18,7 @@ let ownerCookie: string;
 let memberCookie: string;
 let outsiderCookie: string;
 let readerCookie: string;
+let vendorCookie: string;
 let roomId = "";
 let containerId = "";
 let shelfId = "";

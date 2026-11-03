@@ -9,6 +9,7 @@ import {
   OpError,
   checkSharedContainerAccess,
   createMutator,
+  findBarcodeOwner,
   genId,
   isMemberOrSuperadmin,
   locationChemicals,
@@ -87,25 +88,16 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
         }
         const list = locationChemicals(target);
         const ownerLabel = target.box?.name ?? target.shelf?.name ?? target.container?.name ?? target.room.name ?? "inventory";
-        const treeBarcodeOwners = new Map<string, string>();
-        for (const room of tree.rooms) {
-          for (const cont of room.containers) {
-            for (const sh of cont.shelves ?? []) {
-              for (const ch of sh.chemicals ?? []) {
-                if (typeof ch.barcode === "string" && payloadBarcodes.has(ch.barcode.trim())) {
-                  treeBarcodeOwners.set(ch.barcode.trim(), ch.name ?? "existing item");
-                }
-              }
-            }
-          }
-        }
         let created = 0;
         for (const index of mutableIndexes) {
           const item = body.data.items[index]!;
           const code = typeof item.barcode === "string" && item.barcode.trim() !== "" ? item.barcode.trim() : null;
-          if (code !== null && treeBarcodeOwners.has(code)) {
-            itemValidationErrors.push({ index, name: item.name, error: `barcode "${code}" already used by "${treeBarcodeOwners.get(code)}"` });
-            continue;
+          if (code !== null) {
+            const docOwner = findBarcodeOwner(tree, code, null);
+            if (docOwner !== undefined) {
+              itemValidationErrors.push({ index, name: item.name, error: `barcode "${code}" already used by "${docOwner}"` });
+              continue;
+            }
           }
           const chemical: Chemical = {
             id: genId(),

@@ -40,7 +40,17 @@ beforeAll(async () => {
   db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES ('group-bc', 'BC Lab', 'BC', 1)").run();
   db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('group-bc', ?, 0)").run(
     JSON.stringify({
-      rooms: [{ id: "r-1", name: "Main", containers: [{ id: "c-1", name: "Fridge", type: "fridge", shelves: [{ id: "s-1", name: "Top", chemicals: [] }] }] }],
+      rooms: [{ id: "r-1", name: "Main", containers: [{ id: "c-1", name: "Fridge", type: "freezer", shelves: [{ id: "s-1", name: "Top", chemicals: [] }] }] }],
+      deepFreezers: [
+        {
+          id: "df-root-1",
+          name: "Root DF",
+          type: "deepfreezer",
+          sharedWithGroupIds: [],
+          rackPositions: { A: 0 },
+          shelves: [{ id: "df-box-1", name: "Rack A / Box 1", rackName: "A", boxName: "1", chemicals: [{ id: "df-chem-1", name: "Frozen vial", barcode: "BSC-FREEZER-1" }] }],
+        },
+      ],
       assetRooms: [],
       assets: [],
       protocols: [],

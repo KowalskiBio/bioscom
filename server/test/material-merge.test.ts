@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { hash as argonHash } from "@node-rs/argon2";
 import { buildApp } from "../src/app.js";
 import { closeDatabase, getDatabase } from "../src/db.js";
+import { checkParity } from "../src/inventory/assemble.js";
 import { syncGroupInventoryDocument } from "../src/inventory/sync.js";
 
 const XRW = { "X-Requested-With": "XMLHttpRequest" };
@@ -139,8 +140,7 @@ describe("POST /api/groups/:id/materials/merge", () => {
     expect(after.name).toBe(before.name);
   });
 
-  it("rejects merging a different-typed pair and an already archived source", async () => {
-    db.prepare("INSERT INTO materials (id, group_id, type_key, name, created_at, updated_at) VALUES ('m-ab-1','group-mg','antibody','X','1',1)").run();
+  it("rejects merging a different-typed pair and an already archived source", async () => {    db.prepare("INSERT INTO materials (id, group_id, type_key, name, created_at, updated_at) VALUES ('m-ab-1','group-mg','antibody','X','1',1)").run();
     const cross = await request(baseUrl)
       .post("/api/groups/group-mg/materials/merge")
       .set("Cookie", cookie)
@@ -153,6 +153,22 @@ describe("POST /api/groups/:id/materials/merge", () => {
       .set(XRW)
       .send({ sourceMaterialId: "m-ch-old", targetMaterialId: "m-ch-new" });
     expect(again.status).toBe(400);
+  });
+
+  it("merged chemicals do not poison the parity check (merge-aware)", () => {
+    const issues = checkParity(db, "group-mg");
+    expect(
+      issues.filter((i) => i.entity === "chemical" && ["ch-old", "ch-new"].includes(i.id)),
+    ).toEqual([]);
+  });
+
+  it("parity still catches true location drift for non-merged chemicals", () => {
+    const current = one<{ location_id: string }>("SELECT location_id FROM stocks WHERE id = 'ch-new'");
+    db.prepare("UPDATE stocks SET location_id = 'c-1' WHERE id = 'ch-new'").run();
+    const issues = checkParity(db, "group-mg");
+    expect(issues.some((i) => i.entity === "chemical" && i.id === "ch-new" && i.kind !== "missing-in-relational")).toBe(true);
+    db.prepare("UPDATE stocks SET location_id = ? WHERE id = 'ch-new'").run(current.location_id);
+    expect(checkParity(db, "group-mg")).toEqual([]);
   });
 
   it("readers and guests are forbidden", async () => {

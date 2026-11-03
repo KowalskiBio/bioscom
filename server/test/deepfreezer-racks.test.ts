@@ -33,9 +33,20 @@ beforeAll(async () => {
     "admin",
     "group-df",
   );
-  db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES ('group-df', 'DF Lab', 'DF', 1)").run();
+  db.prepare("INSERT INTO users (uid, email, password_hash, hash_version, name, role, group_id) VALUES (?, ?, ?, 'argon2id', ?, ?, ?)").run(
+    "uid-2",
+    "writer-other@dfrb.test",
+    await argonHash("pw2"),
+    "Other Writer",
+    "admin",
+    "group-other",
+  );
+  db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES ('group-df', 'DF Lab', 'DF', 1), ('group-other', 'Other Lab', 'OT', 2)").run();
   db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('group-df', ?, 0)").run(
     JSON.stringify({ rooms: [], assetRooms: [], assets: [], protocols: [], deepFreezers: [] }),
+  );
+  db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('group-other', ?, 0)").run(
+    JSON.stringify({ rooms: [], assetRooms: [], assets: [], protocols: [] }),
   );
   const res = await request(baseUrl).post("/api/login").set(XRW).send({ email: "admin@dfrb.test", password: "pw" });
   const setCookie = res.headers["set-cookie"];
@@ -108,5 +119,88 @@ describe("deep freezer boxes inside a named rack (POST /deepfreezers/:id/boxes)"
       .set(XRW)
       .send({ rackName: "ZZZ" });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("pseudo-room write facade is closed (T1-5)", () => {
+  it("room-level mutations with a freezer id are 404s, not silent edits", async () => {
+    const edit = await request(baseUrl)
+      .put(`/api/groups/group-df/inventory/rooms/${dfId}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ name: "Tampered room name" });
+    expect(edit.status).toBe(404);
+    const del = await request(baseUrl)
+      .delete(`/api/groups/group-df/inventory/rooms/${dfId}`)
+      .set("Cookie", cookie)
+      .set(XRW);
+    expect(del.status).toBe(404);
+    const added = await request(baseUrl)
+      .post("/api/groups/group-df/inventory/containers")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: dfId, name: "Ghost Cont", type: "cabinet", shelves: ["A"] });
+    expect(added.status).toBe(404);
+    const doc = db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'group-df'").get() as { tree: string };
+    expect(JSON.parse(doc.tree).deepFreezers.find((c: { id: string }) => c.id === dfId).name).not.toBe("Tampered room name");
+    expect((db.prepare("SELECT COUNT(*) AS n FROM locations WHERE kind = 'container' AND name = 'Ghost Cont'").get() as { n: number }).n).toBe(0);
+  });
+
+  it("chemical placement with freezer-as-room and no container is a 404 with no ghost item", async () => {
+    const post = await request(baseUrl)
+      .post("/api/groups/group-df/inventory/chemicals")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: dfId, name: "Ghost chem", quantity: 1 });
+    expect(post.status).toBe(404);
+    const bulk = await request(baseUrl)
+      .post("/api/groups/group-df/inventory/bulk-import")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: dfId, items: [{ name: "Ghost bulk" }] });
+    expect(JSON.stringify(bulk.body)).not.toContain('"created":1');
+    const doc = db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'group-df'").get() as { tree: string };
+    const df = JSON.parse(doc.tree).deepFreezers.find((c: { id: string }) => c.id === dfId);
+    expect(JSON.stringify(df)).not.toContain("Ghost chem");
+    expect(JSON.stringify(df)).not.toContain("Ghost bulk");
+  });
+
+  it("cross-lab writer is denied without mutation (403/404, state untouched)", async () => {
+    const writerRes = await request(baseUrl).post("/api/login").set(XRW).send({ email: "writer-other@dfrb.test", password: "pw2" });
+    const otherCookie = (Array.isArray(writerRes.headers["set-cookie"]) ? writerRes.headers["set-cookie"][0] : writerRes.headers["set-cookie"] ?? "").split(";")[0] ?? "";
+    const before = (db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'group-df'").get() as { tree: string }).tree;
+    const res = await request(baseUrl)
+      .post(`/api/groups/group-df/inventory/deepfreezers/${dfId}/racks`)
+      .set("Cookie", otherCookie)
+      .set(XRW)
+      .send({ name: "C" });
+    expect(res.status).not.toBe(201);
+    const res2 = await request(baseUrl)
+      .post(`/api/groups/group-df/inventory/deepfreezers/${dfId}/boxes`)
+      .set("Cookie", otherCookie)
+      .set(XRW)
+      .send({ rackName: "A" });
+    expect(res2.status).not.toBe(201);
+    const after = (db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'group-df'").get() as { tree: string }).tree;
+    expect(after).toBe(before);
+  });
+});
+
+describe("shared deep freezers between labs", () => {
+  it("a root deep freezer shares and shows up in the receiving lab's listing", async () => {
+    const share = await request(baseUrl)
+      .post(`/api/groups/group-df/inventory/containers/${dfId}/share`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: dfId, sharedWithGroupId: "group-other" });
+    expect(share.status).toBe(200);
+
+    const otherRes = await request(baseUrl).post("/api/login").set(XRW).send({ email: "writer-other@dfrb.test", password: "pw2" });
+    const otherCookie = (Array.isArray(otherRes.headers["set-cookie"]) ? otherRes.headers["set-cookie"][0] : otherRes.headers["set-cookie"] ?? "").split(";")[0] ?? "";
+    const list = await request(baseUrl).get("/api/groups/group-other/shared-containers").set("Cookie", otherCookie);
+    expect(list.status).toBe(200);
+    const shared = list.body.sharedContainers as Array<{ container: { id: string }; roomId: string; roomName: string }>;
+    expect(shared.some((entry) => entry.container.id === dfId)).toBe(true);
+    expect(shared.find((entry) => entry.container.id === dfId)?.roomName.length).toBeGreaterThan(0);
   });
 });

@@ -246,9 +246,10 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
   } as unknown as InventoryTree;
 }
 
-function emitChemicalEntry(map: Map<string, unknown>, parentLabel: string, ch: Chemical): void {
+function emitChemicalEntry(map: Map<string, unknown>, parentLabel: string, parentId: string, ch: Chemical): void {
   map.set(`chemical:${ch.id}`, {
     parent: parentLabel,
+    parentId,
     name: ch.name ?? "",
     cas: ch.cas ?? null,
     formula: ch.formula ?? null,
@@ -276,7 +277,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
       description: room.description ?? null,
     });
     for (const ch of room.chemicals ?? []) {
-      emitChemicalEntry(map, `room`, ch);
+      emitChemicalEntry(map, `room`, room.id, ch);
     }
     for (const cont of room.containers ?? []) {
       map.set(`container:${cont.id}`, {
@@ -292,7 +293,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
         chemicals: (cont.chemicals ?? []).length,
       });
       for (const ch of cont.chemicals ?? []) {
-        emitChemicalEntry(map, `container`, ch);
+        emitChemicalEntry(map, `container`, cont.id, ch);
       }
       for (const shelf of cont.shelves ?? []) {
         map.set(`shelf:${shelf.id}`, {
@@ -308,7 +309,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
           rangeEnd: shelf.rangeEnd ?? null,
         });
         for (const ch of shelf.chemicals ?? []) {
-          emitChemicalEntry(map, `shelf`, ch);
+          emitChemicalEntry(map, `shelf`, shelf.id, ch);
         }
       }
     }
@@ -326,7 +327,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
       rackPositions: cont.rackPositions ?? null,
     });
     for (const ch of cont.chemicals ?? []) {
-      emitChemicalEntry(map, `container`, ch);
+      emitChemicalEntry(map, `container`, cont.id, ch);
     }
     for (const shelf of cont.shelves ?? []) {
       map.set(`shelf:${shelf.id}`, {
@@ -342,7 +343,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
         rangeEnd: shelf.rangeEnd ?? null,
       });
       for (const ch of shelf.chemicals ?? []) {
-        emitChemicalEntry(map, `shelf`, ch);
+        emitChemicalEntry(map, `shelf`, shelf.id, ch);
       }
     }
   }
@@ -390,6 +391,8 @@ export function checkParity(db: Database.Database, groupId: string): ParityIssue
   const assembled = assembleInventoryFromRelational(db, groupId);
   const docMap = canonicalTree(docTree);
   const relMap = canonicalTree(assembled);
+  const mapRows = db.prepare("SELECT chemical_id, material_id FROM legacy_chemical_map WHERE group_id = ?").all(groupId) as Array<{ chemical_id: string; material_id: string }>;
+  const chemicalMaterial = new Map<string, string>(mapRows.map((r) => [r.chemical_id, r.material_id]));
   const issues: ParityIssue[] = [];
 
   for (const [key, docValue] of docMap) {
@@ -397,7 +400,17 @@ export function checkParity(db: Database.Database, groupId: string): ParityIssue
     const [entity, id] = key.split(":") as [ParityIssue["entity"], string];
     if (relValue === undefined) {
       issues.push({ kind: "missing-in-relational", entity, id });
-    } else if (!recordsEqual(docValue, relValue)) {
+      continue;
+    }
+    let compareA = docValue;
+    let compareB = relValue;
+    if (entity === "chemical" && chemicalMaterial.get(id) !== undefined && chemicalMaterial.get(id) !== `m-${id}`) {
+      const { name: _n1, cas: _c1, formula: _f1, type: _t1, attributes: _a1, ...restA } = docValue as Record<string, unknown>;
+      const { name: _n2, cas: _c2, formula: _f2, type: _t2, attributes: _a2, ...restB } = relValue as Record<string, unknown>;
+      compareA = restA;
+      compareB = restB;
+    }
+    if (!recordsEqual(compareA, compareB)) {
       issues.push({ kind: "different", entity, id, detail: `${JSON.stringify(docValue).slice(0, 160)} != ${JSON.stringify(relValue).slice(0, 160)}` });
     }
   }

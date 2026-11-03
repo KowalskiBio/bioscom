@@ -237,42 +237,16 @@ ssh proxmox1 'cd BioSCom && ./deploy/deploy.sh'   # git pull, npm ci, build -ws,
 
 ### Rollback for this release
 
-The legacy document, history, shares, exports and percents of current writes all live in
-the old schema and remain authoritative; the relational side is a transactional mirror.
-- **Rollback**: deploy previous tag (standard "Bad app release" above). The new tables
-  (`materials`, `products`, `batches`, `stocks`, `locations`, `container_shares`,
-  `batch_inputs`, `legacy_chemical_map`, `inventory_sync_state`, `schema_migrations`) are
-  simply ignored by the old build and carry **no unique data** yet (everything in them is
-  derivable from the doc). Nothing needs reversal or conversion.
-- A boot killed mid-migration cannot half-apply a migration (each applies inside its own
-  transaction) or half-sync a group (per-group transactions).
-- If the newer build already created typed items (antibodies etc.) BEFORE you roll back:
-  those rows exist as extended fields inside the JSON document rows, which the old build
-  parses as legacy chemicals (extra fields are preserved as-is by the legacy zod tolerance)
-  — usable, but the typed experience disappears with the old build. Data is not lost.
+**Current rollback posture: snapshot-restore ONLY.** After this build boots, the inventory document **is** rewritten once (legacy nested deep freezers are hoisted to root level with version +1 logged via `[inventory-backfill] relocated ...`), and its every write also depends on new side tables. There is no "deploy previous tag and ignore the new tables" path anymore.
 
-### Soak gate before the flip-read review (Phase C)
+To restore after any operational incident:
 
-Watch the journal for **1–2 weeks**:
+1. Stop the unit: `sudo systemctl stop bioscom`.
+2. Restore the pre-refactor snapshot: `cp /home/kowalski/backups/bioscom-pre-inventory-refactor.db /home/kowalski/BioSCom/bioscom.db` (drop `-wal`/`-shm` sidecars; WAL rebuilds).
+3. Start the unit and verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; check one real login; check **`GET /api/groups/<lab>/inventory/parity` returns `{ok: true, issues: []}`** per lab before saying rollback is done.
+4. Everything written *between* rollout and the incident (post-hoist) is not yet mapped backwards — the new tables may contain information that the restored doc lost. Only after you reconcile manually via the parity probe per lab (`/api/groups/<id>/inventory/parity`) can you call the rollback inclusive.
 
-```bash
-ssh proxmox1 'journalctl -u bioscom --since "24 hours ago" | grep -E "inventory-(backfill|sync|parity)"'
-```
-
-Expected: only `[inventory-backfill]` lines with `anomalies: 0` (or silence). The
-**flip-read** (making the relational core the read driver; assemble-to-document path
-already exists and is parity-checked at boot) is scheduled in a **separately reviewed
-rear-guard step** after clean soak + this checklist passes, not from this deployment.
-
-Execution log (fill during rollout):
-
-- [ ] pre-refactor DB snapshot taken (path + sha256)
-- [ ] deploy.sh completed, unit restarted
-- [ ] first-boot journal: no `[inventory-parity]`, backfill anomalies: 0
-- [ ] parity probe `{ok: true}` per lab in browser session
-- [ ] legacy chem edit OK; one typed item created; Catalog renders it
-- [ ] next-boot journal: anomalies: 0, no parity alarm
-- [ ] 1–2 week soak journal clean (flip-read review date: ____)
+Monitoring contract you can rely on (already-live, not aspirational): **every boot** runs backfill (idempotent doc→relational sync with structurally-drift-detection incl. deepfreezer hoists) + parity probe for every group; expect silent healthy output when converged, JSON lines when it isn't: `[inventory-backfill] synced N group(s), anomalies: 0` and any `[inventory-parity] ... mismatch(es)` line as a true alarm. `migration_0001..0005` apply transactionally per file; mirror failures during a write (`[inventory-sync] mirror failed for group …`) are **savepointed** — the doc commits, the mirror rolls back atomically and naturally re-heals on the next boot via the above contract. Gone-off PARITY probe after merges returns `ok:true` by design; only true drift trips parity now.
 
 ## Backups
 
