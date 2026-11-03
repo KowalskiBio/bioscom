@@ -122,6 +122,32 @@
     await opAdjustQty(room.id, cont.id, shelfId, chemId, delta);
   }
 
+  async function adjustDirectQty(containerId: string, chemId: string, delta: number): Promise<void> {
+    if (room === undefined) {
+      return;
+    }
+    await opAdjustQty(room.id, containerId, "", chemId, delta);
+  }
+
+  function deleteDirectChemical(containerId: string, chem: Chemical): void {
+    if (room === undefined) {
+      return;
+    }
+    openModal({
+      title: "Delete Chemical",
+      bodyHtml: `<p>Delete <strong>${escapeHtmlText(chem.name ?? "")}</strong>?</p>`,
+      btnText: "Delete",
+      onConfirm: () => {
+        verifyCaptchaAndExecute(async () => {
+          if (await opDeleteChemical(room.id, containerId, "", chem.id)) {
+            closeModal();
+            showToast("Deleted");
+          }
+        });
+      },
+    });
+  }
+
   function deleteChemical(shelfId: string, chem: Chemical): void {
     if (cont === undefined || room === undefined) {
       return;
@@ -164,11 +190,133 @@
     return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
 
-  const totalChems = $derived(shelves.reduce((s, sh) => s + (sh.chemicals ?? []).length, 0));
-  const showEmpty = $derived(cont !== undefined && totalChems === 0 && shelves.length === 0);
+  const subContainerTypeLabels: Record<string, string> = {
+    shelf: "Shelf",
+    door_shelf: "Door shelf",
+    crate: "Crate",
+    box: "Box",
+  };
+
+  function subContainerTypeLabel(type: string | undefined): string {
+    return subContainerTypeLabels[type ?? "shelf"] ?? "Shelf";
+  }
+
+  function shelfTypeChip(type: string | undefined): string | null {
+    if (type === undefined || type === "shelf") {
+      return null;
+    }
+    return subContainerTypeLabels[type] ?? type;
+  }
+
+  // Boxes may nest only under a typed shelf (or legacy fridge/freezer shelves).
+  function canHostBox(shelf: Shelf): boolean {
+    if (shelf.type === "box") {
+      return false;
+    }
+    if (shelf.type !== undefined) {
+      return true;
+    }
+    return cont?.type === "fridge" || cont?.type === "freezer";
+  }
+
+  const totalChems = $derived(
+    shelves.reduce((s, sh) => s + (sh.chemicals ?? []).length, 0) + (cont?.chemicals?.length ?? 0),
+  );
+  const showEmpty = $derived(
+    cont !== undefined &&
+      totalChems === 0 &&
+      shelves.length === 0 &&
+      (room?.chemicals?.length ?? 0) === 0,
+  );
 </script>
 
+{#snippet directChemRow(ch: Chemical, opts: { containerId: string; canEdit: boolean })}
+  {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
+  {@const barcode = (ch.barcode ?? "").trim()}
+  <tr class="fade-in" data-chemid={ch.id}>
+    <td><span class="chem-pos">{ch.customPosition ?? ch.position ?? "—"}</span></td>
+    <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
+    <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
+    <td>
+      <div class="qty-adjuster">
+        <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustDirectQty(opts.containerId, ch.id, -1); }}>−</button>
+        <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
+        <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustDirectQty(opts.containerId, ch.id, 1); }}>+</button>
+      </div>
+    </td>
+    <td>{ch.unit ?? "pcs"}</td>
+    <td style="white-space:nowrap">{conc}</td>
+    <td>{ch.cas ?? "—"}</td>
+    <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
+    <td>
+      <div class="row-actions">
+        {#if barcode !== ""}
+          <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
+        {/if}
+        {#if opts.canEdit && !isReader && room !== undefined && cont !== undefined}
+          <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        {/if}
+        {#if !isReader}
+          <button class="btn-inline danger" title="Delete" onclick={() => deleteDirectChemical(opts.containerId, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        {/if}
+      </div>
+    </td>
+  </tr>
+{/snippet}
+
 {#if cont !== undefined && room !== undefined}
+  {#if (room.chemicals?.length ?? 0) > 0}
+    {@const roomDirectChems = sortChems((room.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
+    <div class="shelf-section open" id="room-direct-chemicals" style="margin-bottom:1rem;">
+      <div class="shelf-header" style="cursor:default;">
+        <div class="shelf-info">
+          <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🏠{/if}</span>
+          <span class="shelf-name">Directly in this room</span>
+          <span class="shelf-count">{roomDirectChems.length} chemicals</span>
+        </div>
+      </div>
+      <div class="shelf-body">
+        {#if roomDirectChems.length > 0}
+          <table class="chemicals-table">
+            <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
+            <tbody>
+              {#each roomDirectChems as ch (ch.id)}
+                {@render directChemRow(ch, { containerId: "", canEdit: false })}
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <div class="shelf-empty">No results</div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+  {#if (cont.chemicals?.length ?? 0) > 0}
+    {@const contDirectChems = sortChems((cont.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
+    <div class="shelf-section open" id="container-direct-chemicals" style="margin-bottom:1rem;">
+      <div class="shelf-header" style="cursor:default;">
+        <div class="shelf-info">
+          <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📦{/if}</span>
+          <span class="shelf-name">Directly in {design === "bauhaus" ? stripEmoji(cont.name) : cont.name}</span>
+          <span class="shelf-count">{contDirectChems.length} chemicals</span>
+        </div>
+      </div>
+      <div class="shelf-body">
+        {#if contDirectChems.length > 0}
+          <table class="chemicals-table">
+            <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
+            <tbody>
+              {#each contDirectChems as ch (ch.id)}
+                {@render directChemRow(ch, { containerId: cont.id, canEdit: true })}
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <div class="shelf-empty">No results</div>
+        {/if}
+      </div>
+    </div>
+  {/if}
   {#if cont.type === "deepfreezer"}
     <div class="deepfreezer-explorer" id="shelves-container">
       {#if q !== ""}
@@ -375,24 +523,26 @@
     </div>
   {:else}
     <div id="shelves-container">
-      {#each shelves.filter((s) => !s.parentShelfId) as sh (sh.id)}
+      {#each shelves.filter((s) => !s.parentShelfId && s.type !== "box") as sh (sh.id)}
         {@const chems = sortChems((sh.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
-        {@const boxes = shelves.filter((s) => s.parentShelfId === sh.id)}
+        {@const boxes = shelves.filter((s) => s.parentShelfId === sh.id && (s.type ?? "box") === "box")}
         {@const isOpen = openShelves.has(sh.id) || q !== ""}
         {@const isFreezer = cont.type === "freezer"}
         {@const isFridgeOrFreezer = cont.type === "fridge" || isFreezer}
         {@const icon = isFridgeOrFreezer ? (sh.name.startsWith("Door") ? "🚪" : isFreezer ? "🧊" : "❄️") : "📁"}
+        {@const typeChip = shelfTypeChip(sh.type)}
         <div class={`shelf-section ${isOpen ? "open" : ""}`} data-sid={sh.id}>
           <div class="shelf-header" onclick={() => toggleShelf(sh.id)}>
             <div class="shelf-info">
               <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}{icon}{/if}</span>
+              {#if typeChip !== null}<span class="chem-pos">{typeChip}</span>{/if}
               <span class="shelf-name">{design === "bauhaus" ? stripEmoji(sh.name) : sh.name}</span>
               <span class="shelf-count">{chems.length} chemicals</span>
             </div>
             <div class="shelf-actions">
               {#if canManage}
                 <button class="btn-inline" title="Rename Shelf" onclick={(e) => { e.stopPropagation(); openRenameShelfForm(room, cont, sh.id, sh.name); }}>{design === "bauhaus" ? "R" : "✏️"}</button>
-                {#if cont.type === "fridge" || cont.type === "freezer"}
+                {#if canHostBox(sh)}
                   <button class="btn-inline" title="Add Box" onclick={(e) => { e.stopPropagation(); openAddBoxForm(room, cont, sh.id); }}>{design === "bauhaus" ? "+ Box" : "➕ Box"}</button>
                 {/if}
                 <button class="btn-inline" title="Add Chemical to Shelf" onclick={(e) => { e.stopPropagation(); openChemicalRadioPrompt(room, cont, sh.id); }}>{design === "bauhaus" ? "+ Chem" : "➕ Chem"}</button>
@@ -430,7 +580,9 @@
                   <div class="box-chemicals-section" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem; background: rgba(255,255,255,0.015); box-shadow: inset 0 0 10px rgba(0,0,0,0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
                       <h4 style="margin: 0; color: var(--text-primary); font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem;">
-                        <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span> {design === "bauhaus" ? stripEmoji(box.name) : box.name} Chemicals
+                        <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span>
+                        {#if shelfTypeChip(box.type) !== null}<span class="chem-pos">{shelfTypeChip(box.type)}</span>{/if}
+                        {design === "bauhaus" ? stripEmoji(box.name) : box.name} Chemicals
                       </h4>
                       {#if canManage}
                         <button class="btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.7rem; margin: 0; height: auto; display: inline-flex; align-items: center; gap: 0.25rem;" onclick={() => openChemicalRadioPrompt(room, cont, box.id)}>{design === "bauhaus" ? "+ Add Chemical" : "➕ Add Chemical"}</button>

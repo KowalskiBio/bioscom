@@ -1,4 +1,4 @@
-import type { Container, Room } from "@bioscom/shared";
+import type { Chemical, Container, Room } from "@bioscom/shared";
 import { validateAttributes } from "@bioscom/shared";
 import { openModal, closeModal } from "./modal.svelte";
 import { showToast } from "./stores/toast.svelte";
@@ -501,7 +501,8 @@ export function openAddShelfForm(room: Room, cont: Container, onDone?: () => voi
         showToast("Enter shelf name", "error");
         return;
       }
-      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name })) {
+      const shelfType = cont.type === "cabinet" || cont.type === "deepfreezer" ? undefined : "shelf";
+      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, type: shelfType })) {
         closeModal();
         showToast(`Shelf "${isBauhaus() ? stripEmoji(name) : name}" added`);
         onDone?.();
@@ -523,7 +524,7 @@ export function openAddBoxForm(room: Room, cont: Container, parentShelfId: strin
         showToast("Enter box name", "error");
         return;
       }
-      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, parentShelfId })) {
+      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, type: "box", parentShelfId })) {
         closeModal();
         showToast(`Box "${isBauhaus() ? stripEmoji(name) : name}" added`);
         onDone?.();
@@ -620,6 +621,50 @@ function parseSafetyTags(value: unknown): string[] {
   return tags;
 }
 
+interface ContainerChemicalMatch {
+  ch: Chemical;
+  /** Value used by the placement select (shelf id, box id, or container id for direct stock). */
+  placement: string;
+  /** Resolvable shelf id for the API (parent shelf when the chemical sits in a box). */
+  shelfId: string;
+  boxId?: string;
+}
+
+function findChemicalInContainer(cont: Container, chemicalId: string): ContainerChemicalMatch | undefined {
+  for (const shelf of cont.shelves ?? []) {
+    for (const ch of shelf.chemicals ?? []) {
+      if (ch.id === chemicalId) {
+        const parentId = shelf.parentShelfId;
+        if (parentId !== undefined && parentId !== null && parentId !== "") {
+          return { ch, placement: shelf.id, shelfId: parentId, boxId: shelf.id };
+        }
+        return { ch, placement: shelf.id, shelfId: shelf.id };
+      }
+    }
+  }
+  for (const ch of cont.chemicals ?? []) {
+    if (ch.id === chemicalId) {
+      return { ch, placement: cont.id, shelfId: "" };
+    }
+  }
+  return undefined;
+}
+
+function defaultPlacementFor(cont?: Container): string {
+  if (cont === undefined) {
+    return "";
+  }
+  if (cont.type === "deepfreezer") {
+    return (cont.shelves ?? [])[0]?.id ?? "";
+  }
+  if (cont.type === "cabinet") {
+    return "";
+  }
+  // Matrioshka containers default to their first top-level shelf, or the
+  // container itself when it has no shelves (direct placement).
+  return (cont.shelves ?? []).find((shelf) => !shelf.parentShelfId && shelf.type !== "box")?.id ?? cont.id;
+}
+
 export function openChemicalForm(
   room?: Room,
   cont?: Container,
@@ -629,11 +674,12 @@ export function openChemicalForm(
     cont === undefined
       ? [...(inventory.tree?.rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
       : [];
-  const editChem =
+  const editMatch =
     opts.editChemId !== undefined && cont !== undefined
-      ? (cont.shelves ?? []).flatMap((sh) => (sh.chemicals ?? []).map((ch) => ({ sh, ch }))).find((e) => e.ch.id === opts.editChemId)
+      ? findChemicalInContainer(cont, opts.editChemId)
       : undefined;
-  const initialShelf = opts.shelfId ?? editChem?.sh.id ?? (cont?.shelves ?? [])[0]?.id ?? "";
+  const editChem = editMatch;
+  const initialShelf = opts.shelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
   const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
   const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
   const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
@@ -779,7 +825,6 @@ export function openChemicalForm(
         product: productValue,
         batchInfo: batchValue,
       };
-      let shelfId = form.shelfId;
       const activeRoom = cont !== undefined ? room : contextRooms.find((r) => r.id === form.roomId);
       const activeCont = cont ?? (activeRoom?.containers ?? []).find((c) => c.id === form.contId);
       if (activeRoom === undefined) {
@@ -790,34 +835,76 @@ export function openChemicalForm(
         showToast("Select a container before adding a chemical", "error");
         return;
       }
+      // Resolve the placement select into explicit location ids. Empty strings
+      // mean "not at that level"; the ops omit blank ids from the payload.
+      let targetShelfId = "";
+      let targetBoxId: string | undefined;
       if (activeCont.type === "cabinet") {
         const isAlphabetical =
           activeCont.cabinetMethod === "alphabetical" ||
           (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
         const hasRangeShelves = (activeCont.shelves ?? []).some((s) => s.isRangeShelf === true);
         const canAuto = isAlphabetical || hasRangeShelves;
-        if (form.cabinetShelf === "auto" && canAuto) {
-          shelfId = resolveAutoShelf(activeCont, name) ?? shelfId;
+        targetShelfId = form.shelfId;
+        if (form.cabinetShelf === "auto") {
+          if (canAuto) {
+            targetShelfId = resolveAutoShelf(activeCont, name) ?? targetShelfId;
+          } else if (targetShelfId === "" || targetShelfId === "auto") {
+            targetShelfId = (activeCont.shelves ?? [])[0]?.id ?? "";
+          }
         } else if (form.cabinetShelf !== "") {
-          shelfId = form.cabinetShelf;
+          targetShelfId = form.cabinetShelf;
+        }
+      } else if (activeCont.type === "deepfreezer") {
+        // Deep freezer boxes are flat shelves; keep the existing rack/box flow.
+        targetShelfId = form.shelfId;
+      } else {
+        const choice = form.shelfId;
+        const isDirect = choice === "" || choice === activeCont.id || choice.startsWith(`${activeCont.id}:`);
+        if (!isDirect) {
+          const placementShelf = (activeCont.shelves ?? []).find((candidate) => candidate.id === choice);
+          if (placementShelf === undefined) {
+            showToast("Select a placement", "error");
+            return;
+          }
+          const parentId = placementShelf.parentShelfId;
+          if (parentId !== undefined && parentId !== null && parentId !== "") {
+            targetShelfId = parentId;
+            targetBoxId = placementShelf.id;
+          } else {
+            targetShelfId = placementShelf.id;
+          }
         }
       }
-      if (shelfId === "") {
-        showToast(activeCont.type === "cabinet" ? "Select a shelf placement" : "Select a shelf or box", "error");
+      if (activeCont.type === "cabinet" && targetShelfId === "") {
+        showToast("Select a shelf placement", "error");
+        return;
+      }
+      if (activeCont.type === "deepfreezer" && targetShelfId === "") {
+        showToast("Select a box placement", "error");
         return;
       }
       if (opts.editChemId !== undefined) {
-        if (editChem === undefined) {
+        if (editMatch === undefined) {
           showToast("Chemical not found", "error");
           return;
         }
-        const ok = await opEditChemical(activeRoom.id, activeCont.id, editChem.sh.id, opts.editChemId, values, shelfId);
+        const ok = await opEditChemical(
+          activeRoom.id,
+          activeCont.id,
+          editMatch.shelfId,
+          opts.editChemId,
+          values,
+          targetShelfId,
+          targetBoxId,
+          editMatch.boxId,
+        );
         if (ok) {
           closeModal();
           showToast("Chemical saved");
         }
       } else {
-        const ok = await opAddChemical(activeRoom.id, activeCont.id, shelfId, values);
+        const ok = await opAddChemical(activeRoom.id, activeCont.id, targetShelfId, values, targetBoxId);
         if (ok) {
           closeModal();
           showToast(`Chemical "${isBauhaus() ? stripEmoji(name) : name}" added`);

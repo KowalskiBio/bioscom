@@ -9,10 +9,10 @@ import {
   OpError,
   checkSharedContainerAccess,
   createMutator,
-  findContainerOrThrow,
-  findShelfOrThrow,
   genId,
   isMemberOrSuperadmin,
+  locationChemicals,
+  resolveStockTarget,
 } from "./doc.js";
 import { getOrCreatePosition } from "./positions.js";
 
@@ -79,9 +79,14 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
 
       let createdCount = 0;
       const result = mutate(groupId, user, (tree, context) => {
-        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
-        checkSharedContainerAccess(user, groupId, container, context, isMember);
-        const shelf = findShelfOrThrow(tree, body.data.roomId, body.data.containerId, body.data.shelfId);
+        const target = resolveStockTarget(tree, body.data.roomId, body.data.containerId, body.data.shelfId, body.data.boxId);
+        if (target.container !== null) {
+          checkSharedContainerAccess(user, groupId, target.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Room not found");
+        }
+        const list = locationChemicals(target);
+        const ownerLabel = target.box?.name ?? target.shelf?.name ?? target.container?.name ?? target.room.name ?? "inventory";
         const treeBarcodeOwners = new Map<string, string>();
         for (const room of tree.rooms) {
           for (const cont of room.containers) {
@@ -111,7 +116,7 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
             unit: item.unit,
             concentration: item.concentration,
             concUnit: item.concUnit,
-            position: item.position ?? item.customPosition ?? getOrCreatePosition(container, shelf, item.name),
+            position: item.position ?? item.customPosition ?? (target.shelf !== null && target.container !== null ? getOrCreatePosition(target.container, target.shelf, item.name) : undefined),
             customPosition: item.customPosition,
             note: item.note,
             barcode: code ?? undefined,
@@ -120,11 +125,11 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
             product: item.product,
             batchInfo: item.batchInfo,
           };
-          shelf.chemicals.push(chemical);
+          list.push(chemical);
           created += 1;
           createdCount += 1;
         }
-        return `Imported ${created} items into "${shelf.name}" of container "${container.name}"`;
+        return `Imported ${created} items into "${ownerLabel}"`;
       });
       hub.broadcast(groupId, { groupId, version: result.version, tree: result.tree });
       if (result.mirrorGroupId !== null) {

@@ -81,13 +81,34 @@
   const activeContainer = $derived(container ?? selectedContainerFromPicks);
   const containerShelves = $derived(activeContainer?.shelves ?? []);
 
-  const parentShelves = $derived(containerShelves.filter((s) => !s.parentShelfId));
-  const isCabinet = $derived(activeContainer?.type === "cabinet");
-  const isCooling = $derived(
-    activeContainer?.type === "fridge" ||
-      activeContainer?.type === "freezer" ||
-      activeContainer?.type === "deepfreezer",
+  const parentShelves = $derived(
+    containerShelves.filter((s) => !s.parentShelfId && s.type !== "box"),
   );
+  const isCabinet = $derived(activeContainer?.type === "cabinet");
+
+  const subContainerLabels: Record<string, string> = {
+    shelf: "Shelf",
+    door_shelf: "Door shelf",
+    crate: "Crate",
+    box: "Box",
+  };
+
+  function subContainerTypeLabel(type: string | undefined): string {
+    return subContainerLabels[type ?? "shelf"] ?? "Shelf";
+  }
+
+  function defaultPlacementFor(next: Container | undefined): string {
+    if (next === undefined) {
+      return "";
+    }
+    if (next.type === "deepfreezer") {
+      return (next.shelves ?? [])[0]?.id ?? "";
+    }
+    if (next.type === "cabinet") {
+      return "";
+    }
+    return (next.shelves ?? []).find((shelf) => !shelf.parentShelfId && shelf.type !== "box")?.id ?? next.id;
+  }
   const isAlphabetical = $derived(
     activeContainer?.cabinetMethod === "alphabetical" ||
       (activeContainer?.cabinetMethod === "custom" && activeContainer?.customRangeType === "alphabetical"),
@@ -226,7 +247,7 @@
       shelves.some((s) => s.isRangeShelf === true) ||
       next?.cabinetMethod === "alphabetical" ||
       (next?.cabinetMethod === "custom" && next.customRangeType === "alphabetical");
-    form.shelfId = shelves[0]?.id ?? "";
+    form.shelfId = defaultPlacementFor(next);
     form.cabinetShelf = next?.type === "cabinet" && !canAutoShelf ? (shelves[0]?.id ?? "") : "auto";
   }
 </script>
@@ -274,36 +295,15 @@
 </div>
 
 {#if activeContainer}
-{#if isCooling}
-  {#if activeContainer.type === "deepfreezer"}
-    <div class="form-group span-2">
-      <label class="form-label">Box *</label>
-      <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
-        {#each containerShelves as shelf (shelf.id)}
-          <option value={shelf.id}>{shelf.name}</option>
-        {/each}
-      </select>
-    </div>
-  {:else}
-    <div class="form-group span-2">
-      <label class="form-label">Shelf / Box *</label>
-      <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
-        {#each parentShelves as parentShelf (parentShelf.id)}
-          {@const boxes = containerShelves.filter((s) => s.parentShelfId === parentShelf.id)}
-          {#if boxes.length > 0}
-            <optgroup label={parentShelf.name}>
-              <option value={parentShelf.id}>Directly on {parentShelf.name} (no box)</option>
-              {#each boxes as box (box.id)}
-                <option value={box.id}>{design === "bauhaus" ? "" : "📦 "}{box.name}</option>
-              {/each}
-            </optgroup>
-          {:else}
-            <option value={parentShelf.id}>{parentShelf.name}</option>
-          {/if}
-        {/each}
-      </select>
-    </div>
-  {/if}
+{#if activeContainer.type === "deepfreezer"}
+  <div class="form-group span-2">
+    <label class="form-label">Box *</label>
+    <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
+      {#each containerShelves as shelf (shelf.id)}
+        <option value={shelf.id}>{shelf.name}</option>
+      {/each}
+    </select>
+  </div>
 {:else if isCabinet}
   <div class="form-group span-2">
     <label class="form-label">Shelf placement *</label>
@@ -316,6 +316,26 @@
       {/each}
     </select>
     <div class="form-hint">{canAuto ? "Auto places the chemical alphabetically in the shelf matching its first letter. Manual options let you select the shelf explicitly." : "Select the shelf explicitly for the chemical."}</div>
+  </div>
+{:else}
+  <div class="form-group span-2">
+    <label class="form-label" for="f-shelf">Placement *</label>
+    <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
+      <option value={activeContainer.id}>Directly in {activeContainer.name} (no shelf)</option>
+      {#each parentShelves as parentShelf (parentShelf.id)}
+        {@const boxes = containerShelves.filter((s) => s.parentShelfId === parentShelf.id && (s.type ?? "box") === "box")}
+        {#if boxes.length > 0}
+          <optgroup label={`${subContainerTypeLabel(parentShelf.type)}: ${parentShelf.name}`}>
+            <option value={parentShelf.id}>Directly in {subContainerTypeLabel(parentShelf.type)}: {parentShelf.name} (no box)</option>
+            {#each boxes as box (box.id)}
+              <option value={box.id}>Box: {box.name}</option>
+            {/each}
+          </optgroup>
+        {:else}
+          <option value={parentShelf.id}>{subContainerTypeLabel(parentShelf.type)}: {parentShelf.name}</option>
+        {/if}
+      {/each}
+    </select>
   </div>
 {/if}
 {/if}

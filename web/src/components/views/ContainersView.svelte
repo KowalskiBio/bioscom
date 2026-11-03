@@ -59,6 +59,23 @@
       {/if}
     </div>
     <div class="card-stats"><div class="card-stat">{#if design !== "bauhaus"}📁 {/if}<span class="card-stat-value">{(cont.shelves ?? []).length}</span> shelves</div><div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{chemCount}</span> chemicals</div></div>
+    {#if (cont.chemicals ?? []).length > 0}
+      <div style="margin-top:0.6rem;">
+        <div class="detail-section-title" style="margin:0.4rem 0 0.25rem;">Directly in container ({(cont.chemicals ?? []).length})</div>
+        <table class="detail-table">
+          <thead><tr><th>Name</th><th>Qty</th><th>Unit</th></tr></thead>
+          <tbody>
+            {#each (cont.chemicals ?? []) as ch (ch.id)}
+              <tr>
+                <td>{design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? "")}</td>
+                <td>{ch.quantity ?? 0}</td>
+                <td>{ch.unit ?? "pcs"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   </div>
 {/snippet}
 

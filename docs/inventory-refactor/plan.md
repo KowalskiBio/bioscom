@@ -364,6 +364,20 @@ Status — Phase B 5 (barcodes + saved views) DONE:
 - Tests: server 111/111 (+4 barcode flows), web 9/9, shared 44+1, typecheck 0 errors /
   113 baseline, builds pass.
 
+Slice 2A DONE (mutations for direct placements): edit/delete/adjust-qty/move now
+resolve chemicals by id across room/container/shelf/box tiers; bulk import placement
+resolution generalized; moves support any level target; parity holds end-to-end.
+Tests cover mixed-level mutation + move + delete flows (server 117).
+
+Slice 2B DONE (views/forms): placement cascade in the typed form (direct-in-container
+sentinel, typed optgroups shelf|door_shelf|crate, nested box options), direct-level
+rendering blocks for room/container with stable ids, shelf-type chips, nested box
+sections generalized to non-freezer containers, counts including direct stocks.
+Room-level rows omit in-place edit (delete/qty only; edit via container path) —
+flagged as an intentional UX limitation for now.
+
+Remaining (slice 2C): deepfreezer relocation to root peer of rooms.
+
 Remaining in target order:
 
 1. Rollout runbook update in `deploy/` (backup → boot migrations → log reconcile →

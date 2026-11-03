@@ -10,12 +10,22 @@ export function computePositions(cont: Container): Record<string, string> {
   return map;
 }
 
+export function countDirectChems(cont: Container): number {
+  return (cont.chemicals ?? []).length;
+}
+
 export function countChems(cont: Container): number {
-  return (cont.shelves ?? []).reduce((sum, sh) => sum + (sh.chemicals ?? []).length, 0);
+  return (
+    countDirectChems(cont) +
+    (cont.shelves ?? []).reduce((sum, sh) => sum + (sh.chemicals ?? []).length, 0)
+  );
 }
 
 export function countAllChems(room: Room): number {
-  return (room.containers ?? []).reduce((sum, cont) => sum + countChems(cont), 0);
+  return (
+    (room.chemicals ?? []).length +
+    (room.containers ?? []).reduce((sum, cont) => sum + countChems(cont), 0)
+  );
 }
 
 export function getFirstLetter(name: string): string {

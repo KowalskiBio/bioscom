@@ -139,8 +139,9 @@ export const AddChemicalBodySchema = z.object({
 export const EditChemicalBodySchema = z
   .object({
     roomId: z.string().min(1),
-    containerId: z.string().min(1),
-    shelfId: z.string().min(1),
+    containerId: z.string().min(1).optional(),
+    shelfId: z.string().min(1).optional(),
+    boxId: z.string().min(1).optional(),
     name: z.string().trim().min(1).max(100).optional(),
     cas: z.string().trim().max(32).optional(),
     formula: z.string().trim().max(100).optional(),
@@ -190,14 +191,16 @@ export const DeleteShelfBodySchema = z.object({
 
 export const DeleteChemicalBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
 });
 
 export const AdjustQtyBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
   delta: z.number(),
 });
 
@@ -221,8 +224,9 @@ export const BulkImportItemSchema = z.object({
 
 export const BulkImportBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
   items: z.array(BulkImportItemSchema).min(1).max(500),
 });
 
@@ -233,11 +237,13 @@ export const MergeMaterialsBodySchema = z.object({
 
 export const MoveChemicalBodySchema = z.object({
   fromRoomId: z.string().min(1),
-  fromContainerId: z.string().min(1),
-  fromShelfId: z.string().min(1),
+  fromContainerId: z.string().min(1).optional(),
+  fromShelfId: z.string().min(1).optional(),
+  fromBoxId: z.string().min(1).optional(),
   toRoomId: z.string().min(1),
-  toContainerId: z.string().min(1),
-  toShelfId: z.string().min(1),
+  toContainerId: z.string().min(1).optional(),
+  toShelfId: z.string().min(1).optional(),
+  toBoxId: z.string().min(1).optional(),
   position: z.string().trim().max(32).optional(),
 });
 

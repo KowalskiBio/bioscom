@@ -40,6 +40,7 @@ import {
   findContainerOrThrow,
   findRoomOrThrow,
   findShelfOrThrow,
+  findChemicalAnywhere,
   genId,
   isMemberOrSuperadmin,
   locationChemicals,
@@ -458,15 +459,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const result = mutate(groupId, user, (tree, context) => {
-        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
-        checkSharedContainerAccess(user, groupId, container, context, isMember);
-        const { chemical } = findChemicalOrThrow(
-          tree,
-          body.data.roomId,
-          body.data.containerId,
-          body.data.shelfId,
-          chemicalId,
-        );
+        const found = findChemicalAnywhere(tree, body.data.roomId, chemicalId);
+        if (found.container !== null) {
+          checkSharedContainerAccess(user, groupId, found.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Chemical not found");
+        }
+        const chemical = found.chemical;
         const typeKey = body.data.type ?? chemical.type ?? "chemical";
         if (body.data.attributes !== undefined || body.data.type !== undefined) {
           const merged = { ...(chemical.attributes ?? {}), ...(body.data.attributes ?? {}) };
@@ -563,17 +562,15 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const result = mutate(groupId, user, (tree, context) => {
-        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
-        checkSharedContainerAccess(user, groupId, container, context, isMember);
-        const { shelf, chemical } = findChemicalOrThrow(
-          tree,
-          body.data.roomId,
-          body.data.containerId,
-          body.data.shelfId,
-          chemicalId,
-        );
-        shelf.chemicals = shelf.chemicals.filter((candidate) => candidate.id !== chemicalId);
-        return `Deleted chemical "${chemical.name}" from container "${container.name}"`;
+        const found = findChemicalAnywhere(tree, body.data.roomId, chemicalId);
+        if (found.container !== null) {
+          checkSharedContainerAccess(user, groupId, found.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Chemical not found");
+        }
+        found.list.splice(found.index, 1);
+        const where = found.shelf?.name ?? found.container?.name ?? found.room.name ?? "inventory";
+        return `Deleted chemical "${found.chemical.name}" from "${where}"`;
       });
       broadcastResult(groupId, result);
       return result;
@@ -592,18 +589,16 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const result = mutate(groupId, user, (tree, context) => {
-        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
-        checkSharedContainerAccess(user, groupId, container, context, isMember);
+        const found = findChemicalAnywhere(tree, body.data.roomId, chemicalId);
+        if (found.container !== null) {
+          checkSharedContainerAccess(user, groupId, found.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Chemical not found");
+        }
         if (user.role === "reader" && context.mirrorGroupId === null) {
           throw new OpError(403, "Readers cannot make changes");
         }
-        const { chemical } = findChemicalOrThrow(
-          tree,
-          body.data.roomId,
-          body.data.containerId,
-          body.data.shelfId,
-          chemicalId,
-        );
+        const chemical = found.chemical;
         let newQty = (chemical.quantity ?? 0) + body.data.delta;
         if (newQty < 0) {
           newQty = 0;
@@ -629,28 +624,25 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const result = mutate(groupId, user, (tree, context) => {
-        const fromContainer = findContainerOrThrow(tree, body.data.fromRoomId, body.data.fromContainerId);
-        checkSharedContainerAccess(user, groupId, fromContainer, context, isMember);
-        const toContainer = findContainerOrThrow(tree, body.data.toRoomId, body.data.toContainerId);
-        if (toContainer.id !== fromContainer.id) {
+        const found = findChemicalAnywhere(tree, body.data.fromRoomId, chemicalId);
+        if (found.container !== null) {
+          checkSharedContainerAccess(user, groupId, found.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Chemical not found");
+        }
+        const target = resolveStockTarget(tree, body.data.toRoomId, body.data.toContainerId, body.data.toShelfId, body.data.toBoxId);
+        if (target.container !== null && found.container !== null && target.container.id !== found.container.id) {
           if (!isMember) {
             throw new OpError(403, "Chemicals can only be moved within a shared container");
           }
         }
-        const { shelf: fromShelf, chemical } = findChemicalOrThrow(
-          tree,
-          body.data.fromRoomId,
-          body.data.fromContainerId,
-          body.data.fromShelfId,
-          chemicalId,
-        );
-        const toShelf = findShelfOrThrow(tree, body.data.toRoomId, body.data.toContainerId, body.data.toShelfId);
         if (body.data.position !== undefined) {
-          chemical.position = body.data.position;
+          found.chemical.position = body.data.position;
         }
-        fromShelf.chemicals = fromShelf.chemicals.filter((candidate) => candidate.id !== chemicalId);
-        toShelf.chemicals.push(chemical);
-        return `Moved chemical "${chemical.name}" to "${toContainer.name}"`;
+        found.list.splice(found.index, 1);
+        locationChemicals(target).push(found.chemical);
+        const where = target.box?.name ?? target.shelf?.name ?? target.container?.name ?? target.room.name ?? "inventory";
+        return `Moved chemical "${found.chemical.name}" to "${where}"`;
       });
       broadcastResult(groupId, result);
       return result;

@@ -76,6 +76,7 @@ export function opAddShelf(body: {
   roomId: string;
   containerId: string;
   name: string;
+  type?: "shelf" | "door_shelf" | "crate" | "box";
   parentShelfId?: string;
   rackName?: string;
   boxName?: string;
@@ -155,12 +156,14 @@ export function opAddChemical(
   containerId: string,
   shelfId: string,
   values: ChemicalFormValues,
+  boxId?: string,
 ): Promise<boolean> {
   return run("Failed to add chemical", () =>
     api.post(`/api/groups/${gid()}/inventory/chemicals`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
       name: values.name,
       cas: values.cas === "" ? undefined : values.cas,
       formula: values.formula === "" ? undefined : values.formula,
@@ -186,12 +189,15 @@ export function opEditChemical(
   chemicalId: string,
   values: ChemicalFormValues,
   moveTargetShelfId?: string,
+  moveTargetBoxId?: string,
+  originalBoxId?: string,
 ): Promise<boolean> {
   return run("Failed to save chemical", async () => {
     await api.put(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(originalBoxId !== undefined && originalBoxId !== "" ? { boxId: originalBoxId } : {}),
       name: values.name,
       cas: values.cas,
       formula: values.formula,
@@ -211,31 +217,42 @@ export function opEditChemical(
           ? { product: values.product }
           : {}),
     });
-    if (moveTargetShelfId !== undefined && moveTargetShelfId !== shelfId) {
+    const fromKey = `${containerId}|${shelfId}|${originalBoxId ?? ""}`;
+    const toShelf = moveTargetShelfId ?? "";
+    const toBox = moveTargetBoxId ?? "";
+    if (moveTargetShelfId !== undefined && `${containerId}|${toShelf}|${toBox}` !== fromKey) {
       await api.post(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/move`, {
         fromRoomId: roomId,
-        fromContainerId: containerId,
-        fromShelfId: shelfId,
+        ...(containerId !== "" ? { fromContainerId: containerId } : {}),
+        ...(shelfId !== "" ? { fromShelfId: shelfId } : {}),
+        ...(originalBoxId !== undefined && originalBoxId !== "" ? { fromBoxId: originalBoxId } : {}),
         toRoomId: roomId,
-        toContainerId: containerId,
-        toShelfId: moveTargetShelfId,
+        ...(containerId !== "" ? { toContainerId: containerId } : {}),
+        ...(toShelf !== "" ? { toShelfId: toShelf } : {}),
+        ...(toBox !== "" ? { toBoxId: toBox } : {}),
       });
     }
   });
 }
 
-export function opDeleteChemical(roomId: string, containerId: string, shelfId: string, chemicalId: string): Promise<boolean> {
+export function opDeleteChemical(roomId: string, containerId: string, shelfId: string, chemicalId: string, boxId?: string): Promise<boolean> {
   return run("Failed to delete chemical", () =>
-    api.del(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, { roomId, containerId, shelfId }),
+    api.del(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, {
+      roomId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
+    }),
   );
 }
 
-export function opAdjustQty(roomId: string, containerId: string, shelfId: string, chemicalId: string, delta: number): Promise<boolean> {
+export function opAdjustQty(roomId: string, containerId: string, shelfId: string, chemicalId: string, delta: number, boxId?: string): Promise<boolean> {
   return run("Failed to adjust quantity", () =>
     api.post(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/adjust-qty`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
       delta,
     }),
   );

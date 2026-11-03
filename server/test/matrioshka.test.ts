@@ -135,4 +135,56 @@ describe("matrioshka placements (room → container → shelf → box)", () => {
     expect(one<{ n: number }>("SELECT COUNT(*) AS n FROM locations WHERE kind='shelf' AND container_type='door_shelf'").n).toBe(1);
     expect(one<{ container_type: string }>("SELECT container_type FROM locations WHERE id='c-3'").container_type).toBe("crate");
   });
+
+  it("mutations work on direct placements (edit / adjust-qty / move / delete)", async () => {
+    const created = await request(baseUrl)
+      .post("/api/groups/group-m/inventory/chemicals")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", name: "Floating bottle", quantity: 2, unit: "pcs" });
+    expect(created.status).toBe(201);
+    const id = created.body.tree.rooms[0].chemicals.find((c: { name: string }) => c.name === "Floating bottle").id;
+
+    const movedBoxId = one<{ id: string }>("SELECT id FROM locations WHERE container_type='box' LIMIT 1").id;
+
+    const edit = await request(baseUrl)
+      .put(`/api/groups/group-m/inventory/chemicals/${id}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", name: "Floating bottle renamed" });
+    expect(edit.status).toBe(200);
+    expect(
+      one<{ name: string }>(
+        "SELECT m.name FROM stocks s JOIN batches b ON b.id = s.batch_id JOIN materials m ON m.id = b.material_id WHERE s.id = ?",
+        id,
+      ).name,
+    ).toBe("Floating bottle renamed");
+
+    const adjust = await request(baseUrl)
+      .post(`/api/groups/group-m/inventory/chemicals/${id}/adjust-qty`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1", delta: -1 });
+    expect(adjust.status).toBe(200);
+
+    const boxId = movedBoxId;
+    const move = await request(baseUrl)
+      .post(`/api/groups/group-m/inventory/chemicals/${id}/move`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ fromRoomId: "r-1", toRoomId: "r-1", toContainerId: "c-3", toShelfId: "s-3", toBoxId: boxId });
+    expect(move.status).toBe(200);
+    expect(one<{ location_id: string }>("SELECT location_id FROM stocks WHERE id = ?", id).location_id).toBe(boxId);
+    expect(one<{ current_quantity: number }>("SELECT current_quantity FROM stocks WHERE id = ?", id).current_quantity).toBe(1);
+
+    const del = await request(baseUrl)
+      .delete(`/api/groups/group-m/inventory/chemicals/${id}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId: "r-1" });
+    expect(del.status).toBe(200);
+    expect(one<{ n: number }>("SELECT COUNT(*) AS n FROM stocks WHERE id = ?", id).n).toBe(0);
+    const parity = checkParity(db, "group-m");
+    expect(parity).toEqual([]);
+  });
 });

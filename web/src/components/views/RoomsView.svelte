@@ -41,6 +41,7 @@
 
 <div id="rooms-grid" class="card-grid" style={`display: ${showEmpty ? "none" : "grid"};`}>
     {#each rooms as room, i (room.id)}
+        {@const directChems = room.chemicals?.length ?? 0}
         <div class="card" onclick={() => { navigateTo("containers", { roomId: room.id }); }}>
             <div class="card-icon room">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🏠{/if}</div>
             <div class="card-title">{design === "bauhaus" ? stripEmoji(room.name) : room.name}</div>
@@ -49,6 +50,9 @@
               <div class="card-stat">{#if design !== "bauhaus"}🗄️ {/if}<span class="card-stat-value">{roomContainerCount(i)}</span> containers</div>
               <div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{roomChemCount(i)}</span> chemicals</div>
             </div>
+            {#if directChems > 0}
+              <div class="card-stat" style="margin-top:0.35rem;font-size:0.75rem;">{directChems} direct items</div>
+            {/if}
         </div>
     {/each}
     {#if shared.length > 0}

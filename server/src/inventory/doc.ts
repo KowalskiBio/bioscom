@@ -135,6 +135,41 @@ export function locationChemicals(target: ResolvedStockTarget): Chemical[] {
   return (target.room.chemicals ??= []);
 }
 
+export interface FoundChemical {
+  room: Room;
+  container: Container | null;
+  shelf: Shelf | null;
+  list: Chemical[];
+  index: number;
+  chemical: Chemical;
+}
+
+export function findChemicalAnywhere(tree: InventoryTree, roomId: string, chemicalId: string): FoundChemical {
+  const room = findRoomOrThrow(tree, roomId);
+  for (const ch of room.chemicals ?? []) {
+    if (ch.id === chemicalId) {
+      const list = (room.chemicals ??= []);
+      return { room, container: null, shelf: null, list, index: list.findIndex((c) => c.id === chemicalId), chemical: ch };
+    }
+  }
+  for (const container of room.containers) {
+    for (const ch of container.chemicals ?? []) {
+      if (ch.id === chemicalId) {
+        const list = (container.chemicals ??= []);
+        return { room, container, shelf: null, list, index: list.findIndex((c) => c.id === chemicalId), chemical: ch };
+      }
+    }
+    for (const shelf of container.shelves ?? []) {
+      for (const ch of shelf.chemicals ?? []) {
+        if (ch.id === chemicalId) {
+          return { room, container, shelf, list: shelf.chemicals, index: shelf.chemicals.findIndex((c) => c.id === chemicalId), chemical: ch };
+        }
+      }
+    }
+  }
+  throw new OpError(404, "Chemical not found");
+}
+
 export function isMemberOrSuperadmin(user: SessionUserRow, groupId: string): boolean {
   return user.role === "superadmin" || user.group_id === groupId;
 }
