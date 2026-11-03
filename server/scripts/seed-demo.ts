@@ -152,6 +152,7 @@ const rooms: RoomSpec[] = [
         name: "Deep freezer −80",
         type: "deepfreezer",
         description: "Long-term stocks",
+        rackPositions: { A: 0, B: 1 },
         shelves: [
           {
             id: "demo-sh-df-a1",
@@ -209,14 +210,23 @@ function buildDoc(existing: Record<string, unknown> | null): { tree: Record<stri
       : ({ rooms: [], assetRooms: [], assets: [], protocols: [] } as Record<string, unknown> & { rooms: Array<Record<string, unknown>>; assetRooms?: unknown[]; assets?: unknown[]; protocols?: unknown[] });
 
   tree.rooms = ((tree.rooms as Array<Record<string, unknown>>) ?? []).filter((r) => !(r as { id?: string }).id?.startsWith("demo-"));
+  tree.deepFreezers = ((tree.deepFreezers as Array<Record<string, unknown>>) ?? []).filter((c) => !(c as { id?: string }).id?.startsWith("demo-"));
   for (const r of rooms) {
-    const containers = r.containers.map((c) => ({
+    for (const cont of tree.deepFreezers ?? []) {
+    shelves += (cont.shelves ?? []).length;
+    for (const shelf of cont.shelves ?? []) {
+      chemicals += (shelf.chemicals ?? []).length;
+    }
+    chemicals += (cont.chemicals ?? []).length;
+  }
+  const containers = r.containers.map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description ?? "",
       emoji: c.emoji,
       type: c.type,
       sharedWithGroupIds: [],
+      rackPositions: c.rackPositions,
       shelves: c.shelves.map((s) => ({
         id: s.id,
         name: s.name,
