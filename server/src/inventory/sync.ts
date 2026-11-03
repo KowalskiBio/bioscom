@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { InventoryTreeSchema, validateAttributes as validateMaterialAttributes, type Chemical, type InventoryTree } from "@bioscom/shared";
+import { InventoryTreeSchema, relocateDeepFreezers, validateAttributes as validateMaterialAttributes, type Chemical, type InventoryTree } from "@bioscom/shared";
 import { loadDoc } from "./doc.js";
 
 const KNOWN_CHEMICAL_KEYS = new Set([
@@ -162,22 +162,32 @@ ON CONFLICT(id) DO UPDATE SET
   barcode = excluded.barcode, status = excluded.status, updated_at = excluded.updated_at`;
 
 function countChemsInTree(tree: InventoryTree): { rooms: number; containers: number; shelves: number; chemicals: number } {
-  let containers = 0;
   let shelves = 0;
   let chemicals = 0;
   for (const room of tree.rooms) {
-    containers += (room.containers ?? []).length;
     for (const cont of room.containers ?? []) {
       shelves += (cont.shelves ?? []).length;
       for (const shelf of cont.shelves ?? []) {
         chemicals += (shelf.chemicals ?? []).length;
       }
+      chemicals += (cont.chemicals ?? []).length;
     }
+    chemicals += (room.chemicals ?? []).length;
   }
+  for (const cont of tree.deepFreezers ?? []) {
+    shelves += (cont.shelves ?? []).length;
+    for (const shelf of cont.shelves ?? []) {
+      chemicals += (shelf.chemicals ?? []).length;
+    }
+    chemicals += (cont.chemicals ?? []).length;
+  }
+  const containers =
+    tree.rooms.reduce((sum, room) => sum + (room.containers ?? []).length, 0) + (tree.deepFreezers ?? []).length;
   return { rooms: tree.rooms.length, containers, shelves, chemicals };
 }
 
 export function syncGroupInventoryDocument(db: Database.Database, groupId: string, tree: InventoryTree): GroupSyncReport {
+  relocateDeepFreezers(tree);
   const now = Date.now();
   const upsertLocation = db.prepare(UPSERT_LOCATION_SQL);
   const upsertMaterial = db.prepare(UPSERT_MATERIAL_SQL);
@@ -362,6 +372,69 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
           upsertChem(ch, shelf.id);
         }
       });
+    });
+  });
+
+  (tree.deepFreezers ?? []).forEach((cont, contIndex) => {
+    upsertLocation.run({
+      id: cont.id,
+      group_id: groupId,
+      parent_id: null,
+      kind: "container",
+      name: cont.name ?? "",
+      description: cont.description ?? null,
+      container_type: cont.type,
+      emoji: cont.emoji ?? null,
+      color: null,
+      rack_name: null,
+      box_name: null,
+      parent_shelf_id: null,
+      is_range_shelf: null,
+      range_start: null,
+      range_end: null,
+      owner_group_id: cont.ownerGroupId ?? null,
+      owner_group_name: cont.ownerGroupName ?? null,
+      rack_positions: cont.rackPositions ? JSON.stringify(cont.rackPositions) : null,
+      sort_index: (tree.rooms.length ?? 0) + contIndex,
+      created_at: now,
+      updated_at: now,
+    } satisfies LocationInsert & { created_at: number; updated_at: number });
+    docLocationIds.add(cont.id);
+    deleteShares.run(cont.id);
+    for (const targetGroupId of cont.sharedWithGroupIds ?? []) {
+      insertShare.run(cont.id, targetGroupId);
+    }
+    for (const ch of cont.chemicals ?? []) {
+      upsertChem(ch, cont.id);
+    }
+    (cont.shelves ?? []).forEach((shelf, shelfIndex) => {
+      upsertLocation.run({
+        id: shelf.id,
+        group_id: groupId,
+        parent_id: cont.id,
+        kind: "shelf",
+        name: shelf.name ?? "",
+        description: null,
+        container_type: shelf.type ?? "shelf",
+        emoji: null,
+        color: shelf.color ?? null,
+        rack_name: shelf.rackName ?? null,
+        box_name: shelf.boxName ?? null,
+        parent_shelf_id: shelf.parentShelfId ?? null,
+        is_range_shelf: shelf.isRangeShelf === true ? 1 : null,
+        range_start: shelf.rangeStart ?? null,
+        range_end: shelf.rangeEnd ?? null,
+        owner_group_id: null,
+        owner_group_name: null,
+        rack_positions: null,
+        sort_index: shelfIndex,
+        created_at: now,
+        updated_at: now,
+      } satisfies LocationInsert & { created_at: number; updated_at: number });
+      docLocationIds.add(shelf.id);
+      for (const ch of shelf.chemicals ?? []) {
+        upsertChem(ch, shelf.id);
+      }
     });
   });
 

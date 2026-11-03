@@ -127,6 +127,7 @@ export const ProtocolSchema = z.looseObject({
 
 export const InventoryTreeSchema = z.looseObject({
   rooms: rtdbArray(RoomSchema).catch([]),
+  deepFreezers: rtdbArray(ContainerSchema).nullish().catch(undefined),
   assetRooms: rtdbArray(AssetRoomSchema).catch([]),
   assets: rtdbArray(AssetSchema).catch([]),
   protocols: rtdbArray(ProtocolSchema).catch([]),
@@ -135,6 +136,23 @@ export const InventoryTreeSchema = z.looseObject({
   printCatalog: rtdbArray(PrintCatalogItemSchema).catch([]),
   printRequests: rtdbArray(PrintRequestSchema).catch([]),
 });
+
+export function relocateDeepFreezers(tree: InventoryTree): boolean {
+  if (tree.deepFreezers !== undefined && !Array.isArray(tree.deepFreezers)) {
+    tree.deepFreezers = undefined;
+  }
+  let changed = false;
+  for (const room of tree.rooms) {
+    const freezers = room.containers.filter((cont) => cont.type === "deepfreezer");
+    if (freezers.length === 0) continue;
+    for (const freezer of freezers) {
+      (tree.deepFreezers ??= []).push(freezer);
+    }
+    room.containers = room.containers.filter((cont) => cont.type !== "deepfreezer");
+    changed = true;
+  }
+  return changed;
+}
 
 export const SandboxTreeSchema = InventoryTreeSchema;
 

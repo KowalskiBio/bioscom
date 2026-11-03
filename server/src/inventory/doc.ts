@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { InventoryTreeSchema, type Container, type InventoryTree, type Room, type Shelf, type Chemical } from "@bioscom/shared";
+import { InventoryTreeSchema, relocateDeepFreezers, type Container, type InventoryTree, type Room, type Shelf, type Chemical } from "@bioscom/shared";
 import type { SessionUserRow } from "../auth/sessions.js";
 import { syncGroupInventoryDocument, markSynced } from "./sync.js";
 
@@ -194,6 +194,7 @@ export function createMutator(dbAccessor: () => Database.Database) {
   return (groupId: string, user: SessionUserRow, apply: (tree: InventoryTree, context: MutationContext) => string): MutationResult => {
     const transactional = dbAccessor().transaction((): MutationResult => {
       const { tree, version } = loadDoc(dbAccessor(), groupId);
+      relocateDeepFreezers(tree);
       const context: MutationContext = { mirrorGroupId: null };
       const action = apply(tree, context);
       const check = InventoryTreeSchema.safeParse(tree);

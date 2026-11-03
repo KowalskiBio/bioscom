@@ -134,10 +134,11 @@ describe("relational assembly ↔ document parity", () => {
     expect(fr.attributes).toMatchObject({ target: "GAPDH", host_species: "Rabbit" });
     expect(fr.product).toMatchObject({ manufacturer: "Sigma", catalogNumber: "AB-001" });
     expect(fr.batchInfo).toMatchObject({ lotCode: "LOT-77", originType: "purchased", expiresAt: 1893456000000 });
-    const df = assembled.rooms[0]!.containers[2]!;
-    expect(df.rackPositions).toEqual({ A: 8, B: 4 });
-    expect(df.shelves[0]!.rackName).toBe("A");
-    expect(df.shelves[0]!.boxName).toBe("1");
+    const df = assembled.deepFreezers?.[0];
+    expect(df).toBeDefined();
+    expect(df!.rackPositions).toEqual({ A: 8, B: 4 });
+    expect(df!.shelves[0]!.rackName).toBe("A");
+    expect(df!.shelves[0]!.boxName).toBe("1");
   });
 
   it("flags tampered relational rows as mismatches", () => {
@@ -155,6 +156,27 @@ describe("relational assembly ↔ document parity", () => {
     const withGhost = checkParity(db, "group-a");
     expect(withGhost.some((i) => i.kind === "missing-in-doc" && i.entity === "chemical" && i.id === "ch-ghost")).toBe(true);
     expect(ensureParityChecked(db).length).toBeGreaterThan(0);
+  });
+
+  it("legacy nested deepfreezers are relocated to root peers with parity intact", () => {
+    db.prepare("DELETE FROM stocks WHERE id = 'ch-ghost'").run();
+    db.prepare("DELETE FROM batches WHERE id = 'b-ghost'").run();
+    db.prepare("DELETE FROM materials WHERE id = 'm-ghost'").run();
+    const nested = buildTree();
+    db.prepare("INSERT OR REPLACE INTO group_inventory_docs (group_id, tree, version) VALUES ('group-a', ?, 31)").run(
+      JSON.stringify(nested),
+    );
+    db.prepare("UPDATE inventory_sync_state SET doc_version = 31 WHERE group_id = 'group-a'").run();
+    syncGroupInventoryDocument(db, "group-a", nested as never);
+    const rootFreezer = db
+      .prepare("SELECT id, parent_id FROM locations WHERE id = 'df-1' AND parent_id IS NULL")
+      .get() as { id: string; parent_id: string | null } | undefined;
+    expect(rootFreezer).toBeDefined();
+    expect(rootFreezer!.parent_id).toBeNull();
+    const reportDetail = assembleInventoryFromRelational(db, "group-a");
+    expect(reportDetail.deepFreezers?.map((c) => c.id)).toEqual(["df-1"]);
+    expect(reportDetail.rooms[0]!.containers.map((c) => c.id)).toEqual(["cab-1", "fr-1"]);
+    expect(checkParity(db, "group-a")).toEqual([]);
   });
 
   it("returns to parity after resyncing from the doc", () => {

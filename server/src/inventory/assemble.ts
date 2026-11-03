@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { Chemical, Container, InventoryTree, Room, Shelf } from "@bioscom/shared";
+import { relocateDeepFreezers, type Chemical, type Container, type InventoryTree, type Room, type Shelf } from "@bioscom/shared";
 import { loadDoc } from "./doc.js";
 
 interface LocationRow {
@@ -212,8 +212,34 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
     }
     rooms.push(roomOut);
   }
+
+  const deepFreezers: Container[] = locations
+    .filter((l) => l.kind === "container" && l.parent_id === null && l.container_type === "deepfreezer")
+    .map((cont) => {
+      const shelves: Shelf[] = locations
+        .filter((l) => l.kind === "shelf" && l.parent_id === cont.id)
+        .sort((a, b) => (a.sort_index ?? 0) - (b.sort_index ?? 0))
+        .map((sh) => shelfFromRow(sh, stocks));
+      const container: Container = {
+        id: cont.id,
+        name: cont.name,
+        type: "deepfreezer",
+        shelves,
+        sharedWithGroupIds: sharesByContainer.get(cont.id) ?? [],
+      };
+      if (cont.description !== null) container.description = cont.description;
+      if (cont.emoji !== null) container.emoji = cont.emoji;
+      if (cont.rack_positions !== null) container.rackPositions = JSON.parse(cont.rack_positions) as Record<string, number>;
+      if (cont.owner_group_id !== null) container.ownerGroupId = cont.owner_group_id;
+      if (cont.owner_group_name !== null) container.ownerGroupName = cont.owner_group_name;
+      const directChems = stocks.filter((stock) => stock.location_id === cont.id).map(chemFromRow);
+      if (directChems.length > 0) container.chemicals = directChems;
+      return container;
+    });
+
   return {
     rooms,
+    deepFreezers: deepFreezers.length > 0 ? deepFreezers : undefined,
     assetRooms: [],
     assets: [],
     protocols: [],
@@ -287,6 +313,39 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
       }
     }
   }
+  for (const cont of tree.deepFreezers ?? []) {
+    map.set(`container:${cont.id}`, {
+      roomId: null,
+      name: cont.name,
+      type: cont.type,
+      description: cont.description ?? null,
+      emoji: cont.emoji ?? null,
+      sharedWithGroupIds: [...(cont.sharedWithGroupIds ?? [])].sort(),
+      ownerGroupId: cont.ownerGroupId ?? null,
+      ownerGroupName: cont.ownerGroupName ?? null,
+      rackPositions: cont.rackPositions ?? null,
+    });
+    for (const ch of cont.chemicals ?? []) {
+      emitChemicalEntry(map, `container`, ch);
+    }
+    for (const shelf of cont.shelves ?? []) {
+      map.set(`shelf:${shelf.id}`, {
+        containerId: cont.id,
+        name: shelf.name,
+        type: shelf.type ?? null,
+        color: shelf.color ?? null,
+        parentShelfId: shelf.parentShelfId ?? null,
+        boxName: shelf.boxName ?? null,
+        rackName: shelf.rackName ?? null,
+        isRangeShelf: shelf.isRangeShelf ?? null,
+        rangeStart: shelf.rangeStart ?? null,
+        rangeEnd: shelf.rangeEnd ?? null,
+      });
+      for (const ch of shelf.chemicals ?? []) {
+        emitChemicalEntry(map, `shelf`, ch);
+      }
+    }
+  }
   return map;
 }
 
@@ -327,6 +386,7 @@ function recordsEqual(a: unknown, b: unknown): boolean {
 
 export function checkParity(db: Database.Database, groupId: string): ParityIssue[] {
   const { tree: docTree } = loadDoc(db, groupId);
+  relocateDeepFreezers(docTree);
   const assembled = assembleInventoryFromRelational(db, groupId);
   const docMap = canonicalTree(docTree);
   const relMap = canonicalTree(assembled);

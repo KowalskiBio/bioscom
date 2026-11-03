@@ -376,7 +376,33 @@ sections generalized to non-freezer containers, counts including direct stocks.
 Room-level rows omit in-place edit (delete/qty only; edit via container path) —
 flagged as an intentional UX limitation for now.
 
-Remaining (slice 2C): deepfreezer relocation to root peer of rooms.
+Slice 2C DONE (deepfreezer relocated to root peer of rooms):
+
+- shared inventory tree gains `deepFreezers[]` (ContainerSchema shape, deeply
+  compatible; existing nested docs tolerated) plus `relocateDeepFreezers(tree)`
+  as the one canonical move: nested deepfreezer containers are hoisted with
+  identity intact (same ids, shelves, boxes, rackPositions).
+- Hoisting happens ONCE per doc version through `createMutator`
+  (loadDoc → relocate → user mutation → single committed version) so the
+  structural change rides a normal write transaction instead of a silent
+  background rewrite; `loadDoc` still parses legacy shape until touched.
+- Mirror: upserts go through the same write path; deepfreezer containers land
+  in `locations` with `parent_id NULL` (true peers of rooms), and their nested
+  rack/box shelves keep parent links; sync's reconcile counters learned to
+  count the root array (rooms unchanged, containers = room containers +
+  deepFreezers, shelves include both sources).
+- assemble unbuilds root deepfreezers (`deepFreezers: Container[]` returning;
+  conditional when absent), and parity normalizes BOTH sides before
+  canonical comparison (`relocateDeepFreezers(docTree)` inside checkParity) —
+  legacy nested docs vs migrated relational representation stay provably
+  equivalent.
+- Ghost-state ordering hazard discovered and resolved intrinsically: global
+  tests that insert relational-only rows need their own cleanup because sync
+  pruning only handles legacy-map-owned stock. Suite now guarantees cleanup
+  is inside the same test that creates those rows.
+- Tests: server 118/118 (+relocation round trip: host → relocate → parentless
+  location → root-array assembly → parity clean), web 9/9, shared 44+1,
+  typecheck 0 errors / 112 warnings, builds pass.
 
 Remaining in target order:
 
