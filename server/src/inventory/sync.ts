@@ -200,6 +200,75 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
     .all(groupId) as Array<{ chemical_id: string; material_id: string }>;
   const materialResolution = new Map<string, string>(existingMapRows.map((row) => [row.chemical_id, row.material_id]));
 
+  const upsertChem = (ch: Chemical, locationId: string): void => {
+    docChemicalIds.add(ch.id);
+    const derivedMaterialId = `m-${ch.id}`;
+    const materialId = materialResolution.get(ch.id) ?? derivedMaterialId;
+    const batchId = `b-${ch.id}`;
+    const productId = `p-${ch.id}`;
+    const hasProduct = productFieldsPresent(ch);
+    if (materialId === derivedMaterialId) {
+      upsertMaterial.run({
+        id: materialId,
+        group_id: groupId,
+        type_key: chemicalTypeKey(ch),
+        name: ch.name ?? "",
+        description: null,
+        attributes: JSON.stringify(chemicalAttributes(ch)),
+        created_at: now,
+        updated_at: now,
+      });
+    }
+    if (hasProduct) {
+      upsertProduct.run({
+        id: productId,
+        material_id: materialId,
+        manufacturer_name: ch.product?.manufacturer ?? null,
+        supplier_name: ch.product?.supplier ?? null,
+        catalog_number: ch.product?.catalogNumber ?? null,
+        product_name: ch.product?.productName ?? null,
+        variant: ch.product?.variant ?? null,
+        created_at: now,
+        updated_at: now,
+      });
+    }
+    const batchInfo = ch.batchInfo;
+    upsertBatch.run({
+      id: batchId,
+      material_id: materialId,
+      product_id: hasProduct ? productId : null,
+      lot_code: batchInfo?.lotCode ?? null,
+      origin_type: batchInfo?.originType ?? "unknown",
+      received_at: batchInfo?.receivedAt ?? null,
+      prepared_at: batchInfo?.preparedAt ?? null,
+      prepared_by: batchInfo?.preparedBy ?? null,
+      expires_at: batchInfo?.expiresAt ?? null,
+      created_at: now,
+      updated_at: now,
+    });
+    if (!hasProduct) {
+      deleteOrphanProduct.run(productId, productId);
+    }
+    upsertStock.run({
+      id: ch.id,
+      group_id: groupId,
+      batch_id: batchId,
+      location_id: locationId,
+      position: ch.position ?? null,
+      custom_position: ch.customPosition ?? null,
+      shelf_override: ch._shelfOverride ?? null,
+      current_quantity: typeof ch.quantity === "number" && Number.isFinite(ch.quantity) ? ch.quantity : null,
+      quantity_unit: ch.unit ?? null,
+      concentration: typeof ch.concentration === "number" && Number.isFinite(ch.concentration) ? ch.concentration : null,
+      concentration_unit: ch.concUnit ?? null,
+      note: ch.note ?? null,
+      barcode: typeof ch.barcode === "string" && ch.barcode.trim() !== "" ? ch.barcode.trim() : null,
+      created_at: now,
+      updated_at: now,
+    });
+    upsertMap.run(groupId, ch.id, materialId, batchId, ch.id, now);
+  };
+
   const docLocationIds = new Set<string>();
   const docChemicalIds = new Set<string>();
   tree.rooms.forEach((room, roomIndex) => {
@@ -226,6 +295,9 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
     };
     upsertLocation.run({ ...roomLocation, created_at: now, updated_at: now });
     docLocationIds.add(room.id);
+    for (const ch of room.chemicals ?? []) {
+      upsertChem(ch, room.id);
+    }
 
     (room.containers ?? []).forEach((cont, contIndex) => {
       upsertLocation.run({
@@ -256,6 +328,9 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
       for (const targetGroupId of cont.sharedWithGroupIds ?? []) {
         insertShare.run(cont.id, targetGroupId);
       }
+      for (const ch of cont.chemicals ?? []) {
+        upsertChem(ch, cont.id);
+      }
 
       (cont.shelves ?? []).forEach((shelf, shelfIndex) => {
         upsertLocation.run({
@@ -265,7 +340,7 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
           kind: "shelf",
           name: shelf.name ?? "",
           description: null,
-          container_type: null,
+          container_type: shelf.type ?? "shelf",
           emoji: null,
           color: shelf.color ?? null,
           rack_name: shelf.rackName ?? null,
@@ -284,72 +359,7 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
         docLocationIds.add(shelf.id);
 
         for (const ch of shelf.chemicals ?? []) {
-          docChemicalIds.add(ch.id);
-          const derivedMaterialId = `m-${ch.id}`;
-          const materialId = materialResolution.get(ch.id) ?? derivedMaterialId;
-          const batchId = `b-${ch.id}`;
-          const productId = `p-${ch.id}`;
-          const hasProduct = productFieldsPresent(ch);
-          if (materialId === derivedMaterialId) {
-            upsertMaterial.run({
-              id: materialId,
-              group_id: groupId,
-              type_key: chemicalTypeKey(ch),
-              name: ch.name ?? "",
-              description: null,
-              attributes: JSON.stringify(chemicalAttributes(ch)),
-              created_at: now,
-              updated_at: now,
-            });
-          }
-          if (hasProduct) {
-            upsertProduct.run({
-              id: productId,
-              material_id: materialId,
-              manufacturer_name: ch.product?.manufacturer ?? null,
-              supplier_name: ch.product?.supplier ?? null,
-              catalog_number: ch.product?.catalogNumber ?? null,
-              product_name: ch.product?.productName ?? null,
-              variant: ch.product?.variant ?? null,
-              created_at: now,
-              updated_at: now,
-            });
-          }
-          const batchInfo = ch.batchInfo;
-          upsertBatch.run({
-            id: batchId,
-            material_id: materialId,
-            product_id: hasProduct ? productId : null,
-            lot_code: batchInfo?.lotCode ?? null,
-            origin_type: batchInfo?.originType ?? "unknown",
-            received_at: batchInfo?.receivedAt ?? null,
-            prepared_at: batchInfo?.preparedAt ?? null,
-            prepared_by: batchInfo?.preparedBy ?? null,
-            expires_at: batchInfo?.expiresAt ?? null,
-            created_at: now,
-            updated_at: now,
-          });
-          if (!hasProduct) {
-            deleteOrphanProduct.run(productId, productId);
-          }
-          upsertStock.run({
-            id: ch.id,
-            group_id: groupId,
-            batch_id: batchId,
-            location_id: shelf.id,
-            position: ch.position ?? null,
-            custom_position: ch.customPosition ?? null,
-            shelf_override: ch._shelfOverride ?? null,
-            current_quantity: typeof ch.quantity === "number" && Number.isFinite(ch.quantity) ? ch.quantity : null,
-            quantity_unit: ch.unit ?? null,
-            concentration: typeof ch.concentration === "number" && Number.isFinite(ch.concentration) ? ch.concentration : null,
-            concentration_unit: ch.concUnit ?? null,
-            note: ch.note ?? null,
-            barcode: typeof ch.barcode === "string" && ch.barcode.trim() !== "" ? ch.barcode.trim() : null,
-            created_at: now,
-            updated_at: now,
-          });
-          upsertMap.run(groupId, ch.id, materialId, batchId, ch.id, now);
+          upsertChem(ch, shelf.id);
         }
       });
     });

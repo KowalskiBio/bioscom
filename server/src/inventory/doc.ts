@@ -81,6 +81,60 @@ export function findChemicalOrThrow(
   return { shelf, chemical };
 }
 
+export interface ResolvedStockTarget {
+  room: Room;
+  container: Container | null;
+  shelf: Shelf | null;
+  box: Shelf | null;
+}
+
+export function resolveStockTarget(
+  tree: InventoryTree,
+  roomId: string,
+  containerId?: string | null,
+  shelfId?: string | null,
+  boxId?: string | null,
+): ResolvedStockTarget {
+  const room = findRoomOrThrow(tree, roomId);
+  if (containerId === undefined || containerId === null || containerId === "") {
+    return { room, container: null, shelf: null, box: null };
+  }
+  const container = room.containers.find((candidate) => candidate.id === containerId);
+  if (container === undefined) {
+    throw new OpError(404, "Container not found");
+  }
+  if (shelfId === undefined || shelfId === null || shelfId === "") {
+    return { room, container, shelf: null, box: null };
+  }
+  const shelf = (container.shelves ?? []).find((candidate) => candidate.id === shelfId);
+  if (shelf === undefined) {
+    throw new OpError(404, "Shelf not found");
+  }
+  if (boxId === undefined || boxId === null || boxId === "") {
+    return { room, container, shelf, box: null };
+  }
+  const box = (container.shelves ?? []).find(
+    (candidate) => candidate.id === boxId && candidate.parentShelfId === shelf.id,
+  );
+  if (box === undefined) {
+    throw new OpError(404, "Box not found");
+  }
+  return { room, container, shelf, box };
+}
+
+export function locationChemicals(target: ResolvedStockTarget): Chemical[] {
+  if (target.box !== null) {
+    return (target.box.chemicals ??= []);
+  }
+  if (target.shelf !== null) {
+    return (target.shelf.chemicals ??= []);
+  }
+  if (target.container !== null) {
+    return (target.container.chemicals ??= []);
+  }
+  return (target.room.chemicals ??= []);
+}
+
 export function isMemberOrSuperadmin(user: SessionUserRow, groupId: string): boolean {
   return user.role === "superadmin" || user.group_id === groupId;
 }

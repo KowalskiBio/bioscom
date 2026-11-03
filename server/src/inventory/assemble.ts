@@ -131,6 +131,9 @@ function shelfFromRow(sh: LocationRow, chemicals: StockJoinRow[]): Shelf {
       .filter((ch) => ch.location_id === sh.id)
       .map(chemFromRow),
   };
+  if (sh.container_type !== null && sh.container_type !== "shelf") {
+    shelf.type = sh.container_type as Shelf["type"];
+  }
   if (sh.color !== null) shelf.color = sh.color;
   if (sh.parent_shelf_id !== null) shelf.parentShelfId = sh.parent_shelf_id;
   if (sh.box_name !== null) shelf.boxName = sh.box_name;
@@ -184,6 +187,10 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
           shelves,
           sharedWithGroupIds: sharesByContainer.get(cont.id) ?? [],
         };
+        const directChems = stocks.filter((stock) => stock.location_id === cont.id).map(chemFromRow);
+        if (directChems.length > 0) {
+          container.chemicals = directChems;
+        }
         if (cont.description !== null) container.description = cont.description;
         if (cont.emoji !== null) container.emoji = cont.emoji;
         if (cont.rack_positions !== null) {
@@ -199,6 +206,10 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
       containers,
     };
     if (room.description !== null) roomOut.description = room.description;
+    const roomChems = stocks.filter((stock) => stock.location_id === room.id).map(chemFromRow);
+    if (roomChems.length > 0) {
+      roomOut.chemicals = roomChems;
+    }
     rooms.push(roomOut);
   }
   return {
@@ -209,10 +220,38 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
   } as unknown as InventoryTree;
 }
 
+function emitChemicalEntry(map: Map<string, unknown>, parentLabel: string, ch: Chemical): void {
+  map.set(`chemical:${ch.id}`, {
+    parent: parentLabel,
+    name: ch.name ?? "",
+    cas: ch.cas ?? null,
+    formula: ch.formula ?? null,
+    quantity: ch.quantity ?? null,
+    unit: ch.unit ?? null,
+    concentration: ch.concentration ?? null,
+    concUnit: ch.concUnit ?? null,
+    position: ch.position ?? null,
+    customPosition: ch.customPosition ?? null,
+    _shelfOverride: ch._shelfOverride ?? null,
+    note: ch.note ?? null,
+    barcode: ch.barcode ?? null,
+    type: ch.type ?? "chemical",
+    attributes: ch.attributes ?? null,
+    product: ch.product ?? null,
+    batchInfo: ch.batchInfo ?? null,
+  });
+}
+
 function canonicalTree(tree: InventoryTree): Map<string, unknown> {
   const map = new Map<string, unknown>();
   for (const room of tree.rooms) {
-    map.set(`room:${room.id}`, { name: room.name, description: room.description ?? null });
+    map.set(`room:${room.id}`, {
+      name: room.name,
+      description: room.description ?? null,
+    });
+    for (const ch of room.chemicals ?? []) {
+      emitChemicalEntry(map, `room`, ch);
+    }
     for (const cont of room.containers ?? []) {
       map.set(`container:${cont.id}`, {
         roomId: room.id,
@@ -224,11 +263,16 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
         ownerGroupId: cont.ownerGroupId ?? null,
         ownerGroupName: cont.ownerGroupName ?? null,
         rackPositions: cont.rackPositions ?? null,
+        chemicals: (cont.chemicals ?? []).length,
       });
+      for (const ch of cont.chemicals ?? []) {
+        emitChemicalEntry(map, `container`, ch);
+      }
       for (const shelf of cont.shelves ?? []) {
         map.set(`shelf:${shelf.id}`, {
           containerId: cont.id,
           name: shelf.name,
+          type: shelf.type ?? null,
           color: shelf.color ?? null,
           parentShelfId: shelf.parentShelfId ?? null,
           boxName: shelf.boxName ?? null,
@@ -238,25 +282,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
           rangeEnd: shelf.rangeEnd ?? null,
         });
         for (const ch of shelf.chemicals ?? []) {
-          map.set(`chemical:${ch.id}`, {
-            shelfId: shelf.id,
-            name: ch.name ?? "",
-            cas: ch.cas ?? null,
-            formula: ch.formula ?? null,
-            quantity: ch.quantity ?? null,
-            unit: ch.unit ?? null,
-            concentration: ch.concentration ?? null,
-            concUnit: ch.concUnit ?? null,
-            position: ch.position ?? null,
-            customPosition: ch.customPosition ?? null,
-            _shelfOverride: ch._shelfOverride ?? null,
-            note: ch.note ?? null,
-            barcode: ch.barcode ?? null,
-            type: ch.type ?? "chemical",
-            attributes: ch.attributes ?? null,
-            product: ch.product ?? null,
-            batchInfo: ch.batchInfo ?? null,
-          });
+          emitChemicalEntry(map, `shelf`, ch);
         }
       }
     }

@@ -12,7 +12,9 @@ import { InstrumentSchema } from "./instrument.js";
 import { NoticeSchema } from "./notice.js";
 import { PrintCatalogItemSchema, PrintRequestSchema } from "./print.js";
 
-export const ContainerTypeSchema = z.enum(["cabinet", "fridge", "freezer", "deepfreezer"]);
+export const ContainerTypeSchema = z.enum(["cabinet", "fridge", "freezer", "crate", "deepfreezer"]);
+export const SubContainerTypeSchema = z.enum(["shelf", "door_shelf", "crate", "box"]);
+export type SubContainerType = z.infer<typeof SubContainerTypeSchema>;
 
 export const StockProductSchema = z.looseObject({
   manufacturer: optionalTextSchema,
@@ -59,6 +61,7 @@ export const ChemicalSchema = z.looseObject({
 export const ShelfSchema = z.looseObject({
   id: idSchema,
   name: looseTextSchema,
+  type: SubContainerTypeSchema.optional(),
   color: optionalTextSchema,
   parentShelfId: optionalIdSchema,
   boxName: optionalTextSchema,
@@ -83,6 +86,7 @@ const containerFields = {
   sharedWithGroupIds: rtdbArray(idSchema).catch([]),
   rackPositions: z.record(z.string(), z.coerce.number()).nullish().catch(undefined),
   shelves: z.array(ShelfSchema),
+  chemicals: rtdbArray(ChemicalSchema).nullish().catch(undefined),
 };
 
 export const ContainerSchema = z.looseObject(containerFields);
@@ -97,6 +101,7 @@ export const RoomSchema = z.looseObject({
   name: looseTextSchema,
   description: optionalTextSchema,
   containers: rtdbArray(ContainerSchema).catch([]),
+  chemicals: rtdbArray(ChemicalSchema).nullish().catch(undefined),
 });
 
 export const AssetRoomSchema = z.looseObject({

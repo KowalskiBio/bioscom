@@ -42,6 +42,8 @@ import {
   findShelfOrThrow,
   genId,
   isMemberOrSuperadmin,
+  locationChemicals,
+  resolveStockTarget,
   type MutationResult,
 } from "./doc.js";
 
@@ -304,6 +306,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         container.shelves.push({
           id: genId(),
           name: body.data.name,
+          type: body.data.type,
           parentShelfId: body.data.parentShelfId,
           rackName: body.data.rackName,
           boxName: body.data.boxName,
@@ -387,9 +390,15 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const isMember = isMemberOrSuperadmin(user, groupId);
       const result = mutate(groupId, user, (tree, context) => {
-        const container = findContainerOrThrow(tree, body.data.roomId, body.data.containerId);
-        checkSharedContainerAccess(user, groupId, container, context, isMember);
-        const shelf = findShelfOrThrow(tree, body.data.roomId, body.data.containerId, body.data.shelfId);
+        const container = body.data.containerId !== undefined
+          ? findContainerOrThrow(tree, body.data.roomId, body.data.containerId)
+          : null;
+        if (container !== null) {
+          checkSharedContainerAccess(user, groupId, container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Room not found");
+        }
+        const target = resolveStockTarget(tree, body.data.roomId, body.data.containerId, body.data.shelfId, body.data.boxId);
         const typeKey = body.data.type ?? "chemical";
         if (body.data.type !== undefined || body.data.attributes !== undefined) {
           const validation = validateMaterialAttributes(typeKey, body.data.attributes ?? {});
@@ -400,7 +409,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         const position =
           body.data.position ??
           body.data.customPosition ??
-          getOrCreatePosition(container, shelf, body.data.name);
+          (target.shelf !== null && target.container !== null
+            ? getOrCreatePosition(target.container, target.shelf, body.data.name)
+            : undefined);
         if (body.data.barcode !== undefined && body.data.barcode.trim() !== "") {
           const owner = findBarcodeOwner(tree, body.data.barcode.trim(), null);
           if (owner !== undefined) {
@@ -425,8 +436,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           product: body.data.product,
           batchInfo: body.data.batchInfo,
         };
-        shelf.chemicals.push(chemical);
-        return `Added ${typeKey === "chemical" ? "chemical" : typeKey} "${body.data.name}" to container "${container.name}"`;
+        locationChemicals(target).push(chemical);
+        const where = target.box?.name ?? target.shelf?.name ?? target.container?.name ?? target.room.name ?? "inventory";
+        return `Added ${typeKey === "chemical" ? "chemical" : typeKey} "${body.data.name}" to "${where}"`;
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);

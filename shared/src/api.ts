@@ -52,7 +52,7 @@ export const AddContainerBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   emoji: z.string().trim().max(16).optional(),
-  type: z.enum(["cabinet", "fridge", "freezer", "deepfreezer"]),
+  type: z.enum(["cabinet", "fridge", "freezer", "crate", "deepfreezer"]),
   cabinetMethod: z.enum(["numerical", "alphabetical", "custom"]).optional(),
   customRangeType: z.enum(["alphabetical", "numerical"]).optional(),
   shelves: z.array(ShelfSpecSchema).max(50).optional(),
@@ -73,6 +73,7 @@ export const AddShelfBodySchema = z.object({
   roomId: z.string().min(1),
   containerId: z.string().min(1),
   name: z.string().trim().min(1).max(100),
+  type: z.enum(["shelf", "door_shelf", "crate", "box"]).optional(),
   parentShelfId: z.string().min(1).optional(),
   rackName: z.string().trim().max(100).optional(),
   boxName: z.string().trim().max(100).optional(),
@@ -114,8 +115,9 @@ export const ChemicalAttributesBodySchema = z.record(
 
 export const AddChemicalBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(100),
   cas: z.string().trim().max(32).optional(),
   formula: z.string().trim().max(100).optional(),

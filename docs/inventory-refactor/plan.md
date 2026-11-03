@@ -212,6 +212,34 @@ Implemented and verified:
 | Backfill reruns | idempotent (verified incl. deletion pruning + user-row survives) |
 | Boot behavior (prod) | migrations + backfill run once, anomalies logged as JSON line |
 
+## 7. Matrioshka location model (in progress)
+
+Locked with maintainer:
+
+- Stock attaches at ANY level; only room is mandatory. Nesting rules:
+  - Level 1 (roots): `room` and `deepfreezer` (deepfreezer stays the special
+    rack/box explorer, a peer of rooms, not a cabinet subtype).
+  - Level 2 (in room): `cabinet | fridge | freezer | crate`.
+  - Level 3 (in any L2): `shelf | door_shelf | crate` (crate nests).
+  - Level 4 (in any L3): `box` only.
+- Doc stays source of truth; JSON gains optional `chemicals[]` on rooms and
+  containers and `type` on shelves; boxes are nested shelves with `type:"box"`.
+- Stocks in the mirror point `location_id` at any level; `locations.container_type`
+  carries the shelf subtype ("shelf" default).
+
+Slice 1 DONE (additive plumbing): shared zod+body schemas (optional placements),
+`resolveStockTarget`/`locationChemicals` in doc.js, chemicals POST honoring
+room/container/shelf(/box) targets, AddShelf accepting `type`, mirror
+room/container/shelf-level stocks + shelf subtype sync, assemble/parity builders
+covering typed shelves and direct-level stocks. Tests: server 116/116 (+4
+matrioshka: room-level, container-level, crate+door shelf+box chain,
+parity+counts integrity). Fixtures of legacy docs prove subset-compatible:
+
+Slice 2 (next): deepfreezer relocated to top-level peer of rooms in the document
+(shape-level migration w/ parity guard + view wiring), mutations/edit/move/delete
+handling for direct placements, matrioshka UI (placement pickers in the typed
+form, levels rendering in room/container/detail views).
+
 ## 6. Next increments (target order)
 
 Status — increment 2 (typed read APIs) DONE:
