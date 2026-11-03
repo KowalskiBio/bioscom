@@ -324,15 +324,14 @@ body::after {
 
 /* Chemicals Table */
 .chemicals-table {
-    width:100%; border-collapse:collapse; font-size:0.9rem;
+    width:100%; border-collapse:collapse; font-size:0.875rem;
     table-layout: fixed;
     min-width: 950px;
 }
-.chemicals-table thead { background:rgba(255,255,255,0.03); }
 .chemicals-table th {
-    padding:0.7rem 1rem; text-align:left; font-weight:600; font-size:0.75rem;
-    color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;
-    border-bottom:1px solid var(--border-subtle); white-space:nowrap;
+    text-align:left; font-size:0.7rem; font-weight:600;
+    color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;
+    padding:0.3rem 0.5rem; border-bottom:1px solid var(--border-subtle); white-space:nowrap;
 }
 .chemicals-table th:nth-child(1) { width: 75px; }   /* Pos. */
 .chemicals-table th:nth-child(2) { width: 220px; }  /* Name */
@@ -345,7 +344,7 @@ body::after {
 .chemicals-table th:nth-child(9) { width: 90px; }   /* Actions */
 
 .chemicals-table td {
-    padding:0.6rem 1rem; border-bottom:1px solid var(--border-subtle);
+    padding:0.45rem 0.5rem; border-bottom:1px solid var(--border-subtle);
     color:var(--text-secondary); vertical-align:middle;
     word-break: break-word;
 }
