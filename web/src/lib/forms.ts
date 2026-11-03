@@ -8,6 +8,7 @@ import {
   opDeleteRoom,
   opAddContainer,
   opEditContainer,
+  opAddDeepFreezer,
   opShareContainer,
   roleCanWrite,
   type ShelfSpec,
@@ -27,7 +28,7 @@ import {
 } from "./ops";
 import { countWords, stripEmoji } from "./inventoryUtils";
 import { verifyCaptchaAndExecute } from "./captcha";
-import { router } from "./router.svelte";
+import { router, navigateTo } from "./router.svelte";
 import RoomFormModal from "../components/modals/RoomFormModal.svelte";
 import ContainerFormModal from "../components/modals/ContainerFormModal.svelte";
 import ChemicalFormModal from "../components/modals/ChemicalFormModal.svelte";
@@ -431,6 +432,47 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
       closeModal();
       showToast(`${typeLabel} "${isBauhaus() ? stripEmoji(name) : name}" added`);
       onDone?.();
+    },
+  });
+}
+
+export function openDeepFreezerForm(): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = { name: "", description: "", emoji: "" };
+  openModal({
+    title: "Add Deep Freezer",
+    component: SimplePromptModal,
+    props: { form, kind: "container" as const },
+    btnText: "Add",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      if (name === "" || name.length > 100) {
+        showToast("Deep freezer name is required (max 100 chars)", "error");
+        return;
+      }
+      const description = form.description.trim();
+      if (description.length > 500) {
+        showToast("Description must be 500 characters or fewer", "error");
+        return;
+      }
+      const emoji = form.emoji.trim();
+      if (emoji.length > 16) {
+        showToast("Emoji must be 16 characters or fewer", "error");
+        return;
+      }
+      const id = await opAddDeepFreezer(
+        name,
+        description === "" ? undefined : description,
+        emoji === "" ? undefined : emoji,
+      );
+      if (id !== null) {
+        closeModal();
+        showToast(`Deep freezer "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        navigateTo("detail", { roomId: id, containerId: id });
+      }
     },
   });
 }

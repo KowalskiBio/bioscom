@@ -524,8 +524,33 @@ function ensureSyncStateTable(db: Database.Database): void {
   )`);
 }
 
+function hoistLegacyDeepFreezers(db: Database.Database): string[] {
+  const docs = db.prepare("SELECT group_id, tree, version FROM group_inventory_docs").all() as Array<{ group_id: string; tree: string; version: number }>;
+  const hoisted: string[] = [];
+  const update = db.prepare("UPDATE group_inventory_docs SET tree = ?, version = ? WHERE group_id = ?");
+  for (const doc of docs) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(doc.tree);
+    } catch {
+      continue;
+    }
+    const parsed = InventoryTreeSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    if (relocateDeepFreezers(parsed.data)) {
+      update.run(JSON.stringify(parsed.data), doc.version + 1, doc.group_id);
+      hoisted.push(doc.group_id);
+    }
+  }
+  if (hoisted.length > 0) {
+    console.log(`[inventory-backfill] relocated nested deepfreezers to root in: ${hoisted.join(", ")}`);
+  }
+  return hoisted;
+}
+
 export function ensureBackfilled(db: Database.Database): GroupSyncReport[] {
   ensureSyncStateTable(db);
+  const hoistedGroupIds = hoistLegacyDeepFreezers(db);
   const staleDocs = db
     .prepare(
       `SELECT d.group_id, d.version FROM group_inventory_docs d

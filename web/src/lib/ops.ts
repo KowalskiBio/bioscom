@@ -72,6 +72,32 @@ export function opDeleteContainer(roomId: string, containerId: string): Promise<
   );
 }
 
+export async function opAddDeepFreezer(
+  name: string,
+  description?: string,
+  emoji?: string,
+): Promise<string | null> {
+  try {
+    const result = await api.post<{ tree: { deepFreezers?: Container[] } }>(
+      `/api/groups/${gid()}/inventory/deepfreezers`,
+      {
+        name,
+        ...(description !== undefined ? { description } : {}),
+        ...(emoji !== undefined ? { emoji } : {}),
+      },
+    );
+    const freezers = result.tree.deepFreezers ?? [];
+    return freezers[freezers.length - 1]?.id ?? null;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add deep freezer", "error");
+    }
+    return null;
+  }
+}
+
 export function opAddShelf(body: {
   roomId: string;
   containerId: string;

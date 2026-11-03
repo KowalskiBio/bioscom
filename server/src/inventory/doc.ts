@@ -42,10 +42,14 @@ export function loadDoc(db: Database.Database, groupId: string): { tree: Invento
 
 export function findRoomOrThrow(tree: InventoryTree, roomId: string): Room {
   const room = tree.rooms.find((candidate) => candidate.id === roomId);
-  if (room === undefined) {
-    throw new OpError(404, "Room not found");
+  if (room !== undefined) {
+    return room;
   }
-  return room;
+  const freezer = tree.deepFreezers?.find((candidate) => candidate.id === roomId);
+  if (freezer !== undefined) {
+    return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] } as Room;
+  }
+  throw new OpError(404, "Room not found");
 }
 
 export function findContainerOrThrow(tree: InventoryTree, roomId: string, containerId: string): Container {

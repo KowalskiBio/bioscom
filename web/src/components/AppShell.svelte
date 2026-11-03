@@ -114,7 +114,9 @@
       return `Chemicals / ${containersRoom?.name ?? "—"}`;
     }
     if (route.view === "detail") {
-      return `Chemicals / ${detailRoom?.name ?? containersRoom?.name ?? "—"} / ${detailCont?.name ?? "—"}`;
+      const roomName = detailRoom?.name ?? containersRoom?.name ?? "—";
+      const contName = detailCont?.name ?? "—";
+      return roomName === contName ? `Chemicals / ${roomName}` : `Chemicals / ${roomName} / ${contName}`;
     }
     return TOPBAR_LABELS[route.view] ?? "Dashboard";
   });
