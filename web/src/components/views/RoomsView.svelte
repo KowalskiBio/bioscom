@@ -7,8 +7,9 @@
   const design = $derived(theme.design);
 
   const rooms = $derived(inventory.tree?.rooms ?? []);
+  const deepFreezers = $derived(inventory.tree?.deepFreezers ?? []);
   const shared = $derived(inventory.sharedContainers);
-  const showEmpty = $derived(rooms.length === 0 && shared.length === 0);
+  const showEmpty = $derived(rooms.length === 0 && shared.length === 0 && deepFreezers.length === 0);
   const totalSharedChems = $derived(shared.reduce((acc, c) => acc + countChems(c.container), 0));
 
   function roomChemCount(roomIndex: number): number {
@@ -39,6 +40,24 @@
   }
 </script>
 
+{#if deepFreezers.length > 0}
+<div id="deepfreezers-section" style="margin-bottom: 2rem;">
+    <h2 class="col-title">{#if design !== "bauhaus"}❄️ {/if}Deep freezers</h2>
+    <div class="card-grid">
+        {#each deepFreezers as df (df.id)}
+            <div id={`df-card-${df.id}`} class="card freezer-card" role="button" tabindex="0" onclick={() => { navigateTo("detail", { roomId: df.id, containerId: df.id }); }} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigateTo("detail", { roomId: df.id, containerId: df.id }); } }}>
+                <div class="card-icon freezer">{#if design === "bauhaus"}<span class="glyph glyph-circle-ink" aria-hidden="true"></span>{:else}{df.emoji || "❄️"}{/if}</div>
+                <div class="card-title">{df.name}</div>
+                <div class="card-description">{df.description || "Deep freezer"}</div>
+                <div class="card-stats">
+                    <div class="card-stat">{#if design !== "bauhaus"}📁 {/if}<span class="card-stat-value">{(df.shelves ?? []).length}</span> shelves</div>
+                    <div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{countChems(df)}</span> items</div>
+                </div>
+            </div>
+        {/each}
+    </div>
+</div>
+{/if}
 <div id="rooms-grid" class="card-grid" style={`display: ${showEmpty ? "none" : "grid"};`}>
     {#each rooms as room, i (room.id)}
         {@const directChems = room.chemicals?.length ?? 0}

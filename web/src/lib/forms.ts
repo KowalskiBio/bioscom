@@ -341,9 +341,6 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
     customRanges: [] as Array<{ start: string; end: string }>,
     customExtraNames: "",
     doorCount: 2,
-    freezerType: "standard",
-    rackCount: 4,
-    boxCount: 5,
     isShared: false,
     sharedGroups: {} as Record<string, boolean>,
   };
@@ -365,7 +362,6 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
       const shelves: ShelfSpec[] = [];
       let cabinetMethod: "numerical" | "alphabetical" | "custom" = "numerical";
       let customRangeType: "alphabetical" | "numerical" = "numerical";
-      let actualType: "cabinet" | "fridge" | "freezer" | "deepfreezer" = type;
       if (type === "cabinet") {
         cabinetMethod = form.system as "numerical" | "alphabetical" | "custom";
         if (cabinetMethod === "numerical") {
@@ -393,21 +389,12 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
           }
         }
       } else {
-        if (type === "freezer" && form.freezerType === "deepfreezer") {
-          actualType = "deepfreezer";
-          for (let r = 1; r <= form.rackCount; r += 1) {
-            for (let b = 1; b <= form.boxCount; b += 1) {
-              shelves.push(`Rack ${r} / Box ${b}`);
-            }
-          }
-        } else {
-          for (let i = 0; i < form.countNum; i += 1) {
-            shelves.push(`Shelf ${i + 1}`);
-          }
-          if (type === "fridge") {
-            for (let i = 1; i <= form.doorCount; i += 1) {
-              shelves.push(`Door shelf ${i}`);
-            }
+        for (let i = 0; i < form.countNum; i += 1) {
+          shelves.push(`Shelf ${i + 1}`);
+        }
+        if (type === "fridge" || type === "freezer") {
+          for (let i = 1; i <= form.doorCount; i += 1) {
+            shelves.push(`Door shelf ${i}`);
           }
         }
       }
@@ -420,7 +407,7 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
         name,
         description: form.description.trim() === "" ? undefined : form.description.trim(),
         emoji: form.emoji.trim() === "" ? undefined : form.emoji.trim(),
-        type: actualType,
+        type,
         cabinetMethod: type === "cabinet" ? cabinetMethod : undefined,
         customRangeType: type === "cabinet" && cabinetMethod === "custom" ? customRangeType : undefined,
         shelves,
@@ -831,61 +818,62 @@ export function openChemicalForm(
         showToast("Select a room before adding a chemical", "error");
         return;
       }
-      if (activeCont === undefined) {
-        showToast("Select a container before adding a chemical", "error");
-        return;
-      }
       // Resolve the placement select into explicit location ids. Empty strings
       // mean "not at that level"; the ops omit blank ids from the payload.
+      // A blank container choice is a valid room-level placement (room.chemicals):
+      // keep container/shelf/box ids empty so the server records it directly in
+      // the room. Only an explicit container choice runs the cascade branches.
       let targetShelfId = "";
       let targetBoxId: string | undefined;
-      if (activeCont.type === "cabinet") {
-        const isAlphabetical =
-          activeCont.cabinetMethod === "alphabetical" ||
-          (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
-        const hasRangeShelves = (activeCont.shelves ?? []).some((s) => s.isRangeShelf === true);
-        const canAuto = isAlphabetical || hasRangeShelves;
-        targetShelfId = form.shelfId;
-        if (form.cabinetShelf === "auto") {
-          if (canAuto) {
-            targetShelfId = resolveAutoShelf(activeCont, name) ?? targetShelfId;
-          } else if (targetShelfId === "" || targetShelfId === "auto") {
-            targetShelfId = (activeCont.shelves ?? [])[0]?.id ?? "";
+      if (activeCont !== undefined) {
+        if (activeCont.type === "cabinet") {
+          const isAlphabetical =
+            activeCont.cabinetMethod === "alphabetical" ||
+            (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
+          const hasRangeShelves = (activeCont.shelves ?? []).some((s) => s.isRangeShelf === true);
+          const canAuto = isAlphabetical || hasRangeShelves;
+          targetShelfId = form.shelfId;
+          if (form.cabinetShelf === "auto") {
+            if (canAuto) {
+              targetShelfId = resolveAutoShelf(activeCont, name) ?? targetShelfId;
+            } else if (targetShelfId === "" || targetShelfId === "auto") {
+              targetShelfId = (activeCont.shelves ?? [])[0]?.id ?? "";
+            }
+          } else if (form.cabinetShelf !== "") {
+            targetShelfId = form.cabinetShelf;
           }
-        } else if (form.cabinetShelf !== "") {
-          targetShelfId = form.cabinetShelf;
+        } else if (activeCont.type === "deepfreezer") {
+          // Deep freezer boxes are flat shelves; keep the existing rack/box flow.
+          targetShelfId = form.shelfId;
+        } else {
+          const choice = form.shelfId;
+          const isDirect = choice === "" || choice === activeCont.id || choice.startsWith(`${activeCont.id}:`);
+          if (!isDirect) {
+            const placementShelf = (activeCont.shelves ?? []).find((candidate) => candidate.id === choice);
+            if (placementShelf === undefined) {
+              showToast("Select a placement", "error");
+              return;
+            }
+            const parentId = placementShelf.parentShelfId;
+            if (parentId !== undefined && parentId !== null && parentId !== "") {
+              targetShelfId = parentId;
+              targetBoxId = placementShelf.id;
+            } else {
+              targetShelfId = placementShelf.id;
+            }
+          }
         }
-      } else if (activeCont.type === "deepfreezer") {
-        // Deep freezer boxes are flat shelves; keep the existing rack/box flow.
-        targetShelfId = form.shelfId;
-      } else {
-        const choice = form.shelfId;
-        const isDirect = choice === "" || choice === activeCont.id || choice.startsWith(`${activeCont.id}:`);
-        if (!isDirect) {
-          const placementShelf = (activeCont.shelves ?? []).find((candidate) => candidate.id === choice);
-          if (placementShelf === undefined) {
-            showToast("Select a placement", "error");
-            return;
-          }
-          const parentId = placementShelf.parentShelfId;
-          if (parentId !== undefined && parentId !== null && parentId !== "") {
-            targetShelfId = parentId;
-            targetBoxId = placementShelf.id;
-          } else {
-            targetShelfId = placementShelf.id;
-          }
+        if (activeCont.type === "cabinet" && targetShelfId === "") {
+          showToast("Select a shelf placement", "error");
+          return;
         }
-      }
-      if (activeCont.type === "cabinet" && targetShelfId === "") {
-        showToast("Select a shelf placement", "error");
-        return;
-      }
-      if (activeCont.type === "deepfreezer" && targetShelfId === "") {
-        showToast("Select a box placement", "error");
-        return;
+        if (activeCont.type === "deepfreezer" && targetShelfId === "") {
+          showToast("Select a box placement", "error");
+          return;
+        }
       }
       if (opts.editChemId !== undefined) {
-        if (editMatch === undefined) {
+        if (editMatch === undefined || activeCont === undefined) {
           showToast("Chemical not found", "error");
           return;
         }
@@ -904,7 +892,7 @@ export function openChemicalForm(
           showToast("Chemical saved");
         }
       } else {
-        const ok = await opAddChemical(activeRoom.id, activeCont.id, targetShelfId, values, targetBoxId);
+        const ok = await opAddChemical(activeRoom.id, activeCont?.id ?? "", targetShelfId, values, targetBoxId);
         if (ok) {
           closeModal();
           showToast(`Chemical "${isBauhaus() ? stripEmoji(name) : name}" added`);

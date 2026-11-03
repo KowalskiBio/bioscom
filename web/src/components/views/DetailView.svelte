@@ -47,8 +47,14 @@
   const route = $derived(router.route);
   const roomId = $derived(route.view === "detail" ? route.roomId : "");
   const containerId = $derived(route.view === "detail" ? route.containerId : "");
-  const room = $derived(inventory.tree?.rooms.find((r) => r.id === roomId));
-  const cont = $derived(inventory.tree?.rooms.find((r) => r.id === roomId)?.containers.find((c) => c.id === containerId));
+  const room = $derived.by(() => {
+    const roomFromRooms = inventory.tree?.rooms.find((r) => r.id === roomId);
+    if (roomFromRooms !== undefined) return roomFromRooms;
+    const freezer = inventory.tree?.deepFreezers?.find((c) => c.id === roomId);
+    if (freezer === undefined) return undefined;
+    return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] } as unknown as typeof roomFromRooms;
+  });
+  const cont = $derived(room?.containers.find((c) => c.id === containerId));
   const isReader = $derived(session.user?.role === "reader");
 
   let openShelves = $state<Set<string>>(new Set());

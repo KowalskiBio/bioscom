@@ -269,17 +269,20 @@
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label" for="f-container">Container *</label>
+      <label class="form-label" for="f-container">Container</label>
       <select class="form-select" id="f-container" bind:value={contId} disabled={!roomId} onchange={onContainerChange}>
         {#if roomId && selectedRoomContainers.length === 0}
-          <option value="" disabled selected>(no containers in this room)</option>
+          <option value="">no containers yet — creating inside the room</option>
         {:else}
-          <option value="">— Select container —</option>
+          <option value="">— directly in the room —</option>
           {#each selectedRoomContainers as pick (pick.id)}
             <option value={pick.id}>{pick.name}</option>
           {/each}
         {/if}
       </select>
+    </div>
+    <div class="form-group span-2">
+      <p class="form-hint" id="f-placement-hint">Pick a room alone to store the chemical directly in the room, or choose an already-created container. To use a new container, create it first in the room.</p>
     </div>
   {/if}
 {/if}

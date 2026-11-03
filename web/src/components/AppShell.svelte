@@ -10,7 +10,7 @@
   import { logout, switchGroup } from "../lib/app";
   import { api } from "../lib/api";
   import { theme, toggleTheme } from "../lib/theme.svelte";
-  import { materialTypeLabels } from "@bioscom/shared";
+  import { materialTypeLabels, type Room } from "@bioscom/shared";
   import { closeLabRadio, toggleRadioPlay, setRadioVolume } from "../lib/radio";
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
@@ -86,7 +86,14 @@
   const containersRoom = $derived(
     containersRoomId === "shared-assets" ? undefined : inventory.tree?.rooms.find((r) => r.id === containersRoomId),
   );
-  const detailRoom = $derived(inventory.tree?.rooms.find((r) => r.id === (route.view === "detail" ? route.roomId : "")));
+  const detailRoom = $derived.by(() => {
+    if (route.view !== "detail") return undefined;
+    const roomFromRooms = inventory.tree?.rooms.find((r) => r.id === route.roomId);
+    if (roomFromRooms !== undefined) return roomFromRooms;
+    const freezer = inventory.tree?.deepFreezers?.find((c) => c.id === route.roomId);
+    if (freezer === undefined) return undefined;
+    return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] } as Room;
+  });
   const detailCont = $derived(detailRoom?.containers.find((c) => c.id === (route.view === "detail" ? route.containerId : "")));
   const isVirtualShared = $derived(containersRoomId === "shared-assets");
 

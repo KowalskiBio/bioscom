@@ -20,9 +20,6 @@
       customRanges: Array<{ start: string; end: string }>;
       customExtraNames: string;
       doorCount: number;
-      freezerType: string;
-      rackCount: number;
-      boxCount: number;
       isShared: boolean;
       sharedGroups: Record<string, boolean>;
     };
@@ -137,31 +134,13 @@
   </div>
 {:else if type === "freezer"}
   <div class="form-group">
-    <label class="form-label">Freezer Type</label>
-    <select class="form-select" id="c-freezer-type" style="cursor: pointer;" bind:value={form.freezerType}>
-      <option value="standard">Standard Freezer</option>
-      <option value="deepfreezer">Deep Freezer (-80°C)</option>
-    </select>
+    <label class="form-label">Number of Shelves *</label>
+    <input class="form-input" id="c-count" type="number" min="1" max="25" bind:value={form.countNum}>
   </div>
-  {#if form.freezerType === "standard"}
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Number of Shelves *</label>
-        <input class="form-input" id="c-count" type="number" min="1" max="25" bind:value={form.countNum}>
-      </div>
-    </div>
-  {:else}
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Number of Racks</label>
-        <input class="form-input" id="c-rack-count" type="number" min="1" max="50" bind:value={form.rackCount}>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Boxes per Rack</label>
-        <input class="form-input" id="c-box-count" type="number" min="1" max="50" bind:value={form.boxCount}>
-      </div>
-    </div>
-  {/if}
+  <div class="form-group">
+    <label class="form-label">Number of Door Shelves</label>
+    <input class="form-input" id="c-door-count" type="number" min="0" max="10" bind:value={form.doorCount}>
+  </div>
 {/if}
 
 <div class="form-group" style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">

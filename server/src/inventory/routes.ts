@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type Database from "better-sqlite3";
 import {
   AddRoomBodySchema,
+  AddDeepFreezerBodySchema,
   EditRoomBodySchema,
   AddContainerBodySchema,
   EditContainerBodySchema,
@@ -99,6 +100,34 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       hub.broadcast(result.mirrorGroupId, { groupId, version: result.version, tree: result.tree });
     }
   };
+
+  app.post("/api/groups/:id/inventory/deepfreezers", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = AddDeepFreezerBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        (tree.deepFreezers ??= []).push({
+          id: genId(),
+          name: body.data.name,
+          description: body.data.description,
+          emoji: body.data.emoji,
+          type: "deepfreezer",
+          sharedWithGroupIds: [],
+          shelves: [],
+        });
+        return `Added deep freezer "${body.data.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return reply.status(201).send(result);
+    });
+  });
 
   app.get("/api/groups/:id/inventory", async (request, reply) => {
     const user = requireUser(db(), request, reply);
