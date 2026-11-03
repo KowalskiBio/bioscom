@@ -58,6 +58,23 @@
   const contextRooms = $derived([...(rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
   let roomId = $state("");
   let contId = $state("");
+
+  let typeKey = $state<string>(untrack(() => form.type ?? "chemical"));
+  let formulaText = $state<string>(untrack(() => form.formula));
+  $effect(() => {
+    form.type = typeKey;
+  });
+  $effect(() => {
+    form.formula = formulaText;
+  });
+
+  function onTypeChange(next: string): void {
+    typeKey = next;
+    if (next !== "chemical") {
+      form.cas = "";
+      formulaText = "";
+    }
+  }
   const selectedRoom = $derived(contextRooms.find((room) => room.id === roomId));
   const selectedRoomContainers = $derived(selectedRoom?.containers ?? []);
   const selectedContainerFromPicks = $derived(selectedRoomContainers.find((pick) => pick.id === contId));
@@ -77,13 +94,13 @@
   );
   const hasRangeShelves = $derived(containerShelves.some((s) => s.isRangeShelf === true));
   const canAuto = $derived(isAlphabetical || hasRangeShelves);
-  const formulaPreview = $derived(renderFormulaHtml(normalizeFormula(form.formula)));
+  const formulaPreview = $derived(renderFormulaHtml(normalizeFormula(formulaText)));
   const materialDef = $derived(
-    MATERIAL_TYPES.find((type) => type.key === form.type) as MaterialTypeDef | undefined,
+    MATERIAL_TYPES.find((type) => type.key === typeKey) as MaterialTypeDef | undefined,
   );
   const descriptorFields = $derived.by<MaterialFieldDef[]>(() => {
     const fields = materialDef?.fields ?? [];
-    if (form.type === "chemical") {
+    if (typeKey === "chemical") {
       return fields.filter((field) => field.key !== "cas_number" && field.key !== "molecular_formula");
     }
     return [...fields];
@@ -249,7 +266,7 @@
 {#if container !== undefined || contextRooms.length > 0}
 <div class="form-group">
   <label class="form-label" for="f-type">Item type *</label>
-  <select class="form-select" id="f-type" bind:value={form.type}>
+  <select class="form-select" id="f-type" value={typeKey} onchange={(e) => onTypeChange((e.target as HTMLSelectElement).value)}>
     {#each MATERIAL_TYPES as type (type.key)}
       <option value={type.key}>{type.label}</option>
     {/each}
@@ -304,11 +321,11 @@
 {/if}
 
 <div class="form-group"><label class="form-label">Chemical name *</label><input class="form-input" id="f-cn2" placeholder="e.g. Hydrochloric acid" bind:value={form.name}></div>
-{#if form.type === "chemical"}
+{#if typeKey === "chemical"}
   <div class="form-group">
     <label class="form-label">Formula</label>
-    <input class="form-input" id="f-cf" placeholder="e.g. H2SO4, Na2CO3" bind:value={form.formula}>
-    {#if form.formula.trim() !== ""}
+    <input class="form-input" id="f-cf" placeholder="e.g. H2SO4, Na2CO3" bind:value={formulaText}>
+    {#if formulaText.trim() !== ""}
       <div id="f-cf-preview" style="margin-top:0.4rem;padding:0.4rem 0.6rem;font-size:1.1rem;color:var(--text-secondary);min-height:1.5em;letter-spacing:0.02em;font-style:italic;"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html formulaPreview}</div>
     {/if}
   </div>
@@ -331,7 +348,7 @@
             <option value={option}>{option}</option>
           {/each}
         </select>
-      {:else if field.key === "safety_notes" && form.type === "chemical"}
+      {:else if field.key === "safety_notes" && typeKey === "chemical"}
         <label class="form-label" for="f-attr-safety_notes">
           {field.label}{field.required ? " *" : ""}
           <span class="form-hint" style="display:inline;margin:0 0 0 0.4rem;font-weight:400;text-transform:none;letter-spacing:normal;">(press Enter to add)</span>
