@@ -142,44 +142,24 @@
         </div>
     {/if}
 
-    <h4 class="detail-section-title">Commercial products</h4>
-    {#if detail.products.length === 0}
-        <p style="font-size: 0.85rem; color: var(--text-muted);">No commercial records.</p>
-    {:else}
-        <table class="detail-table">
-            <thead>
-                <tr><th>Manufacturer</th><th>Supplier</th><th>Catalog #</th><th>Product</th><th>Variant</th></tr>
-            </thead>
-            <tbody>
-                {#each detail.products as product (product.id)}
-                    <tr>
-                        <td>{product.manufacturer ?? "—"}</td>
-                        <td>{product.supplier ?? "—"}</td>
-                        <td>{product.catalogNumber ?? "—"}</td>
-                        <td>{product.productName ?? "—"}</td>
-                        <td>{product.variant ?? "—"}</td>
-                    </tr>
-                {/each}
-            </tbody>
-        </table>
-    {/if}
-
-    <h4 class="detail-section-title">Batches</h4>
+    {@const productById = new Map((detail.products ?? []).map((p) => [p.id, p]))}
+    <h4 class="detail-section-title">Packages</h4>
     {#if detail.batches.length === 0}
-        <p style="font-size: 0.85rem; color: var(--text-muted);">No batches recorded.</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">No packages recorded.</p>
     {:else}
         <table class="detail-table">
             <thead>
-                <tr><th>Lot code</th><th>Origin</th><th>Received</th><th>Prepared</th><th>Prepared by</th><th>Expires</th></tr>
+                <tr><th>Lot</th><th>Origin</th><th>Manufacturer</th><th>Catalog #</th><th>Received</th><th>Expires</th></tr>
             </thead>
             <tbody>
                 {#each detail.batches as batch (batch.id)}
+                    {@const product = batch.productId !== null && batch.productId !== undefined ? productById.get(batch.productId) : undefined}
                     <tr>
-                        <td>{batch.lotCode ?? "—"}</td>
+                        <td class="stocks-mono">{batch.lotCode ?? "—"}</td>
                         <td>{batch.originType}</td>
+                        <td>{product?.manufacturer ?? "—"}</td>
+                        <td class="stocks-mono">{product?.catalogNumber ?? "—"}</td>
                         <td>{formatDate(batch.receivedAt)}</td>
-                        <td>{formatDate(batch.preparedAt)}</td>
-                        <td>{batch.preparedBy ?? "—"}</td>
                         <td>
                             {formatDate(batch.expiresAt)}
                             {#if expiryHint(batch.expiresAt) !== ""}
@@ -192,7 +172,7 @@
         </table>
     {/if}
 
-    <h4 class="detail-section-title">Stocks</h4>
+    <h4 class="detail-section-title">Locations</h4>
     {#if detail.stocks.length === 0}
         <p style="font-size: 0.85rem; color: var(--text-muted);">No stock records.</p>
     {:else}

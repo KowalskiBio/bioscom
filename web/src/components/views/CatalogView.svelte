@@ -11,7 +11,7 @@
 
   const labels = materialTypeLabels();
 
-  let tab = $state<"materials" | "stocks">("materials");
+  let tab = $state<"materials" | "stocks">("stocks");
   let searchText = $state("");
   let stockSearchText = $state("");
   let selectedViewId = $state("");
@@ -268,8 +268,8 @@
 </div>
 
 <div class="catalog-tabs-nav">
-    <button id="catalog-tab-materials" class="print-tab-btn" class:active={tab === "materials"} onclick={() => selectTab("materials")}>Materials</button>
-    <button id="catalog-tab-stocks" class="print-tab-btn" class:active={tab === "stocks"} onclick={() => selectTab("stocks")}>Stocks</button>
+    <button id="catalog-tab-stocks" class="print-tab-btn" class:active={tab === "stocks"} onclick={() => selectTab("stocks")}>Packages</button>
+    <button id="catalog-tab-materials" class="print-tab-btn" class:active={tab === "materials"} onclick={() => selectTab("materials")}>Chemicals</button>
 </div>
 
 {#if tab === "materials"}
@@ -392,6 +392,7 @@
                         {/each}
                         <th>Location</th>
                         <th>Lot</th>
+                        <th>Received</th>
                         <th>Expires</th>
                         <th>Status</th>
                     </tr>
@@ -418,6 +419,7 @@
                                 {/if}
                             </td>
                             <td class="stocks-mono">{stock.batch.lotCode ?? "—"}</td>
+                            <td class="stocks-mono">{formatExpiry(stock.batch.receivedAt)}</td>
                             <td class="stocks-mono" style={expiryColor(stock.batch.expiresAt) !== "" ? `color: ${expiryColor(stock.batch.expiresAt)};` : ""}>{formatExpiry(stock.batch.expiresAt)}</td>
                             <td><span class={`status-badge ${statusClass(stock.status)}`}>{statusLabel(stock.status)}</span></td>
                         </tr>

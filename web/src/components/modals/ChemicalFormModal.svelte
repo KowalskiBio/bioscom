@@ -426,13 +426,13 @@
 </div>
 
 <div class="form-group" style="display:flex;flex-direction:column;gap:0.35rem;">
-  <span class="form-label" style="margin-bottom:0;">Commercial product (optional)</span>
+  <span class="form-label" style="margin-bottom:0;">Package — supplier &amp; catalog # (optional)</span>
   <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-p-manufacturer" style="margin-bottom:0.25rem;">Manufacturer / supplier</label><input class="form-input" id="f-p-manufacturer" placeholder="e.g. Sigma-Aldrich" bind:value={form.product.manufacturer}></div>
   <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-p-catalog" style="margin-bottom:0.25rem;">Catalog number</label><input class="form-input" id="f-p-catalog" placeholder="e.g. A1234" bind:value={form.product.catalogNumber}></div>
 </div>
 
 <div class="form-group span-2">
-  <span class="form-label" style="margin-bottom:0.25rem;">Batch / lot (optional)</span>
+  <span class="form-label" style="margin-bottom:0.25rem;">Package — lot &amp; dates (optional)</span>
   <div class="form-cols form-cols-3" style="gap:0.35rem 0.85rem;">
     <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-lot" style="margin-bottom:0.25rem;">Lot code</label><input class="form-input" id="f-b-lot" placeholder="e.g. LOT-2026-01" bind:value={form.batch.lotCode}></div>
     <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="f-b-origin" style="margin-bottom:0.25rem;">Origin</label><select class="form-select" id="f-b-origin" bind:value={form.batch.originType}><option value="">—</option>{#each batchOriginOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}</select></div>

@@ -611,10 +611,10 @@
             <AssetsView bind:searchQuery={assetSearch} />
         </section>
 
-        <!-- Materials Catalog View -->
+        <!-- Packages & Chemicals View -->
         <section id="view-catalog" class="view" class:active={route.view === "catalog"}>
             <div class="view-header">
-                <div><h1>Materials catalog</h1><p class="view-subtitle">{catalog.loaded ? `${catalog.total} materials · ${catalogTypeLabel}` : "Browse all materials in the lab"}</p></div>
+                <div><h1>Packages &amp; chemicals</h1><p class="view-subtitle">{catalog.loaded ? `${catalog.total} items · ${catalogTypeLabel}` : "What's in the lab, and where it sits"}</p></div>
             </div>
             <CatalogView />
         </section>

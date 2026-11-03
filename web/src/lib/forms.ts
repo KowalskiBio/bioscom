@@ -206,7 +206,7 @@ export function openPrintRequestModal(item?: { id: string; name: string }): void
 export function openMaterialDetailModal(materialId: string): void {
   const material = catalog.items.find((item) => item.id === materialId);
   openModal({
-    title: material?.name ?? "Material",
+    title: material?.name ?? "Chemical",
     size: "xwide",
     component: MaterialDetailModal,
     props: { materialId },
