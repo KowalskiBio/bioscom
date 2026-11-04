@@ -248,6 +248,27 @@ To restore after any operational incident:
 
 Monitoring contract you can rely on (already-live, not aspirational): **every boot** runs backfill (idempotent doc→relational sync with structurally-drift-detection incl. deepfreezer hoists) + parity probe for every group; expect silent healthy output when converged, JSON lines when it isn't: `[inventory-backfill] synced N group(s), anomalies: 0` and any `[inventory-parity] ... mismatch(es)` line as a true alarm. `migration_0001..0005` apply transactionally per file; mirror failures during a write (`[inventory-sync] mirror failed for group …`) are **savepointed** — the doc commits, the mirror rolls back atomically and naturally re-heals on the next boot via the above contract. Gone-off PARITY probe after merges returns `ok:true` by design; only true drift trips parity now.
 
+### Tier-2 verification package (offline drills on a production copy)
+
+Three operator scripts live in `server/scripts/` (all read-only against the source; none of them ever touches the live DB):
+
+```bash
+# on proxmox1, work against a copy — the live service keeps running:
+sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO '/tmp/bioscom-tier2.db'"
+cd /home/kowalski/BioSCom/server
+
+npm run probe:integrity -- --db /tmp/bioscom-tier2.db   # parity + mirror sanity
+npm run census:slots   -- --db /tmp/bioscom-tier2.db   # deep-freeze geometry audit
+npm run drill:restore  -- --db /tmp/bioscom-tier2.db   # snapshot→boot→parity end-to-end
+npm run drill:restore  -- --db /tmp/bioscom-tier2.db --tamper   # proves drift detection fires
+```
+
+- **probe:integrity** — opens the copy read-only; reports per-group parity, legacy nested freezers still awaiting the boot hoist (informational), orphan mirror rows, and `mirror-uninitialized` if the relational tables are absent. Exit `0` clean / `1` parity-or-orphan issues / `2` structural gap. Mirrors what every boot already logs; use it pre-release and after any manual DB surgery.
+- **census:slots** — audits freezer geometry that write endpoints enforce but old data may violate: rack slots must be unique and within 0..31, boxes must resolve to a rack, no duplicate (rack, box) pairs, no two vials in the same box position, no dangling `sharedWithGroupIds`. Informational notes (loose shelves, chemicals directly on a freezer, hoist-pending nests) do not fail the run. Exit `0`/`1` on anomalies.
+- **drill:restore** — the rollback contract exercised end-to-end: snapshots the DB via `VACUUM INTO` into a temp dir, boots the built server against that snapshot on an alternate port, waits for `/api/public/groups`, then re-checks parity on the snapshot. Default run must end `PASS — parity is clean`; `--tamper` first deletes one group's `stocks` mirror rows and must end `PASS — drift was detected`. `--keep` preserves the workdir for forensics. Requires `npm run build -w server` first. Run once after any restore rehearsal, and after each inventory-model migration.
+
+A synthetic repro for all anomaly classes (plus a clean-control group) is one command away: `npm run make:tier2-fixture -- --out /tmp/tier2 [--drift]` — point the three scripts at the printed path to watch every check fire (`--drift` additionally deletes one material row so parity must flag it).
+
 ## Backups
 
 
