@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type Database from "better-sqlite3";
 import { getDatabase, closeDatabase } from "../src/db.js";
+import { DEFAULT_RACK_COLUMNS, DEFAULT_RACK_ROWS, resolveRackGrid } from "@bioscom/shared";
 import { syncGroupInventoryDocument } from "../src/inventory/sync.js";
 import { assembleInventoryFromRelational, checkParity, ensureParityChecked } from "../src/inventory/assemble.js";
 
@@ -139,6 +140,93 @@ describe("relational assembly ↔ document parity", () => {
     expect(df!.rackPositions).toEqual({ A: 8, B: 4 });
     expect(df!.shelves[0]!.rackName).toBe("A");
     expect(df!.shelves[0]!.boxName).toBe("1");
+  });
+
+  it("round-trips custom grid dimensions and normalizes legacy defaults on both sides", () => {
+    const tree = buildTree() as unknown as { rooms: Array<{ containers: Array<Record<string, unknown>> }> };
+    const df = tree.rooms[0]!.containers[2]!;
+    df.rackRows = 4;
+    df.rackColumns = 8;
+    db.prepare("INSERT OR REPLACE INTO group_inventory_docs (group_id, tree, version) VALUES ('group-a', ?, 1)").run(
+      JSON.stringify(tree),
+    );
+    syncGroupInventoryDocument(db, "group-a", tree as never);
+    const row = db.prepare("SELECT rack_rows, rack_columns FROM locations WHERE id = 'df-1'").get() as {
+      rack_rows: number | null;
+      rack_columns: number | null;
+    };
+    expect(row).toEqual({ rack_rows: 4, rack_columns: 8 });
+    const assembled = assembleInventoryFromRelational(db, "group-a");
+    expect(assembled.deepFreezers?.[0]?.rackRows).toBe(4);
+    expect(assembled.deepFreezers?.[0]?.rackColumns).toBe(8);
+    expect(checkParity(db, "group-a")).toEqual([]);
+
+    const legacy = buildTree();
+    db.prepare("INSERT OR REPLACE INTO group_inventory_docs (group_id, tree, version) VALUES ('group-a', ?, 2)").run(
+      JSON.stringify(legacy),
+    );
+    syncGroupInventoryDocument(db, "group-a", legacy as never);
+    const legacyAssembled = assembleInventoryFromRelational(db, "group-a");
+    const legacyFreezer = legacyAssembled.deepFreezers?.[0]!;
+    expect(legacyFreezer.rackRows).toBeUndefined();
+    expect(legacyFreezer.rackColumns).toBeUndefined();
+    expect(resolveRackGrid(legacyFreezer)).toEqual({
+      rows: DEFAULT_RACK_ROWS,
+      columns: DEFAULT_RACK_COLUMNS,
+      capacity: DEFAULT_RACK_ROWS * DEFAULT_RACK_COLUMNS,
+    });
+    expect(checkParity(db, "group-a")).toEqual([]);
+  });
+
+  it("normalizes legacy rack shelf metadata without rewriting relational NULLs", () => {
+    const legacy = buildTree();
+    db.prepare("INSERT OR REPLACE INTO group_inventory_docs (group_id, tree, version) VALUES ('group-a', ?, 3)").run(
+      JSON.stringify(legacy),
+    );
+    syncGroupInventoryDocument(db, "group-a", legacy as never);
+
+    const row = db
+      .prepare("SELECT rack_shelves, shelf_index FROM locations WHERE id = 'df-1'")
+      .get() as { rack_shelves: number | null; shelf_index: number | null };
+    expect(row).toEqual({ rack_shelves: null, shelf_index: null });
+    const boxRow = db
+      .prepare("SELECT rack_shelves, shelf_index FROM locations WHERE id = 'shelf-df'")
+      .get() as { rack_shelves: number | null; shelf_index: number | null };
+    expect(boxRow).toEqual({ rack_shelves: null, shelf_index: null });
+
+    const assembled = assembleInventoryFromRelational(db, "group-a");
+    const freezer = assembled.deepFreezers?.[0]!;
+    expect(freezer.rackShelves).toBe(13);
+    expect(freezer.shelves[0]!.rackShelf).toBe(1);
+    expect(freezer.shelves[0]!.boxName).toBe("1");
+    expect(checkParity(db, "group-a")).toEqual([]);
+  });
+
+  it("round-trips rack shelves and assignment while leaving custom box names unindexed", () => {
+    const tree = buildTree() as unknown as {
+      rooms: Array<{ containers: Array<Record<string, unknown>> }>;
+    };
+    const df = tree.rooms[0]!.containers[2]!;
+    df.rackShelves = 5;
+    const shelves = df.shelves as Array<Record<string, unknown>>;
+    shelves[0]!.rackShelf = 4;
+    shelves[0]!.boxName = "custom-A";
+    shelves.push({ id: "shelf-df-2", name: "Rack A / Box X", rackName: "A", boxName: "custom-B", chemicals: [] });
+    db.prepare("INSERT OR REPLACE INTO group_inventory_docs (group_id, tree, version) VALUES ('group-a', ?, 4)").run(
+      JSON.stringify(tree),
+    );
+    syncGroupInventoryDocument(db, "group-a", tree as never);
+
+    const assembled = assembleInventoryFromRelational(db, "group-a");
+    const freezer = assembled.deepFreezers?.[0]!;
+    expect(freezer.rackShelves).toBe(5);
+    expect(freezer.shelves.map((shelf) => shelf.rackShelf)).toEqual([4, undefined]);
+    expect(freezer.shelves.map((shelf) => shelf.boxName)).toEqual(["custom-A", "custom-B"]);
+    const rows = db
+      .prepare("SELECT shelf_index FROM locations WHERE id IN ('shelf-df', 'shelf-df-2') ORDER BY id")
+      .all() as Array<{ shelf_index: number | null }>;
+    expect(rows.map((entry) => entry.shelf_index)).toEqual([4, null]);
+    expect(checkParity(db, "group-a")).toEqual([]);
   });
 
   it("flags tampered relational rows as mismatches", () => {

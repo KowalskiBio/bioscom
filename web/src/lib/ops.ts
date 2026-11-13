@@ -76,6 +76,7 @@ export async function opAddDeepFreezer(
   name: string,
   description?: string,
   emoji?: string,
+  grid?: { rackRows: number; rackColumns: number; rackShelves?: number },
 ): Promise<string | null> {
   try {
     const result = await api.post<{ tree: { deepFreezers?: Container[] } }>(
@@ -84,6 +85,7 @@ export async function opAddDeepFreezer(
         name,
         ...(description !== undefined ? { description } : {}),
         ...(emoji !== undefined ? { emoji } : {}),
+        ...(grid !== undefined ? grid : {}),
       },
     );
     const freezers = result.tree.deepFreezers ?? [];
@@ -98,9 +100,12 @@ export async function opAddDeepFreezer(
   }
 }
 
-export async function opAddDeepFreezerRack(freezerId: string, name: string): Promise<boolean> {
+export async function opAddDeepFreezerRack(freezerId: string, name: string, slot?: number): Promise<boolean> {
   try {
-    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks`, { name });
+    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks`, {
+      name,
+      ...(slot !== undefined ? { slot } : {}),
+    });
     return true;
   } catch (error) {
     if (error instanceof ApiError) {
@@ -110,6 +115,30 @@ export async function opAddDeepFreezerRack(freezerId: string, name: string): Pro
     }
     return false;
   }
+}
+
+export function opUpdateDeepFreezerGrid(
+  freezerId: string,
+  rackRows: number,
+  rackColumns: number,
+  rackShelves?: number,
+): Promise<boolean> {
+  return run("Failed to update rack grid", () =>
+    api.put(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}`, {
+      rackRows,
+      rackColumns,
+      ...(rackShelves !== undefined ? { rackShelves } : {}),
+    }),
+  );
+}
+
+export function opMoveDeepFreezerRack(freezerId: string, rackName: string, slot: number): Promise<boolean> {
+  return run("Failed to move rack", () =>
+    api.post(
+      `/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks/${encodeURIComponent(rackName)}/move`,
+      { slot },
+    ),
+  );
 }
 
 export async function opAddDeepFreezerBox(freezerId: string, rackName: string, color?: string): Promise<boolean> {
@@ -127,6 +156,15 @@ export async function opAddDeepFreezerBox(freezerId: string, rackName: string, c
     }
     return false;
   }
+}
+
+export function opMoveDeepFreezerBox(freezerId: string, boxId: string, shelf: number): Promise<boolean> {
+  return run("Failed to move box", () =>
+    api.post(
+      `/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/boxes/${encodeURIComponent(boxId)}/move`,
+      { shelf },
+    ),
+  );
 }
 
 export function opAddShelf(body: {

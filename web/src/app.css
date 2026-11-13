@@ -640,6 +640,15 @@ body::after {
 }
 .chem-pos.fridge { background:rgba(6,182,212,0.12); color:var(--accent-cyan); }
 
+/* Material identity palette; position chips without these classes retain their own colors. */
+.material-type-chemical { --material-type-accent: #1D4FA2; --material-type-rgb: 29, 79, 162; --material-type-ink: #A9C7FF; }
+.material-type-reagent { --material-type-accent: #0F8F8A; --material-type-rgb: 15, 143, 138; --material-type-ink: #8FE3DC; }
+.material-type-antibody { --material-type-accent: #6D28D9; --material-type-rgb: 109, 40, 217; --material-type-ink: #D0B8FA; }
+.material-type-primer { --material-type-accent: #2E7D4F; --material-type-rgb: 46, 125, 79; --material-type-ink: #ABDDB6; }
+.material-type-solution { --material-type-accent: #B27412; --material-type-rgb: 178, 116, 18; --material-type-ink: #EBCB83; }
+.material-type-biological_stock { --material-type-accent: #C65D4B; --material-type-rgb: 198, 93, 75; --material-type-ink: #F0B2A6; }
+.material-type-other { --material-type-accent: #667085; --material-type-rgb: 102, 112, 133; --material-type-ink: #C3CAD4; }
+
 /* Highlight search match */
 mark { background:rgba(251,191,36,0.25); color:inherit; border-radius:2px; padding:0 1px; }
 
@@ -1233,6 +1242,12 @@ body.lite-mode .nav-tab.active {
     color: var(--accent-red);
 }
 
+.chem-pos[class*="material-type-"],
+.status-badge[class*="material-type-"] {
+    background: rgba(var(--material-type-rgb), 0.14);
+    color: var(--material-type-ink);
+}
+
 /* Print Tabs Navigation */
 .print-tabs-nav {
     display: flex;
@@ -1549,8 +1564,27 @@ body.lite-mode .nav-tab.active {
   transition: opacity 0.2s ease;
 }
 
-.deepfreezer-card:hover .deepfreezer-card-actions {
+.deepfreezer-card:hover .deepfreezer-card-actions,
+.deepfreezer-card:focus-within .deepfreezer-card-actions {
   opacity: 1;
+}
+.deepfreezer-card:is(.rack-card, .box-card)[draggable="true"] { cursor: grab; }
+.deepfreezer-card:is(.rack-card, .box-card)[draggable="true"]:active { cursor: grabbing; }
+.deepfreezer-card .rack-card-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: inherit;
 }
 
 .card-action-btn {
@@ -1690,19 +1724,29 @@ body.lite-mode .nav-tab.active {
   cursor: pointer;
 }
 
-/* Deep Freezer 8x4 Grid Layout & Slots */
+/* Deep Freezer Rack Grid Layout & Slots */
+.deepfreezer-rack-grid-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.deepfreezer-rack-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
 .deepfreezer-grid-8x4 {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(4, 140px);
+    grid-template-columns: repeat(var(--rack-columns, 8), minmax(100px, 1fr));
+    grid-auto-rows: 140px;
     gap: 0.65rem;
     margin: 1.5rem 0;
     background: rgba(0, 0, 0, 0.2);
     padding: 0.85rem;
     border-radius: var(--radius-xl);
     border: 1px solid var(--border-subtle);
-    overflow-x: auto;
-    min-width: 850px;
 }
 .deepfreezer-grid-cell {
     background: rgba(255, 255, 255, 0.015);
@@ -1798,6 +1842,60 @@ body.lite-mode .nav-tab.active {
 .deepfreezer-boxes-column .deepfreezer-card-subtitle {
     margin: 0;
     margin-right: 0.5rem;
+}
+.deepfreezer-boxes-column .rack-card-open {
+    flex-direction: row;
+    text-align: left;
+}
+.deepfreezer-shelf-list { max-width: min(640px, 100%); }
+.deepfreezer-shelf-position {
+    display: flex;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    border: 1px dashed var(--border-light);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.deepfreezer-shelf-position-label {
+    flex: 0 0 4.5rem;
+    padding-top: 0.65rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.deepfreezer-shelf-position-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.65rem;
+    min-width: 0;
+}
+.deepfreezer-shelf-available {
+    padding: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+}
+.deepfreezer-shelf-position.drag-over {
+    border-color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.12);
+}
+.deepfreezer-legacy-boxes {
+    width: min(640px, 100%);
+    margin-top: 0;
+}
+.deepfreezer-legacy-item + .deepfreezer-legacy-item { margin-top: 0.65rem; }
+.deepfreezer-legacy-note {
+    margin-bottom: 0.3rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+@media (max-width: 480px) {
+    .deepfreezer-shelf-position { flex-direction: column; gap: 0.35rem; }
+    .deepfreezer-shelf-position-label { flex-basis: auto; padding-top: 0; }
 }
 
 /* Biochemical Chess Board & Game Elements */
@@ -1969,6 +2067,8 @@ textarea:focus-visible {
 /* Dashboard */
 .dash-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1.25rem; }
 .stat-card { cursor:default; }
+a.stat-card { display:block; color:inherit; text-decoration:none; cursor:pointer; }
+a.stat-card:focus-visible { outline-color:var(--dash-accent, var(--accent-blue)); }
 .card.stat-card { border-top-width:10px; border-top-style:solid; border-top-color:var(--dash-accent, var(--accent-blue)); }
 .card.stat-card.s-red { --dash-accent: var(--accent-red); }
 .card.stat-card.s-blue { --dash-accent: var(--accent-blue); }
@@ -2357,6 +2457,10 @@ body[data-design="bauhaus"] .print-badge.material::before { background: #6D28D9;
 body[data-design="bauhaus"] .instrument-badge::before,
 body[data-design="bauhaus"] .booking-time::before { background: #F0B62B; }
 body[data-design="bauhaus"] .shelf-count::before { background: #171512; }
+body[data-design="bauhaus"] .chem-pos[class*="material-type-"]::before,
+body[data-design="bauhaus"] .status-badge[class*="material-type-"]::before {
+    background: var(--material-type-accent);
+}
 
 /* Filter pills */
 body[data-design="bauhaus"] .filter-pill {
@@ -2385,6 +2489,9 @@ body[data-design="bauhaus"] .filter-pill::before {
     flex-shrink: 0;
     background: #1D4FA2;
     transition: background-color var(--transition-fast);
+}
+body[data-design="bauhaus"] .filter-pill[class*="material-type-"]::before {
+    background: var(--material-type-accent);
 }
 body[data-design="bauhaus"] .filter-pill:hover {
     background: #F4F0E6;
@@ -3153,7 +3260,8 @@ body[data-design="bauhaus"] .deepfreezer-boxes-column {
     border: none;
     box-shadow: none;
 }
-body[data-design="bauhaus"] .deepfreezer-grid-cell {
+body[data-design="bauhaus"] .deepfreezer-grid-cell,
+body[data-design="bauhaus"] .deepfreezer-shelf-position {
     background: #FFFFFF;
     border: 2px dashed rgba(23, 21, 18, 0.25);
     border-radius: 0;
@@ -3702,6 +3810,10 @@ body[data-design="bauhaus"] .topbar {
     z-index: 95;
 }
 body[data-design="bauhaus"] .topbar-crumb {
+    display: flex;
+    align-items: center;
+    gap: 0.55em;
+    min-width: 0;
     font-family: var(--bauhaus-font-mono);
     font-size: 11px;
     letter-spacing: 0.2em;
@@ -3712,7 +3824,29 @@ body[data-design="bauhaus"] .topbar-crumb {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-body[data-design="bauhaus"] .topbar-crumb .topbar-view { color: var(--text-primary); font-weight: 600; }
+body[data-design="bauhaus"] .topbar-crumb .topbar-link {
+    min-width: 0;
+    overflow: hidden;
+    color: inherit;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+body[data-design="bauhaus"] .topbar-crumb .topbar-brand,
+body[data-design="bauhaus"] .topbar-crumb .topbar-separator { flex-shrink: 0; }
+body[data-design="bauhaus"] .topbar-crumb .topbar-view {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-weight: 600;
+    text-overflow: ellipsis;
+}
+body[data-design="bauhaus"] .topbar-crumb .topbar-link:hover,
+body[data-design="bauhaus"] .topbar-crumb .topbar-link:focus-visible {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+}
 body[data-design="bauhaus"] #app-header .search-wrap {
     position: fixed;
     top: 0;

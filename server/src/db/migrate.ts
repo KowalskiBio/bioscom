@@ -42,10 +42,6 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
     ),
   );
   const pending = migrations.filter((migration) => !applied.has(migration.version));
-  if (pending.length === 0) {
-    return [];
-  }
-
   const insert = db.prepare(
     "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
   );

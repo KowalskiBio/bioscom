@@ -89,6 +89,10 @@ interface LocationInsert {
   range_end: string | null;
   owner_group_id: string | null;
   owner_group_name: string | null;
+  rack_rows: number | null;
+  rack_columns: number | null;
+  rack_shelves: number | null;
+  shelf_index: number | null;
   rack_positions: string | null;
   sort_index: number;
 }
@@ -96,10 +100,10 @@ interface LocationInsert {
 const UPSERT_LOCATION_SQL = `
 INSERT INTO locations (id, group_id, parent_id, kind, name, description, container_type, emoji, color,
   rack_name, box_name, parent_shelf_id, is_range_shelf, range_start, range_end, owner_group_id,
-  owner_group_name, rack_positions, sort_index, created_at, updated_at)
+  owner_group_name, rack_rows, rack_columns, rack_shelves, shelf_index, rack_positions, sort_index, created_at, updated_at)
 VALUES (@id, @group_id, @parent_id, @kind, @name, @description, @container_type, @emoji, @color,
   @rack_name, @box_name, @parent_shelf_id, @is_range_shelf, @range_start, @range_end, @owner_group_id,
-  @owner_group_name, @rack_positions, @sort_index, @created_at, @updated_at)
+  @owner_group_name, @rack_rows, @rack_columns, @rack_shelves, @shelf_index, @rack_positions, @sort_index, @created_at, @updated_at)
 ON CONFLICT(id) DO UPDATE SET
   group_id = excluded.group_id, parent_id = excluded.parent_id, kind = excluded.kind,
   name = excluded.name, description = excluded.description, container_type = excluded.container_type,
@@ -107,7 +111,9 @@ ON CONFLICT(id) DO UPDATE SET
   box_name = excluded.box_name, parent_shelf_id = excluded.parent_shelf_id,
   is_range_shelf = excluded.is_range_shelf, range_start = excluded.range_start,
   range_end = excluded.range_end, owner_group_id = excluded.owner_group_id,
-  owner_group_name = excluded.owner_group_name, rack_positions = excluded.rack_positions,
+  owner_group_name = excluded.owner_group_name, rack_rows = excluded.rack_rows,
+  rack_columns = excluded.rack_columns, rack_shelves = excluded.rack_shelves,
+  shelf_index = excluded.shelf_index, rack_positions = excluded.rack_positions,
   sort_index = excluded.sort_index, updated_at = excluded.updated_at`;
 
 const UPSERT_MATERIAL_SQL = `
@@ -300,6 +306,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
       range_end: null,
       owner_group_id: null,
       owner_group_name: null,
+      rack_rows: null,
+      rack_columns: null,
+      rack_shelves: null,
+      shelf_index: null,
       rack_positions: null,
       sort_index: roomIndex,
     };
@@ -328,6 +338,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
         range_end: null,
         owner_group_id: cont.ownerGroupId ?? null,
         owner_group_name: cont.ownerGroupName ?? null,
+        rack_rows: cont.rackRows ?? null,
+        rack_columns: cont.rackColumns ?? null,
+        rack_shelves: cont.rackShelves ?? null,
+        shelf_index: null,
         rack_positions: cont.rackPositions ? JSON.stringify(cont.rackPositions) : null,
         sort_index: contIndex,
         created_at: now,
@@ -361,6 +375,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
           range_end: shelf.rangeEnd ?? null,
           owner_group_id: null,
           owner_group_name: null,
+          rack_rows: null,
+          rack_columns: null,
+          rack_shelves: null,
+          shelf_index: shelf.rackShelf ?? null,
           rack_positions: null,
           sort_index: shelfIndex,
           created_at: now,
@@ -394,6 +412,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
       range_end: null,
       owner_group_id: cont.ownerGroupId ?? null,
       owner_group_name: cont.ownerGroupName ?? null,
+      rack_rows: cont.rackRows ?? null,
+      rack_columns: cont.rackColumns ?? null,
+      rack_shelves: cont.rackShelves ?? null,
+      shelf_index: null,
       rack_positions: cont.rackPositions ? JSON.stringify(cont.rackPositions) : null,
       sort_index: (tree.rooms.length ?? 0) + contIndex,
       created_at: now,
@@ -426,6 +448,10 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
         range_end: shelf.rangeEnd ?? null,
         owner_group_id: null,
         owner_group_name: null,
+        rack_rows: null,
+        rack_columns: null,
+        rack_shelves: null,
+        shelf_index: shelf.rackShelf ?? null,
         rack_positions: null,
         sort_index: shelfIndex,
         created_at: now,

@@ -84,6 +84,9 @@ const FIXTURE_A = {
           name: "Deep Freezer",
           type: "deepfreezer",
           sharedWithGroupIds: [],
+          rackRows: 6,
+          rackColumns: 5,
+          rackShelves: 9,
           rackPositions: { A: 8, B: 4 },
           shelves: [
             {
@@ -91,6 +94,7 @@ const FIXTURE_A = {
               name: "Rack A / Box 1",
               rackName: "A",
               boxName: "1",
+              rackShelf: 3,
               color: "#3b82f6",
               chemicals: [{ id: "ch-3", name: "E. coli DH5a stock", position: "A1" }],
             },
@@ -145,13 +149,23 @@ describe("inventory backfill", () => {
     expect(shelfA.is_range_shelf).toBe(1);
     expect(shelfA.range_start).toBe("A");
     expect(shelfA.range_end).toBe("M");
-    const shelfDf = one<{ rack_name: string; box_name: string; color: string }>(
+    const shelfDf = one<{ rack_name: string; box_name: string; color: string; shelf_index: number | null }>(
       "SELECT * FROM locations WHERE id='shelf-df'",
     );
     expect(shelfDf.rack_name).toBe("A");
     expect(shelfDf.box_name).toBe("1");
-    const df = one<{ rack_positions: string }>("SELECT * FROM locations WHERE id='df-1'");
+    expect(shelfDf.shelf_index).toBe(3);
+    const shelfC = one<{ shelf_index: number | null }>("SELECT shelf_index FROM locations WHERE id='shelf-c'");
+    expect(shelfC.shelf_index).toBeNull();
+    const df = one<{ rack_positions: string; rack_rows: number | null; rack_columns: number | null; rack_shelves: number | null }>(
+      "SELECT * FROM locations WHERE id='df-1'",
+    );
     expect(JSON.parse(df.rack_positions)).toEqual({ A: 8, B: 4 });
+    expect(df.rack_rows).toBe(6);
+    expect(df.rack_columns).toBe(5);
+    expect(df.rack_shelves).toBe(9);
+    expect(one<{ rack_rows: number | null }>("SELECT rack_rows FROM locations WHERE id='fr-1'").rack_rows).toBeNull();
+    expect(one<{ rack_shelves: number | null }>("SELECT rack_shelves FROM locations WHERE id='fr-1'").rack_shelves).toBeNull();
     const share = one<{ container_location_id: string; group_id: string }>(
       "SELECT * FROM container_shares WHERE container_location_id='cab-1' AND group_id='group-b'",
     );

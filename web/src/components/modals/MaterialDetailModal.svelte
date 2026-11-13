@@ -4,6 +4,7 @@
   import { catalog } from "../../lib/stores/catalog.svelte";
   import { session } from "../../lib/stores/session.svelte";
   import { openMaterialMergeModal } from "../../lib/forms";
+  import { materialTypeColorClass } from "../../lib/inventoryUtils";
 
   let { materialId }: { materialId: string } = $props();
 
@@ -117,7 +118,7 @@
 {:else}
     <div id="material-detail" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
         <h3 style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">{material.name}</h3>
-        <span class="chem-pos">{labels[material.type] ?? material.type}</span>
+        <span class={`chem-pos ${materialTypeColorClass(material.type)}`}>{labels[material.type] ?? material.type}</span>
         <span style="font-size: 0.75rem; color: var(--text-muted);">Created {formatDate(material.createdAt)}</span>
         {#if session.user?.role !== "reader"}
             <button

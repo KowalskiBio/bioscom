@@ -22,7 +22,7 @@ were found independently by two seats with line-level agreement.
 
 1. Full dry-run of hoist + backfill + parity on a copy of prod: require zero `corrupt (json|zod)` anomaly lines and reconcile every `[inventory-backfill] relocated …` line.
 2. Confirm on `main` whether the legacy zod chain tolerates the root `deepFreezers` key on OLD-build writes (rollback direction: unconfirmed).
-3. Census production `rackPositions` values: any slot index ≥ 32 renders invisible in the fixed 32-slot grid.
+3. Census production `rackPositions` values with `npm run census:slots`: the audit now compares each freezer against its configured `rackRows x rackColumns` capacity (NULL/missing dims = legacy 8x4), so larger valid grids are not falsely flagged; report invalid grid metadata separately before accepting a resize.
 4. Census: does any group currently share a deep freezer in production?
 5. Snapshot restore drill: restore the pre-refactor backup to prove the rollback path stays snapshot-only.
 6. Product sign-off: unlike other mutations, `adjust-qty` bypasses the reader check when `mirrorGroupId` is set on shared containers — verify this asymmetry is intentional.

@@ -3,13 +3,15 @@
  *
  * Walks every group's inventory document and audits the matrioshka freezer
  * geometry that the location model now enforces at write time:
- *   racks   — freezer.rackPositions maps rack name -> slot index (32-slot grid)
+ *   racks   — freezer.rackPositions maps rack name -> zero-based slot index in
+ *             the freezer's configured rackRows x rackColumns grid
  *   boxes   — freezer.shelves entries with rackName + boxName
  *   vials   — chemicals inside a box shelf, keyed by `position`
  *
- * Anomalies (exit 1): rack slot out of [0,31], duplicate rack slot, box on an
- * unknown rack, duplicate (rack, box) pair, box-slot collision (two vials in
- * the same position of one box), dangling sharedWithGroupIds.
+ * Anomalies (exit 1): invalid rack-grid metadata, rack slot outside the
+ * freezer capacity, duplicate rack slot, box on an unknown rack, duplicate
+ * (rack, box) pair, box-slot collision (two vials in the same position of one
+ * box), dangling sharedWithGroupIds.
  *
  * Informational (exit stays 0): loose shelves inside a freezer (pre-matrioshka
  * leftovers), chemicals directly on the freezer container (pseudo-room
@@ -23,8 +25,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import Database from "better-sqlite3";
-
-const RACK_SLOTS = 32;
+import { MAX_RACK_COLUMNS, MAX_RACK_ROWS, MAX_RACK_SHELVES, resolveRackGrid, resolveRackShelfIndex, resolveRackShelves } from "@bioscom/shared";
 
 interface ChemShape {
   id?: string;
@@ -36,12 +37,16 @@ interface ShelfShape {
   name?: string;
   rackName?: string | null;
   boxName?: string | null;
+  rackShelf?: number | null;
   chemicals?: ChemShape[] | null;
 }
 interface ContainerShape {
   id?: string;
   name?: string;
   type?: string;
+  rackRows?: number | null;
+  rackColumns?: number | null;
+  rackShelves?: number | null;
   rackPositions?: Record<string, number> | null;
   shelves?: ShelfShape[] | null;
   chemicals?: ChemShape[] | null;
@@ -115,11 +120,61 @@ for (const row of groupRows) {
       push(row.group_id, label, "info", "direct-chemical", `"${chem.name ?? chem.id}" sits directly on the freezer (pseudo-room surface)`);
     }
 
+    const rawRows = freezer.rackRows;
+    const rawColumns = freezer.rackColumns;
+    if (
+      rawRows !== undefined &&
+      rawRows !== null &&
+      (!Number.isInteger(rawRows) || rawRows < 1 || rawRows > MAX_RACK_ROWS)
+    ) {
+      push(
+        row.group_id,
+        label,
+        "anomaly",
+        "rack-grid-metadata",
+        `rackRows ${JSON.stringify(rawRows)} is not an integer in 1..${MAX_RACK_ROWS}`,
+      );
+    }
+    if (
+      rawColumns !== undefined &&
+      rawColumns !== null &&
+      (!Number.isInteger(rawColumns) || rawColumns < 1 || rawColumns > MAX_RACK_COLUMNS)
+    ) {
+      push(
+        row.group_id,
+        label,
+        "anomaly",
+        "rack-grid-metadata",
+        `rackColumns ${JSON.stringify(rawColumns)} is not an integer in 1..${MAX_RACK_COLUMNS}`,
+      );
+    }
+    const rawShelves = freezer.rackShelves;
+    if (
+      rawShelves !== undefined &&
+      rawShelves !== null &&
+      (!Number.isInteger(rawShelves) || rawShelves < 1 || rawShelves > MAX_RACK_SHELVES)
+    ) {
+      push(
+        row.group_id,
+        label,
+        "anomaly",
+        "rack-shelf-metadata",
+        `rackShelves ${JSON.stringify(rawShelves)} is not an integer in 1..${MAX_RACK_SHELVES}`,
+      );
+    }
+    const grid = resolveRackGrid(freezer);
+    const shelfCapacity = resolveRackShelves(freezer);
     const racks = freezer.rackPositions ?? {};
     const slotOwners = new Map<number, string>();
     for (const [rackName, slot] of Object.entries(racks)) {
-      if (!Number.isInteger(slot) || slot < 0 || slot >= RACK_SLOTS) {
-        push(row.group_id, label, "anomaly", "rack-slot-out-of-range", `rack "${rackName}" -> slot ${slot} (valid: 0..${RACK_SLOTS - 1})`);
+      if (!Number.isInteger(slot) || slot < 0 || slot >= grid.capacity) {
+        push(
+          row.group_id,
+          label,
+          "anomaly",
+          "rack-slot-out-of-range",
+          `rack "${rackName}" -> slot ${slot} (valid: 0..${grid.capacity - 1} for ${grid.rows}x${grid.columns})`,
+        );
         continue;
       }
       const owner = slotOwners.get(slot);
@@ -131,6 +186,7 @@ for (const row of groupRows) {
     }
 
     const boxKeys = new Set<string>();
+    const shelfOwnersByRack = new Map<string, Map<number, string>>();
     for (const shelf of freezer.shelves ?? []) {
       const rackName = shelf.rackName ?? "";
       const boxName = shelf.boxName ?? "";
@@ -150,6 +206,41 @@ for (const row of groupRows) {
         push(row.group_id, label, "anomaly", "duplicate-box", `two shelves claim ${key}`);
       }
       boxKeys.add(key);
+
+      if (
+        shelf.rackShelf !== undefined &&
+        shelf.rackShelf !== null &&
+        (!Number.isInteger(shelf.rackShelf) || shelf.rackShelf < 1 || shelf.rackShelf > MAX_RACK_SHELVES)
+      ) {
+        push(
+          row.group_id,
+          label,
+          "anomaly",
+          "box-shelf-metadata",
+          `box "${boxName}" has rackShelf ${JSON.stringify(shelf.rackShelf)} outside 1..${MAX_RACK_SHELVES}`,
+        );
+      }
+      const shelfIndex = resolveRackShelfIndex(shelf);
+      if (shelfIndex !== null) {
+        if (shelfIndex < 1 || shelfIndex > shelfCapacity) {
+          push(
+            row.group_id,
+            label,
+            "anomaly",
+            "box-shelf-out-of-range",
+            `box "${boxName}" on rack "${rackName}" -> shelf ${shelfIndex} (valid: 1..${shelfCapacity})`,
+          );
+        } else {
+          const owners = shelfOwnersByRack.get(rackName) ?? new Map<number, string>();
+          const owner = owners.get(shelfIndex);
+          if (owner !== undefined) {
+            push(row.group_id, label, "anomaly", "duplicate-box-shelf", `rack "${rackName}" shelf ${shelfIndex} claimed by both "${owner}" and "${boxName}"`);
+          } else {
+            owners.set(shelfIndex, boxName);
+            shelfOwnersByRack.set(rackName, owners);
+          }
+        }
+      }
 
       const slotPositions = new Map<string, string>();
       for (const chem of shelf.chemicals ?? []) {

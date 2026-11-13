@@ -6,6 +6,7 @@
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
   import { closeModal } from "../../lib/modal.svelte";
+  import { materialTypeColorClass } from "../../lib/inventoryUtils";
 
   let { sourceMaterialId, sourceMaterialName }: { sourceMaterialId: string; sourceMaterialName: string } = $props();
 
@@ -185,7 +186,7 @@
                 >
                     <span style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                         <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">{candidate.name}</span>
-                        <span class="chem-pos">{labels[candidate.type] ?? candidate.type}</span>
+                        <span class={`chem-pos ${materialTypeColorClass(candidate.type)}`}>{labels[candidate.type] ?? candidate.type}</span>
                     </span>
                     <span style="font-size: 0.75rem; color: var(--text-muted);">
                         {candidate.counts.stocks} stocks · {candidate.counts.batches} batches · {candidate.counts.products} products

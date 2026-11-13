@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { MAX_RACK_COLUMNS, MAX_RACK_ROWS, MAX_RACK_SHELVES, MAX_RACK_SLOTS } from "./inventory.js";
+
+const rackRowsSchema = z.number().int().min(1).max(MAX_RACK_ROWS);
+const rackColumnsSchema = z.number().int().min(1).max(MAX_RACK_COLUMNS);
+const rackSlotSchema = z.number().int().min(0).max(MAX_RACK_SLOTS - 1);
+const rackShelvesSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
+const rackShelfSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
 
 export const RegisterBodySchema = z.object({
   email: z.email().max(254),
@@ -51,6 +58,9 @@ export const AddDeepFreezerBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   emoji: z.string().trim().max(16).optional(),
+  rackRows: rackRowsSchema.optional(),
+  rackColumns: rackColumnsSchema.optional(),
+  rackShelves: rackShelvesSchema.optional(),
 });
 
 export const AddContainerBodySchema = z.object({
@@ -77,11 +87,26 @@ export const EditContainerBodySchema = z
 
 export const AddDeepFreezerRackBodySchema = z.object({
   name: z.string().trim().min(1).max(50),
+  slot: rackSlotSchema.optional(),
+});
+
+export const MoveDeepFreezerRackBodySchema = z.object({
+  slot: rackSlotSchema,
+});
+
+export const ResizeDeepFreezerBodySchema = z.object({
+  rackRows: rackRowsSchema,
+  rackColumns: rackColumnsSchema,
+  rackShelves: rackShelvesSchema.optional(),
 });
 
 export const AddDeepFreezerBoxBodySchema = z.object({
   rackName: z.string().trim().min(1).max(50),
   color: z.string().trim().max(32).optional(),
+});
+
+export const MoveDeepFreezerBoxBodySchema = z.object({
+  shelf: rackShelfSchema,
 });
 
 export const AddShelfBodySchema = z.object({

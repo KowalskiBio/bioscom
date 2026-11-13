@@ -1,5 +1,16 @@
 import type { Chemical, Container, Room } from "@bioscom/shared";
-import { validateAttributes } from "@bioscom/shared";
+import {
+  DEFAULT_RACK_COLUMNS,
+  DEFAULT_RACK_ROWS,
+  DEFAULT_RACK_SHELVES,
+  MAX_RACK_COLUMNS,
+  MAX_RACK_ROWS,
+  MAX_RACK_SHELVES,
+  resolveRackColumns,
+  resolveRackRows,
+  resolveRackShelves,
+  validateAttributes,
+} from "@bioscom/shared";
 import { openModal, closeModal } from "./modal.svelte";
 import { showToast } from "./stores/toast.svelte";
 import {
@@ -11,6 +22,8 @@ import {
   opAddDeepFreezer,
   opAddDeepFreezerRack,
   opAddDeepFreezerBox,
+  opUpdateDeepFreezerGrid,
+  opMoveDeepFreezerRack,
   opShareContainer,
   roleCanWrite,
   type ShelfSpec,
@@ -61,7 +74,8 @@ import {
 import { session } from "./stores/session.svelte";
 import { prefs } from "./stores/prefs.svelte";
 import { catalog } from "./stores/catalog.svelte";
-import { inventory } from "./stores/inventory.svelte";
+import { currentGroup } from "./stores/currentGroup.svelte";
+import { inventory, inventoryFor } from "./stores/inventory.svelte";
 
 function isBauhaus(): boolean {
   return document.body.dataset.design === "bauhaus";
@@ -438,16 +452,45 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
   });
 }
 
+function rackDimension(value: number | null | undefined, label: "Rows" | "Columns" | "Shelves per rack", max: number): number | null {
+  const dimension = Number(value);
+  if (!Number.isInteger(dimension) || dimension < 1 || dimension > max) {
+    showToast(`${label} must be a whole number between 1 and ${max}`, "error");
+    return null;
+  }
+  return dimension;
+}
+
+function rackSlotOptions(cont: Container, movingRackName?: string): Array<{ value: number; label: string }> {
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const options: Array<{ value: number; label: string }> = [];
+  for (let slot = 0; slot < rows * columns; slot += 1) {
+    const occupied = Object.entries(cont.rackPositions ?? {}).some(
+      ([rackName, position]) => rackName !== movingRackName && position === slot,
+    );
+    if (!occupied) options.push({ value: slot + 1, label: `Slot ${slot + 1}` });
+  }
+  return options;
+}
+
 export function openDeepFreezerForm(): void {
   if (!roleCanWrite()) {
     showToast("Access Denied", "error");
     return;
   }
-  const form = { name: "", description: "", emoji: "" };
+  const form = {
+    name: "",
+    description: "",
+    emoji: "",
+    rackRows: DEFAULT_RACK_ROWS,
+    rackColumns: DEFAULT_RACK_COLUMNS,
+    rackShelves: DEFAULT_RACK_SHELVES,
+  };
   openModal({
     title: "Add Deep Freezer",
     component: SimplePromptModal,
-    props: { form, kind: "container" as const },
+    props: { form, kind: "container" as const, showRackGrid: true, showShelfCount: true },
     btnText: "Add",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -455,6 +498,10 @@ export function openDeepFreezerForm(): void {
         showToast("Deep freezer name is required (max 100 chars)", "error");
         return;
       }
+      const rackRows = rackDimension(form.rackRows, "Rows", MAX_RACK_ROWS);
+      const rackColumns = rackDimension(form.rackColumns, "Columns", MAX_RACK_COLUMNS);
+      const rackShelves = rackDimension(form.rackShelves, "Shelves per rack", MAX_RACK_SHELVES);
+      if (rackRows === null || rackColumns === null || rackShelves === null) return;
       const description = form.description.trim();
       if (description.length > 500) {
         showToast("Description must be 500 characters or fewer", "error");
@@ -469,6 +516,7 @@ export function openDeepFreezerForm(): void {
         name,
         description === "" ? undefined : description,
         emoji === "" ? undefined : emoji,
+        { rackRows, rackColumns, rackShelves },
       );
       if (id !== null) {
         closeModal();
@@ -543,21 +591,136 @@ export function openAddShelfForm(room: Room, cont: Container, onDone?: () => voi
 }
 
 export function openAddDeepFreezerRackForm(cont: Container, onDone?: () => void): void {
-  const form = { name: "" };
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const slotOptions = rackSlotOptions(cont);
+  const form = { name: "", slot: slotOptions[0]?.value ?? 0 };
   openModal({
     title: "Add Rack",
     component: SimplePromptModal,
-    props: { form, kind: "shelf" as const },
-    btnText: "Add",
+    props: {
+      form,
+      kind: "shelf" as const,
+      showSlotPicker: true,
+      slotOptions,
+      slotLabel: "Rack slot",
+      slotHint: `${rows} rows × ${columns} columns · ${slotOptions.length} free slots`,
+    },
+    btnText: slotOptions.length === 0 ? null : "Add",
     onConfirm: async () => {
       const name = form.name.trim();
       if (name === "") {
         showToast("Enter rack name", "error");
         return;
       }
-      if (await opAddDeepFreezerRack(cont.id, name)) {
+      const slot = Number(form.slot);
+      if (slotOptions.length === 0) {
+        showToast("No free slots are available in this rack grid", "error");
+        return;
+      }
+      if (!Number.isInteger(slot) || !slotOptions.some((option) => option.value === slot)) {
+        showToast("Select an available rack slot", "error");
+        return;
+      }
+      if (await opAddDeepFreezerRack(cont.id, name, slot - 1)) {
         closeModal();
         showToast(`Rack "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openMoveDeepFreezerRackForm(cont: Container, rackName: string, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const currentSlot = cont.rackPositions?.[rackName];
+  if (currentSlot === undefined || !Number.isInteger(currentSlot) || currentSlot < 0 || currentSlot >= rows * columns) {
+    showToast("Current rack position is invalid", "error");
+    return;
+  }
+  const slotOptions = rackSlotOptions(cont, rackName);
+  const form = { name: rackName, slot: currentSlot + 1 };
+  openModal({
+    title: `Move Rack ${rackName}`,
+    component: SimplePromptModal,
+    props: {
+      form,
+      kind: "slot" as const,
+      showSlotPicker: true,
+      slotOptions,
+      slotLabel: "Destination slot",
+      slotHint: `Current slot ${currentSlot + 1} · Only free slots and the current slot are listed`,
+    },
+    btnText: "Move",
+    onConfirm: async () => {
+      const slot = Number(form.slot);
+      if (!Number.isInteger(slot) || !slotOptions.some((option) => option.value === slot)) {
+        showToast("Select an available destination slot", "error");
+        return;
+      }
+      if (await opMoveDeepFreezerRack(cont.id, rackName, slot - 1)) {
+        closeModal();
+        showToast(`Rack "${isBauhaus() ? stripEmoji(rackName) : rackName}" moved to slot ${slot}`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openDeepFreezerGridSettings(cont: Container, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = {
+    name: cont.name,
+    rackRows: resolveRackRows(cont),
+    rackColumns: resolveRackColumns(cont),
+  };
+  openModal({
+    title: "Rack grid settings",
+    component: SimplePromptModal,
+    props: { form, kind: "rack-grid" as const },
+    btnText: "Save",
+    onConfirm: async () => {
+      const rackRows = rackDimension(form.rackRows, "Rows", MAX_RACK_ROWS);
+      const rackColumns = rackDimension(form.rackColumns, "Columns", MAX_RACK_COLUMNS);
+      if (rackRows === null || rackColumns === null) return;
+      if (await opUpdateDeepFreezerGrid(cont.id, rackRows, rackColumns)) {
+        closeModal();
+        showToast("Rack grid updated");
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openDeepFreezerShelfSettings(cont: Container, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = { name: cont.name, rackShelves: resolveRackShelves(cont) };
+  openModal({
+    title: "Shelves per rack",
+    component: SimplePromptModal,
+    props: { form, kind: "rack-shelves" as const },
+    btnText: "Save",
+    onConfirm: async () => {
+      const rackShelves = rackDimension(form.rackShelves, "Shelves per rack", MAX_RACK_SHELVES);
+      if (rackShelves === null) return;
+      if (await opUpdateDeepFreezerGrid(cont.id, resolveRackRows(cont), resolveRackColumns(cont), rackShelves)) {
+        closeModal();
+        showToast("Shelves per rack updated");
         onDone?.();
       }
     },
@@ -692,7 +855,7 @@ function parseSafetyTags(value: unknown): string[] {
   return tags;
 }
 
-interface ContainerChemicalMatch {
+interface ChemicalFormMatch {
   ch: Chemical;
   /** Value used by the placement select (shelf id, box id, or container id for direct stock). */
   placement: string;
@@ -701,7 +864,7 @@ interface ContainerChemicalMatch {
   boxId?: string;
 }
 
-function findChemicalInContainer(cont: Container, chemicalId: string): ContainerChemicalMatch | undefined {
+function findChemicalInContainer(cont: Container, chemicalId: string): ChemicalFormMatch | undefined {
   for (const shelf of cont.shelves ?? []) {
     for (const ch of shelf.chemicals ?? []) {
       if (ch.id === chemicalId) {
@@ -719,6 +882,11 @@ function findChemicalInContainer(cont: Container, chemicalId: string): Container
     }
   }
   return undefined;
+}
+
+function findChemicalInRoom(room: Room, chemicalId: string): ChemicalFormMatch | undefined {
+  const ch = (room.chemicals ?? []).find((candidate) => candidate.id === chemicalId);
+  return ch === undefined ? undefined : { ch, placement: "", shelfId: "" };
 }
 
 function defaultPlacementFor(cont?: Container): string {
@@ -739,25 +907,33 @@ function defaultPlacementFor(cont?: Container): string {
 export function openChemicalForm(
   room?: Room,
   cont?: Container,
-  opts: { shelfId?: string; editChemId?: string } = {},
+  opts: { shelfId?: string; editChemId?: string; afterSaved?: () => void } = {},
 ): void {
+  const availableRooms =
+    opts.editChemId !== undefined && room !== undefined ? [room] : (inventory.tree?.rooms ?? []);
   const contextRooms =
     cont === undefined
-      ? [...(inventory.tree?.rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      ? [...availableRooms].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
       : [];
   const editMatch =
-    opts.editChemId !== undefined && cont !== undefined
-      ? findChemicalInContainer(cont, opts.editChemId)
-      : undefined;
+    opts.editChemId === undefined
+      ? undefined
+      : cont !== undefined
+        ? findChemicalInContainer(cont, opts.editChemId)
+        : room !== undefined
+          ? findChemicalInRoom(room, opts.editChemId)
+          : undefined;
   const editChem = editMatch;
   const initialShelf = opts.shelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
+  const isDirectContainerEdit =
+    cont !== undefined && editMatch?.shelfId === "" && editMatch.placement === cont.id;
   const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
   const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
   const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
   delete initialAttributes.safety_notes;
   const form: ChemicalFormState = {
     shelfId: initialShelf,
-    cabinetShelf: "auto",
+    cabinetShelf: isDirectContainerEdit ? initialShelf : "auto",
     roomId: room?.id ?? "",
     contId: cont?.id ?? "",
     name: editChem?.ch.name ?? "",
@@ -909,8 +1085,15 @@ export function openChemicalForm(
       // the room. Only an explicit container choice runs the cascade branches.
       let targetShelfId = "";
       let targetBoxId: string | undefined;
+      const keepDirectContainerPlacement =
+        isDirectContainerEdit &&
+        activeCont !== undefined &&
+        (activeCont.type === "cabinet" ? form.cabinetShelf === activeCont.id : form.shelfId === activeCont.id);
       if (activeCont !== undefined) {
-        if (activeCont.type === "cabinet") {
+        // The container id is only the direct-placement select value, never an API shelf id.
+        if (keepDirectContainerPlacement) {
+          targetShelfId = "";
+        } else if (activeCont.type === "cabinet") {
           const isAlphabetical =
             activeCont.cabinetMethod === "alphabetical" ||
             (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
@@ -947,23 +1130,27 @@ export function openChemicalForm(
             }
           }
         }
-        if (activeCont.type === "cabinet" && targetShelfId === "") {
+        if (!keepDirectContainerPlacement && activeCont.type === "cabinet" && targetShelfId === "") {
           showToast("Select a shelf placement", "error");
           return;
         }
-        if (activeCont.type === "deepfreezer" && targetShelfId === "") {
+        if (!keepDirectContainerPlacement && activeCont.type === "deepfreezer" && targetShelfId === "") {
           showToast("Select a box placement", "error");
           return;
         }
       }
       if (opts.editChemId !== undefined) {
-        if (editMatch === undefined || activeCont === undefined) {
+        if (editMatch === undefined || (cont !== undefined && activeCont === undefined)) {
           showToast("Chemical not found", "error");
+          return;
+        }
+        if (cont === undefined && activeCont !== undefined) {
+          showToast("Room-level packages must stay directly in their room when edited here", "error");
           return;
         }
         const ok = await opEditChemical(
           activeRoom.id,
-          activeCont.id,
+          activeCont?.id ?? "",
           editMatch.shelfId,
           opts.editChemId,
           values,
@@ -974,6 +1161,7 @@ export function openChemicalForm(
         if (ok) {
           closeModal();
           showToast("Chemical saved");
+          opts.afterSaved?.();
         }
       } else {
         const ok = await opAddChemical(activeRoom.id, activeCont?.id ?? "", targetShelfId, values, targetBoxId);
@@ -984,6 +1172,41 @@ export function openChemicalForm(
       }
     },
   });
+}
+
+export function openCatalogStockEditForm(stockId: string, afterSaved?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const tree = inventoryFor(currentGroup.groupId);
+  if (tree === null) {
+    showToast("Inventory is not loaded yet. Please try again in a moment.", "error");
+    return;
+  }
+
+  for (const room of tree.rooms) {
+    for (const cont of room.containers ?? []) {
+      if (findChemicalInContainer(cont, stockId) !== undefined) {
+        openChemicalForm(room, cont, { editChemId: stockId, afterSaved });
+        return;
+      }
+    }
+    if (findChemicalInRoom(room, stockId) !== undefined) {
+      openChemicalForm(room, undefined, { editChemId: stockId, afterSaved });
+      return;
+    }
+  }
+
+  for (const freezer of tree.deepFreezers ?? []) {
+    if (findChemicalInContainer(freezer, stockId) !== undefined) {
+      const room: Room = { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] };
+      openChemicalForm(room, freezer, { editChemId: stockId, afterSaved });
+      return;
+    }
+  }
+
+  showToast("Package not found in the current lab inventory. Refresh Packages and try again.", "error");
 }
 
 export function openChemicalRadioPrompt(room: Room, cont: Container, preSelectedShelfId?: string): void {

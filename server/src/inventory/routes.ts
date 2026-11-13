@@ -5,6 +5,9 @@ import {
   AddDeepFreezerBodySchema,
   AddDeepFreezerRackBodySchema,
   AddDeepFreezerBoxBodySchema,
+  MoveDeepFreezerRackBodySchema,
+  MoveDeepFreezerBoxBodySchema,
+  ResizeDeepFreezerBodySchema,
   EditRoomBodySchema,
   AddContainerBodySchema,
   EditContainerBodySchema,
@@ -24,6 +27,14 @@ import {
   AddAssetBodySchema,
   EditAssetBodySchema,
   validateAttributes as validateMaterialAttributes,
+  nextFreeRackSlot,
+  nextFreeRackShelf,
+  rackCapacity,
+  rackPositionsFitProblem,
+  rackShelfFitProblem,
+  relocateDeepFreezers,
+  resolveRackShelfIndex,
+  resolveRackShelves,
   type Chemical,
   type Container,
   type InventoryTree,
@@ -48,8 +59,10 @@ import {
   genId,
   isMemberOrSuperadmin,
   isPseudoRoom,
+  loadDoc,
   locationChemicals,
   resolveStockTarget,
+  type MutationContext,
   type MutationResult,
 } from "./doc.js";
 
@@ -113,22 +126,139 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         if (Object.prototype.hasOwnProperty.call(positions, name)) {
           throw new OpError(400, `Rack "${name}" already exists`);
         }
-        const usedSlots = new Set(Object.values(positions));
-        let freeSlot = -1;
-        for (let slot = 0; slot < 32; slot += 1) {
-          if (!usedSlots.has(slot)) {
-            freeSlot = slot;
-            break;
+        const capacity = rackCapacity(freezer);
+        let slot: number | null;
+        if (body.data.slot !== undefined) {
+          if (body.data.slot < 0 || body.data.slot >= capacity) {
+            throw new OpError(409, `Slot ${body.data.slot} is outside this deep freezer's capacity (${capacity} slots)`);
           }
+          const occupant = Object.entries(positions).find(([, assigned]) => assigned === body.data.slot);
+          if (occupant !== undefined) {
+            throw new OpError(409, `Slot ${body.data.slot} is already occupied by rack "${occupant[0]}"`);
+          }
+          slot = body.data.slot;
+        } else {
+          slot = nextFreeRackSlot(positions, capacity);
         }
-        if (freeSlot === -1) {
+        if (slot === null) {
           throw new OpError(409, "Deep freezer is full (no free rack slots)");
         }
-        freezer.rackPositions = { ...positions, [name]: freeSlot };
+        freezer.rackPositions = { ...positions, [name]: slot };
         return `Added rack "${name}" to deep freezer "${freezer.name}"`;
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/racks/:rackName/move", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const deepfreezerId = (request.params as { deepfreezerId: string }).deepfreezerId;
+    const rackName = (request.params as { rackName: string }).rackName;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = MoveDeepFreezerRackBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const isMember = isMemberOrSuperadmin(user, groupId);
+
+      // A move onto the rack's current slot is a harmless no-op and must not
+      // bump the document or append history, so resolve it before mutating.
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      relocateDeepFreezers(currentTree);
+      const currentFreezer = currentTree.deepFreezers?.find((c) => c.id === deepfreezerId);
+      if (currentFreezer === undefined) {
+        throw new OpError(404, "Deep freezer not found");
+      }
+      const preflightContext: MutationContext = { mirrorGroupId: null };
+      checkSharedContainerAccess(user, groupId, currentFreezer, preflightContext, isMember);
+      const currentPositions: Record<string, number> = { ...(currentFreezer.rackPositions ?? {}) };
+      if (!Object.prototype.hasOwnProperty.call(currentPositions, rackName)) {
+        throw new OpError(404, `Rack "${rackName}" not found`);
+      }
+      const capacity = rackCapacity(currentFreezer);
+      if (body.data.slot >= capacity) {
+        throw new OpError(409, `Slot ${body.data.slot} is outside this deep freezer's capacity (${capacity} slots)`);
+      }
+      const occupant = Object.entries(currentPositions).find(([, assigned]) => assigned === body.data.slot);
+      if (occupant !== undefined && occupant[0] !== rackName) {
+        throw new OpError(409, `Slot ${body.data.slot} is already occupied by rack "${occupant[0]}"`);
+      }
+      if (currentPositions[rackName] === body.data.slot) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: preflightContext.mirrorGroupId };
+      }
+
+      const result = mutate(groupId, user, (tree, context) => {
+        const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
+        if (freezer === undefined) {
+          throw new OpError(404, "Deep freezer not found");
+        }
+        checkSharedContainerAccess(user, groupId, freezer, context, isMember);
+        const positions: Record<string, number> = { ...(freezer.rackPositions ?? {}) };
+        if (!Object.prototype.hasOwnProperty.call(positions, rackName)) {
+          throw new OpError(404, `Rack "${rackName}" not found`);
+        }
+        const liveCapacity = rackCapacity(freezer);
+        if (body.data.slot >= liveCapacity) {
+          throw new OpError(409, `Slot ${body.data.slot} is outside this deep freezer's capacity (${liveCapacity} slots)`);
+        }
+        const liveOccupant = Object.entries(positions).find(([, assigned]) => assigned === body.data.slot);
+        if (liveOccupant !== undefined && liveOccupant[0] !== rackName) {
+          throw new OpError(409, `Slot ${body.data.slot} is already occupied by rack "${liveOccupant[0]}"`);
+        }
+        positions[rackName] = body.data.slot;
+        freezer.rackPositions = positions;
+        return `Moved rack "${rackName}" to slot ${body.data.slot} in deep freezer "${freezer.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/deepfreezers/:deepfreezerId", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const deepfreezerId = (request.params as { deepfreezerId: string }).deepfreezerId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = ResizeDeepFreezerBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const isMember = isMemberOrSuperadmin(user, groupId);
+      const result = mutate(groupId, user, (tree, context) => {
+        const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
+        if (freezer === undefined) {
+          throw new OpError(404, "Deep freezer not found");
+        }
+        checkSharedContainerAccess(user, groupId, freezer, context, isMember);
+        const capacity = body.data.rackRows * body.data.rackColumns;
+        const fitProblem = rackPositionsFitProblem(freezer.rackPositions ?? {}, capacity);
+        if (fitProblem !== null) {
+          throw new OpError(409, `Cannot resize deep freezer to ${body.data.rackRows}x${body.data.rackColumns}: ${fitProblem}`);
+        }
+        if (body.data.rackShelves !== undefined) {
+          const shelfFitProblem = rackShelfFitProblem(freezer.shelves ?? [], body.data.rackShelves);
+          if (shelfFitProblem !== null) {
+            throw new OpError(
+              409,
+              `Cannot resize deep freezer to ${body.data.rackShelves} shelves per rack: ${shelfFitProblem}`,
+            );
+          }
+        }
+        freezer.rackRows = body.data.rackRows;
+        freezer.rackColumns = body.data.rackColumns;
+        if (body.data.rackShelves !== undefined) {
+          freezer.rackShelves = body.data.rackShelves;
+        }
+        return `Resized deep freezer "${freezer.name}" to ${body.data.rackRows}x${body.data.rackColumns}`;
+      });
+      broadcastResult(groupId, result);
+      return result;
     });
   });
 
@@ -161,11 +291,20 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         const used = new Set(rackChildren.map((sh) => sh.boxName ?? "").filter((b) => b !== ""));
         let nextBox = 1;
         while (used.has(String(nextBox))) nextBox += 1;
+        const shelfCapacity = resolveRackShelves(freezer);
+        if (rackChildren.length >= shelfCapacity) {
+          throw new OpError(409, `Rack "${rackName}" holds ${rackChildren.length} boxes; no free shelf position (capacity ${shelfCapacity})`);
+        }
+        const nextShelf = nextFreeRackShelf(rackChildren, rackName, shelfCapacity);
+        if (nextShelf === null) {
+          throw new OpError(409, `Rack "${rackName}" has no free shelf position (capacity ${shelfCapacity})`);
+        }
         (freezer.shelves ??= []).push({
           id: genId(),
           name: `Rack ${rackName} / Box ${nextBox}`,
           rackName,
           boxName: String(nextBox),
+          rackShelf: nextShelf,
           color: body.data.color,
           chemicals: [],
         });
@@ -173,6 +312,96 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/boxes/:boxId/move", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const deepfreezerId = (request.params as { deepfreezerId: string }).deepfreezerId;
+    const boxId = (request.params as { boxId: string }).boxId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = MoveDeepFreezerBoxBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const isMember = isMemberOrSuperadmin(user, groupId);
+
+      // A move onto the box's current shelf is a harmless no-op and must not
+      // bump the document or append history, so resolve it before mutating.
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      relocateDeepFreezers(currentTree);
+      const currentFreezer = currentTree.deepFreezers?.find((c) => c.id === deepfreezerId);
+      if (currentFreezer === undefined) {
+        throw new OpError(404, "Deep freezer not found");
+      }
+      const preflightContext: MutationContext = { mirrorGroupId: null };
+      checkSharedContainerAccess(user, groupId, currentFreezer, preflightContext, isMember);
+      const currentBox = (currentFreezer.shelves ?? []).find((shelf) => shelf.id === boxId);
+      if (currentBox === undefined) {
+        throw new OpError(404, "Box not found");
+      }
+      const currentRackName = currentBox.rackName ?? "";
+      if (currentRackName === "") {
+        throw new OpError(409, "Box is not assigned to a rack");
+      }
+      const capacity = resolveRackShelves(currentFreezer);
+      if (body.data.shelf > capacity) {
+        throw new OpError(409, `Shelf ${body.data.shelf} is outside this rack's capacity (1..${capacity})`);
+      }
+      const currentOccupant = (currentFreezer.shelves ?? []).find(
+        (shelf) =>
+          shelf.id !== boxId &&
+          (shelf.rackName ?? "") === currentRackName &&
+          resolveRackShelfIndex(shelf) === body.data.shelf,
+      );
+      if (currentOccupant !== undefined) {
+        throw new OpError(
+          409,
+          `Shelf ${body.data.shelf} is already occupied by box "${currentOccupant.boxName ?? currentOccupant.id}" in rack "${currentRackName}"`,
+        );
+      }
+      if (resolveRackShelfIndex(currentBox) === body.data.shelf) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: preflightContext.mirrorGroupId };
+      }
+
+      const result = mutate(groupId, user, (tree, context) => {
+        const freezer = tree.deepFreezers?.find((c) => c.id === deepfreezerId);
+        if (freezer === undefined) {
+          throw new OpError(404, "Deep freezer not found");
+        }
+        checkSharedContainerAccess(user, groupId, freezer, context, isMember);
+        const box = (freezer.shelves ?? []).find((shelf) => shelf.id === boxId);
+        if (box === undefined) {
+          throw new OpError(404, "Box not found");
+        }
+        const rackName = box.rackName ?? "";
+        if (rackName === "") {
+          throw new OpError(409, "Box is not assigned to a rack");
+        }
+        const liveCapacity = resolveRackShelves(freezer);
+        if (body.data.shelf > liveCapacity) {
+          throw new OpError(409, `Shelf ${body.data.shelf} is outside this rack's capacity (1..${liveCapacity})`);
+        }
+        const occupant = (freezer.shelves ?? []).find(
+          (shelf) =>
+            shelf.id !== boxId &&
+            (shelf.rackName ?? "") === rackName &&
+            resolveRackShelfIndex(shelf) === body.data.shelf,
+        );
+        if (occupant !== undefined) {
+          throw new OpError(
+            409,
+            `Shelf ${body.data.shelf} is already occupied by box "${occupant.boxName ?? occupant.id}" in rack "${rackName}"`,
+          );
+        }
+        box.rackShelf = body.data.shelf;
+        return `Moved box "${box.boxName ?? box.name}" to shelf ${body.data.shelf} in rack "${rackName}" of deep freezer "${freezer.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
     });
   });
 
@@ -195,6 +424,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           emoji: body.data.emoji,
           type: "deepfreezer",
           sharedWithGroupIds: [],
+          rackRows: body.data.rackRows,
+          rackColumns: body.data.rackColumns,
+          rackShelves: body.data.rackShelves,
           shelves: [],
         });
         return `Added deep freezer "${body.data.name}"`;

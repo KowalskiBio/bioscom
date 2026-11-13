@@ -56,8 +56,9 @@
   ];
 
   const contextRooms = $derived([...(rooms ?? [])].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
-  let roomId = $state("");
-  let contId = $state("");
+  let roomId = $state(untrack(() => form.roomId ?? ""));
+  let contId = $state(untrack(() => form.contId ?? ""));
+  const startsDirectlyInContainer = untrack(() => container !== undefined && form.shelfId === container.id);
 
   let typeKey = $state<string>(untrack(() => form.type ?? "chemical"));
   let formulaText = $state<string>(untrack(() => form.formula));
@@ -302,6 +303,9 @@
   <div class="form-group span-2">
     <label class="form-label">Box *</label>
     <select class="form-select" id="f-shelf" bind:value={form.shelfId}>
+      {#if startsDirectlyInContainer}
+        <option value={activeContainer.id}>Directly in this container</option>
+      {/if}
       {#each containerShelves as shelf (shelf.id)}
         <option value={shelf.id}>{shelf.name}</option>
       {/each}
@@ -311,6 +315,9 @@
   <div class="form-group span-2">
     <label class="form-label">Shelf placement *</label>
     <select class="form-select" id="f-cab-shelf" style="cursor: pointer;" bind:value={form.cabinetShelf}>
+      {#if startsDirectlyInContainer}
+        <option value={activeContainer.id}>Directly in this container</option>
+      {/if}
       {#if canAuto}
         <option value="auto">Auto – alphabetically by first letter</option>
       {/if}

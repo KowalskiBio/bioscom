@@ -31,7 +31,7 @@
   const chems = $derived(allChems(rooms));
   const chemCount = $derived(chems.length);
   const contCount = $derived(rooms.reduce((sum, r) => sum + (r.containers ?? []).length, 0));
-  const instCount = $derived(instrumentList.items.length);
+  const protocolCount = $derived(tree?.protocols?.length ?? 0);
 
   interface AttentionItem {
     name: string;
@@ -167,26 +167,26 @@
 
 <!-- Stats -->
 <section class="dash-stats" id="dash-stats">
-    <div class="card stat-card s-red" id="stat-chems">
+    <a class="card stat-card s-red" id="stat-chems" href="#catalog" title="Open Catalog">
         <div class="stat-head"><p class="stat-lbl">Chemicals</p><span class="stat-glyph g-circle g-red"></span></div>
         <p class="stat-value">{chemCount}</p>
         <p class="stat-meta">across {contCount} containers</p>
-    </div>
-    <div class="card stat-card s-blue" id="stat-containers">
+    </a>
+    <a class="card stat-card s-blue" id="stat-containers" href="#rooms" title="Open Chemicals / Rooms">
         <div class="stat-head"><p class="stat-lbl">Containers</p><span class="stat-glyph g-square g-blue"></span></div>
         <p class="stat-value">{contCount}</p>
         <p class="stat-meta">{rooms.length} rooms · {sharedCount} shared in</p>
-    </div>
-    <div class="card stat-card s-yellow" id="stat-instruments">
-        <div class="stat-head"><p class="stat-lbl">Instruments</p><span class="stat-glyph g-tri g-yellow"></span></div>
-        <p class="stat-value">{instCount}</p>
-        <p class="stat-meta">bookable resources</p>
-    </div>
-    <div class="card stat-card s-ink" id="stat-bookings">
+    </a>
+    <a class="card stat-card s-yellow" id="stat-protocols" href="#protocols" title="Open Protocols">
+        <div class="stat-head"><p class="stat-lbl">Protocols</p><span class="stat-glyph g-tri g-yellow"></span></div>
+        <p class="stat-value">{protocolCount}</p>
+        <p class="stat-meta">documented procedures</p>
+    </a>
+    <a class="card stat-card s-ink" id="stat-bookings" href="#instruments" title="Open Reservations">
         <div class="stat-head"><p class="stat-lbl">Bookings</p><span class="stat-glyph g-square g-ink"></span></div>
         <p class="stat-value">{weekBookings}</p>
         <p class="stat-meta">this week · {reservationsToday.length} today</p>
-    </div>
+    </a>
 </section>
 
 <!-- Row 2 -->

@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { closeDatabase, getDatabase } from "../src/db.js";
 import { runMigrations } from "../src/db/migrate.js";
+import { ensureParityChecked } from "../src/inventory/assemble.js";
 import { ensureBackfilled } from "../src/inventory/sync.js";
 import { schemaSqlPath } from "../src/paths.js";
 
@@ -44,6 +45,14 @@ describe("migration runner", () => {
       expect(tables.has(table)).toBe(true);
     }
 
+    const locationColumns = (db.prepare("PRAGMA table_info(locations)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    );
+    expect(locationColumns).toContain("rack_rows");
+    expect(locationColumns).toContain("rack_columns");
+    expect(locationColumns).toContain("rack_shelves");
+    expect(locationColumns).toContain("shelf_index");
+
     const types = db
       .prepare("SELECT key, label, schema_version, fields FROM material_types ORDER BY key")
       .all() as Array<{ key: string; label: string; schema_version: number; fields: string }>;
@@ -72,6 +81,8 @@ describe("migration runner", () => {
       { version: 3, name: "migration_0003_canonicalize_type_fields.sql" },
       { version: 4, name: "migration_0004_stock_barcodes.sql" },
       { version: 5, name: "migration_0005_chemical_fields_trim.sql" },
+      { version: 6, name: "migration_0006_location_rack_grid.sql" },
+      { version: 7, name: "migration_0007_location_rack_shelves.sql" },
     ]);
 
     const chemFields = JSON.parse(types.find((t) => t.key === "chemical")!.fields) as Array<Record<string, unknown>>;
@@ -95,7 +106,7 @@ describe("migration runner", () => {
     expect(tableNames(raw).has("materials")).toBe(false);
 
     const applied = runMigrations(raw);
-    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
     const tables = tableNames(raw);
     expect(tables.has("groups")).toBe(true);
@@ -146,6 +157,34 @@ describe("migration runner", () => {
 
     const thirdReports = ensureBackfilled(db);
     expect(thirdReports).toEqual([]);
+  });
+
+  it("reconciles a changed doc on every boot, even when no migrations are pending", () => {
+    const db = getDatabase(tempDbPath());
+    db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('g1', ?, 1)").run(
+      JSON.stringify({
+        rooms: [
+          {
+            id: "r1",
+            name: "A",
+            containers: [{ id: "c1", name: "B", type: "cabinet", shelves: [{ id: "s1", name: "T", chemicals: [{ id: "chem-1", name: "Legacy salt" }] }] }],
+          },
+        ],
+        assetRooms: [],
+        assets: [],
+        protocols: [],
+      }),
+    );
+    ensureBackfilled(db);
+    const updated = JSON.parse((db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree) as {
+      rooms: Array<{ containers: Array<{ shelves: Array<{ chemicals: Array<{ name: string }> }> }> }>;
+    };
+    updated.rooms[0]!.containers[0]!.shelves[0]!.chemicals[0]!.name = "Renamed Legacy salt";
+    db.prepare("UPDATE group_inventory_docs SET tree = ?, version = ? WHERE group_id = 'g1'").run(JSON.stringify(updated), 2);
+
+    expect(runMigrations(db)).toEqual([]);
+    expect(db.prepare("SELECT name FROM materials WHERE group_id = 'g1' AND id = 'm-chem-1'").get()).toEqual({ name: "Renamed Legacy salt" });
+    expect(ensureParityChecked(db)).toEqual([]);
   });
 
   it("accepts a trial relational insert across the new tables", () => {    const db = getDatabase(tempDbPath());

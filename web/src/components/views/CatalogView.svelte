@@ -1,24 +1,19 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { MATERIAL_TYPES, materialTypeLabels, type MaterialFieldDef } from "@bioscom/shared";
-  import { catalog, type CatalogMaterial, type CatalogStock, type StockExpDays } from "../../lib/stores/catalog.svelte";
+  import { catalog, type CatalogStock } from "../../lib/stores/catalog.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { router } from "../../lib/router.svelte";
-  import { openMaterialDetailModal } from "../../lib/forms";
-  import { openModal, closeModal } from "../../lib/modal.svelte";
-  import { showToast } from "../../lib/stores/toast.svelte";
-  import { savedViews } from "../../lib/stores/savedViews.svelte";
+  import { openCatalogStockEditForm, openMaterialDetailModal } from "../../lib/forms";
+  import { materialTypeColorClass } from "../../lib/inventoryUtils";
+  import { roleCanWrite } from "../../lib/ops";
 
   const labels = materialTypeLabels();
+  const canEdit = $derived(roleCanWrite());
 
-  let tab = $state<"materials" | "stocks">("stocks");
-  let searchText = $state("");
   let stockSearchText = $state("");
-  let selectedViewId = $state("");
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let stockDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const totalPages = $derived(Math.max(1, Math.ceil(catalog.total / 25)));
   const stocksTotalPages = $derived(Math.max(1, Math.ceil(catalog.stocksTotal / 25)));
 
   const activeTypeFields = $derived.by<readonly MaterialFieldDef[]>(() => {
@@ -44,16 +39,8 @@
 
   $effect(() => {
     const groupId = currentGroup.groupId;
-    if (router.route.view === "catalog" && groupId !== null && catalog.loadedGroupId !== groupId) {
-      void catalog.fetchCatalog(1);
-    }
-  });
-
-  $effect(() => {
-    const groupId = currentGroup.groupId;
     if (
       router.route.view === "catalog" &&
-      tab === "stocks" &&
       groupId !== null &&
       catalog.stocksLoadedGroupId !== groupId &&
       !catalog.stocksLoading
@@ -63,35 +50,14 @@
   });
 
   onDestroy(() => {
-    if (debounceTimer !== null) {
-      clearTimeout(debounceTimer);
-    }
     if (stockDebounceTimer !== null) {
       clearTimeout(stockDebounceTimer);
     }
   });
 
-  function onSearchInput(): void {
-    if (debounceTimer !== null) {
-      clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-      catalog.setQuery(searchText.trim());
-      void catalog.fetchCatalog(1);
-    }, 300);
-  }
-
   function onTypeSelect(type: string): void {
     catalog.setTypeFilter(type);
-    void catalog.fetchCatalog(1);
     void catalog.fetchStocks(1);
-  }
-
-  function selectTab(next: "materials" | "stocks"): void {
-    tab = next;
-    if (next === "stocks" && (!catalog.stocksLoaded || catalog.stocksLoadedGroupId !== currentGroup.groupId)) {
-      void catalog.fetchStocks(1);
-    }
   }
 
   function onStockSearchInput(): void {
@@ -104,83 +70,10 @@
     }, 300);
   }
 
-  function onStockStatusChange(event: Event): void {
-    catalog.setStockStatus((event.currentTarget as HTMLSelectElement).value);
-    void catalog.fetchStocks(1);
-  }
-
-  function onStockExpiryChange(event: Event): void {
-    catalog.setStockExpDays((event.currentTarget as HTMLSelectElement).value as StockExpDays);
-    void catalog.fetchStocks(1);
-  }
-
-  function applySavedView(event: Event): void {
-    const id = (event.currentTarget as HTMLSelectElement).value;
-    selectedViewId = id;
-    const view = savedViews.views.find((entry) => entry.id === id);
-    if (view === undefined) {
-      return;
-    }
-    catalog.setTypeFilter(view.type);
-    catalog.setStockQuery(view.q);
-    catalog.setStockStatus(view.status);
-    catalog.setStockExpDays(view.expDays as StockExpDays);
-    stockSearchText = view.q;
-    void catalog.fetchStocks(1);
-  }
-
-  function openSaveViewPrompt(): void {
-    openModal({
-      title: "Name this view",
-      bodyHtml: `<div class="form-group"><label class="form-label" for="sv-name">View name</label><input class="form-input" id="sv-name" placeholder="e.g. Expiring reagents"></div>`,
-      btnText: "Save view",
-      onConfirm: () => {
-        const input = document.getElementById("sv-name") as HTMLInputElement | null;
-        const name = (input?.value ?? "").trim();
-        if (name === "") {
-          showToast("Enter a view name", "error");
-          return;
-        }
-        savedViews.saveView({
-          name,
-          type: catalog.typeFilter,
-          q: catalog.stockQuery,
-          status: catalog.stockStatus,
-          expDays: catalog.stockExpDays,
-        });
-        closeModal();
-        showToast(`View "${name}" saved`);
-      },
+  function onStockEdit(stockId: string): void {
+    openCatalogStockEditForm(stockId, () => {
+      void catalog.fetchStocks(catalog.stocksPage);
     });
-  }
-
-  function deleteSelectedView(): void {
-    const view = savedViews.views.find((entry) => entry.id === selectedViewId);
-    if (view === undefined) {
-      return;
-    }
-    savedViews.deleteView(view.id);
-    selectedViewId = "";
-    showToast(`View "${view.name}" deleted`);
-  }
-
-  function descriptorSummary(material: CatalogMaterial): string {
-    const type = MATERIAL_TYPES.find((entry) => entry.key === material.type);
-    if (type === undefined) {
-      return "";
-    }
-    const parts: string[] = [];
-    for (const field of type.fields) {
-      const value = material.attributes[field.key];
-      if (value === undefined || value === null || value === "") {
-        continue;
-      }
-      parts.push(`${field.label}: ${String(value)}`);
-      if (parts.length >= 2) {
-        break;
-      }
-    }
-    return parts.join(" · ");
   }
 
   function descriptorHeader(field: MaterialFieldDef): string {
@@ -260,114 +153,18 @@
 
 <div class="catalog-filters">
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
-        <button id="catalog-type-all" class={`filter-pill ${catalog.typeFilter === "" ? "active" : ""}`} onclick={() => onTypeSelect("")}>All</button>
+        <button id="catalog-type-all" class={`filter-pill ${materialTypeColorClass("")} ${catalog.typeFilter === "" ? "active" : ""}`} onclick={() => onTypeSelect("")}>All</button>
         {#each MATERIAL_TYPES as type (type.key)}
-            <button id={`catalog-type-${type.key}`} class={`filter-pill ${catalog.typeFilter === type.key ? "active" : ""}`} onclick={() => onTypeSelect(type.key)}>{type.label}</button>
+            <button id={`catalog-type-${type.key}`} class={`filter-pill ${materialTypeColorClass(type.key)} ${catalog.typeFilter === type.key ? "active" : ""}`} onclick={() => onTypeSelect(type.key)}>{type.label}</button>
         {/each}
     </div>
 </div>
 
-<div class="catalog-tabs-nav">
-    <button id="catalog-tab-stocks" class="print-tab-btn" class:active={tab === "stocks"} onclick={() => selectTab("stocks")}>Packages</button>
-    <button id="catalog-tab-materials" class="print-tab-btn" class:active={tab === "materials"} onclick={() => selectTab("materials")}>Chemicals</button>
-</div>
-
-{#if tab === "materials"}
-    <div class="catalog-filters">
-        <div class="search-box" style="min-width: 250px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="catalog-search-input" placeholder="Search materials..." autocomplete="off" bind:value={searchText} oninput={onSearchInput}>
-        </div>
-    </div>
-
-    {#if catalog.loading && catalog.items.length === 0}
-        <div class="empty-state" id="catalog-loading">
-            <p>Loading…</p>
-        </div>
-    {:else if catalog.loaded && catalog.items.length === 0}
-        <div class="empty-state" id="catalog-empty">
-            <h2>No materials match the filter</h2>
-            <p>Try a different search or material type.</p>
-        </div>
-    {:else}
-        <div style="overflow-x: auto;">
-            <table class="detail-table" id="materials-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Descriptors</th>
-                        <th style="text-align: right;">Products</th>
-                        <th style="text-align: right;">Batches</th>
-                        <th style="text-align: right;">Stocks</th>
-                        <th style="text-align: right;">Locations</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each catalog.items as material (material.id)}
-                        <tr
-                            data-material-id={material.id}
-                            role="button"
-                            tabindex="0"
-                            style="cursor: pointer;"
-                            onclick={() => openMaterialDetailModal(material.id)}
-                            onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openMaterialDetailModal(material.id)}
-                        >
-                            <td>
-                                <strong>{material.name}</strong>
-                                {#if material.description}
-                                    <div class="stocks-dim" style="font-size: 0.75rem; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;">{material.description}</div>
-                                {/if}
-                            </td>
-                            <td><span class="chem-pos">{labels[material.type] ?? material.type}</span></td>
-                            <td class="stocks-mono">{descriptorSummary(material) || "—"}</td>
-                            <td class="stocks-mono" style="text-align: right;">{material.counts.products}</td>
-                            <td class="stocks-mono" style="text-align: right;">{material.counts.batches}</td>
-                            <td class="stocks-mono" style="text-align: right;">{material.counts.stocks}</td>
-                            <td class="stocks-mono" style="text-align: right;">{material.counts.locations}</td>
-                        </tr>
-                    {/each}
-                </tbody>
-            </table>
-        </div>
-        <div id="catalog-pagination" style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.5rem;">
-            <button class="btn-icon" title="Previous page" aria-label="Previous page" disabled={catalog.page <= 1} onclick={() => void catalog.fetchCatalog(catalog.page - 1)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-            </button>
-            <span style="font-size: 0.85rem; color: var(--text-secondary); font-variant-numeric: tabular-nums;">Page {catalog.page} of {totalPages}</span>
-            <button class="btn-icon" title="Next page" aria-label="Next page" disabled={catalog.page >= totalPages} onclick={() => void catalog.fetchCatalog(catalog.page + 1)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-        </div>
-    {/if}
-{:else}
     <div class="catalog-filters">
         <div class="search-box" style="min-width: 250px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="stocks-search-input" placeholder="Search stocks..." autocomplete="off" bind:value={stockSearchText} oninput={onStockSearchInput}>
         </div>
-        <select id="stocks-status-select" class="form-select" value={catalog.stockStatus} onchange={onStockStatusChange}>
-            <option value="">All statuses</option>
-            <option value="available">Available</option>
-            <option value="depleted">Depleted</option>
-            <option value="discarded">Discarded</option>
-            <option value="reserved">Reserved</option>
-            <option value="unknown">Unknown</option>
-        </select>
-        <select id="stocks-expiry-select" class="form-select" value={catalog.stockExpDays} onchange={onStockExpiryChange}>
-            <option value="">Any expiry</option>
-            <option value="30">≤30 days</option>
-            <option value="60">≤60 days</option>
-            <option value="90">≤90 days</option>
-        </select>
-        <select id="stocks-saved-view" class="form-select" value={selectedViewId} onchange={applySavedView}>
-            <option value="">Saved views…</option>
-            {#each savedViews.views as view (view.id)}
-                <option value={view.id}>{view.name}</option>
-            {/each}
-        </select>
-        <button id="btn-save-stock-view" class="btn-secondary" style="padding: 0.45rem 0.75rem; font-size: 0.8rem;" onclick={openSaveViewPrompt}>Save view</button>
-        <button id="btn-delete-stock-view" class="btn-inline" title="Delete saved view" aria-label="Delete saved view" disabled={selectedViewId === ""} onclick={deleteSelectedView}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
 
     {#if catalog.stocksLoading && catalog.stockItems.length === 0}
@@ -376,8 +173,8 @@
         </div>
     {:else if catalog.stocksLoaded && catalog.stockItems.length === 0}
         <div class="empty-state" id="stocks-empty">
-            <h2>No stocks match the filter</h2>
-            <p>Try a different search, status, or expiry window.</p>
+            <h2>No packages match the filter</h2>
+            <p>Try a different search or material type.</p>
         </div>
     {:else}
         <div style="overflow-x: auto;">
@@ -395,19 +192,35 @@
                         <th>Received</th>
                         <th>Expires</th>
                         <th>Status</th>
+                        {#if canEdit}
+                            <th style="text-align: right;">Actions</th>
+                        {/if}
                     </tr>
                 </thead>
                 <tbody>
                     {#each catalog.stockItems as stock (stock.id)}
+                        <!-- Whole-row clicks are a pointer shortcut; the name button provides keyboard access. -->
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <tr
-                            role="button"
-                            tabindex="0"
+                            data-stock-id={stock.id}
                             style="cursor: pointer;"
                             onclick={() => openMaterialDetailModal(stock.materialId)}
-                            onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openMaterialDetailModal(stock.materialId)}
                         >
-                            <td><strong>{stock.name}</strong></td>
-                            <td><span class="chem-pos">{labels[stock.type] ?? stock.type}</span></td>
+                            <td>
+                                <button
+                                    type="button"
+                                    aria-label={`View ${stock.name} details`}
+                                    title="View details"
+                                    style="background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;"
+                                    onclick={(event) => {
+                                        event.stopPropagation();
+                                        openMaterialDetailModal(stock.materialId);
+                                    }}
+                                >
+                                    <strong>{stock.name}</strong>
+                                </button>
+                            </td>
+                            <td><span class={`chem-pos ${materialTypeColorClass(stock.type)}`}>{labels[stock.type] ?? stock.type}</span></td>
                             <td class="stocks-mono">{stock.quantity ?? "—"}{stock.unit ? ` ${stock.unit}` : ""}</td>
                             {#each activeTypeFields as field (field.key)}
                                 <td class={field.dataType === "number" || field.dataType === "sequence" ? "stocks-mono" : ""}>{formatStockAttribute(field, stock.attributes[field.key])}</td>
@@ -422,6 +235,23 @@
                             <td class="stocks-mono">{formatExpiry(stock.batch.receivedAt)}</td>
                             <td class="stocks-mono" style={expiryColor(stock.batch.expiresAt) !== "" ? `color: ${expiryColor(stock.batch.expiresAt)};` : ""}>{formatExpiry(stock.batch.expiresAt)}</td>
                             <td><span class={`status-badge ${statusClass(stock.status)}`}>{statusLabel(stock.status)}</span></td>
+                            {#if canEdit}
+                                <td style="text-align: right;">
+                                    <button
+                                        id={`edit-stock-${stock.id}`}
+                                        type="button"
+                                        class="btn-inline"
+                                        title={`Edit ${stock.name}`}
+                                        aria-label={`Edit ${stock.name}`}
+                                        onclick={(event) => {
+                                            event.stopPropagation();
+                                            onStockEdit(stock.id);
+                                        }}
+                                    >
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </button>
+                                </td>
+                            {/if}
                         </tr>
                     {/each}
                 </tbody>
@@ -437,4 +267,3 @@
             </button>
         </div>
     {/if}
-{/if}

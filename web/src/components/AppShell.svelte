@@ -109,16 +109,54 @@
     history: "History",
     minigames: "Mini-games",
   };
-  const topbarLabel = $derived.by<string>(() => {
+  interface TopbarCrumb {
+    label: string;
+    href?: string;
+  }
+
+  function containersHash(roomId: string | null | undefined): string | undefined {
+    return roomId ? `#containers/${encodeURIComponent(roomId)}` : undefined;
+  }
+
+  function detailHash(
+    roomId: string | null | undefined,
+    containerId: string | null | undefined,
+    rack: string | null = null,
+    box: string | null = null,
+  ): string | undefined {
+    if (!roomId || !containerId) return undefined;
+    let hash = `#detail/${encodeURIComponent(roomId)}/${encodeURIComponent(containerId)}`;
+    if (rack) {
+      hash += `/rack/${encodeURIComponent(rack)}`;
+      if (box) hash += `/box/${encodeURIComponent(box)}`;
+    }
+    return hash;
+  }
+
+  const topbarCrumbs = $derived.by<TopbarCrumb[]>(() => {
     if (route.view === "containers") {
-      return `Chemicals / ${containersRoom?.name ?? "—"}`;
+      return [
+        { label: "Chemicals", href: "#rooms" },
+        { label: containersRoom?.name ?? "—", href: containersHash(route.roomId) },
+      ];
     }
     if (route.view === "detail") {
+      const crumbs: TopbarCrumb[] = [{ label: "Chemicals", href: "#rooms" }];
       const roomName = detailRoom?.name ?? containersRoom?.name ?? "—";
       const contName = detailCont?.name ?? "—";
-      return roomName === contName ? `Chemicals / ${roomName}` : `Chemicals / ${roomName} / ${contName}`;
+      const currentDetailHash = detailHash(route.roomId, route.containerId, route.rack, route.box);
+      const isRootFreezer = (inventory.tree?.deepFreezers ?? []).some((freezer) => freezer.id === route.roomId);
+      if (roomName === contName) {
+        crumbs.push({ label: roomName, href: currentDetailHash });
+      } else {
+        crumbs.push({ label: roomName, href: isRootFreezer ? currentDetailHash : containersHash(route.roomId) });
+        crumbs.push({ label: contName, href: currentDetailHash });
+      }
+      return crumbs;
     }
-    return TOPBAR_LABELS[route.view] ?? "Dashboard";
+    const label = TOPBAR_LABELS[route.view] ?? "Dashboard";
+    const href = TOPBAR_LABELS[route.view] === undefined ? "#dashboard" : route.view === "rooms" ? "#rooms" : `#${route.view}`;
+    return [{ label, href }];
   });
 
   $effect(() => {
@@ -531,7 +569,17 @@
     <main id="app-main">
         {#if design === "bauhaus"}
             <div class="topbar" id="topbar">
-                <p class="topbar-crumb" id="topbar-crumb">LABHAUS / <span class="topbar-view">{design === "bauhaus" ? stripEmoji(topbarLabel) : topbarLabel}</span></p>
+                <nav class="topbar-crumb" id="topbar-crumb" aria-label="Breadcrumb">
+                    <a class="topbar-link topbar-brand" href="#dashboard">LABHAUS</a>
+                    {#each topbarCrumbs as crumb, i (i)}
+                        <span class="topbar-separator" aria-hidden="true">/</span>
+                        {#if crumb.href !== undefined}
+                            <a class="topbar-link topbar-view" href={crumb.href} aria-current={i === topbarCrumbs.length - 1 ? "page" : undefined}>{stripEmoji(crumb.label)}</a>
+                        {:else}
+                            <span class="topbar-view" aria-current={i === topbarCrumbs.length - 1 ? "page" : undefined}>{stripEmoji(crumb.label)}</span>
+                        {/if}
+                    {/each}
+                </nav>
             </div>
         {/if}
         <!-- Dashboard View (Bauhaus home) -->
@@ -611,10 +659,10 @@
             <AssetsView bind:searchQuery={assetSearch} />
         </section>
 
-        <!-- Packages & Chemicals View -->
+        <!-- Packages View -->
         <section id="view-catalog" class="view" class:active={route.view === "catalog"}>
             <div class="view-header">
-                <div><h1>Packages &amp; chemicals</h1><p class="view-subtitle">{catalog.loaded ? `${catalog.total} items · ${catalogTypeLabel}` : "What's in the lab, and where it sits"}</p></div>
+                <div><h1>Packages</h1><p class="view-subtitle">{catalog.stocksLoaded ? `${catalog.stocksTotal} packages · ${catalogTypeLabel}` : "What's in the lab, and where it sits"}</p></div>
             </div>
             <CatalogView />
         </section>

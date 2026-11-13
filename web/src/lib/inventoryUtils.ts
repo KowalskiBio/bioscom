@@ -1,5 +1,21 @@
 import type { Chemical, Container, Room, Shelf } from "@bioscom/shared";
 
+export function materialTypeColorClass(type: string | null | undefined): string {
+  switch (type) {
+    case "chemical":
+    case "reagent":
+    case "antibody":
+    case "primer":
+    case "solution":
+    case "biological_stock":
+      return `material-type-${type}`;
+    case "other":
+      return "material-type-other";
+    default:
+      return "material-type-other";
+  }
+}
+
 export function computePositions(cont: Container): Record<string, string> {
   const map: Record<string, string> = {};
   for (const sh of cont.shelves ?? []) {

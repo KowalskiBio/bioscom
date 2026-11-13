@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { Chemical, Container, Room, Shelf } from "@bioscom/shared";
-  import { materialTypeLabels } from "@bioscom/shared";
+  import { materialTypeLabels, resolveRackGrid, resolveRackShelves, resolveRackShelfIndex } from "@bioscom/shared";
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
   import { session } from "../../lib/stores/session.svelte";
@@ -14,6 +15,7 @@
     highlightHtml,
     countChems,
     stripEmoji,
+    materialTypeColorClass,
   } from "../../lib/inventoryUtils";
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
@@ -22,6 +24,8 @@
     opAdjustQty,
     opDeleteChemical,
     opDeleteShelf,
+    opMoveDeepFreezerRack,
+    opMoveDeepFreezerBox,
     roleCanWrite,
   } from "../../lib/ops";
   import {
@@ -30,6 +34,8 @@
   openAddBoxForm,
   openAddDeepFreezerBoxForm,
   openAddDeepFreezerRackForm,
+  openDeepFreezerGridSettings,
+  openDeepFreezerShelfSettings,
   openAddShelfForm,
     openRenameShelfForm,
     openChangeBoxColorForm,
@@ -39,6 +45,12 @@
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
+
+  interface RackBoxEntry {
+    shelf: Shelf;
+    boxName: string;
+    shelfIndex: number | null;
+  }
 
   let {
     searchQuery = $bindable(""),
@@ -62,17 +74,50 @@
   let openShelves = $state<Set<string>>(new Set());
   let selectedRack = $state<string | null>(null);
   let selectedBox = $state<string | null>(null);
+  let selectedBoxShelfId = $state<string | null>(null);
+  let draggedRack = $state<string | null>(null);
+  let dragOverSlot = $state<number | null>(null);
+  let draggedBox = $state<RackBoxEntry | null>(null);
+  let dragOverShelfIndex = $state<number | null>(null);
 
   $effect(() => {
     if (route.view === "detail" && route.rack !== undefined) {
       selectedRack = route.rack;
       selectedBox = route.box ?? null;
+      if (selectedBox === null) {
+        selectedBoxShelfId = null;
+      } else if (selectedBoxShelfId !== null) {
+        const selected = shelves.find((shelf) => shelf.id === selectedBoxShelfId);
+        if (selected === undefined) {
+          selectedBoxShelfId = null;
+        } else {
+          const parsed = parseDeepFreezerShelf(selected);
+          if (parsed.rack !== selectedRack || parsed.box !== selectedBox) selectedBoxShelfId = null;
+        }
+      }
     }
+  });
+
+  const DEFAULT_DOCUMENT_TITLE = "BioSCom – Chemical Inventory";
+  onDestroy(() => {
+    document.title = DEFAULT_DOCUMENT_TITLE;
+  });
+  $effect(() => {
+    const name = route.view === "detail" && cont?.type === "deepfreezer" ? cont.name.trim() : "";
+    const description = name !== "" ? (cont?.description ?? "").trim() : "";
+    document.title = name === "" ? DEFAULT_DOCUMENT_TITLE : description === "" ? name : `${name} — ${description}`;
+    return () => {
+      document.title = DEFAULT_DOCUMENT_TITLE;
+    };
   });
 
   const q = $derived(searchQuery.trim().toLowerCase());
   const posMap = $derived(cont !== undefined ? computePositions(cont) : {});
   const shelves = $derived(cont?.shelves ?? []);
+  const rackGrid = $derived(resolveRackGrid(cont ?? {}));
+  const rackSlotIndexes = $derived(Array.from({ length: rackGrid.capacity }, (_, i) => i));
+  const rackShelfCount = $derived(resolveRackShelves(cont ?? {}));
+  const rackShelfIndexes = $derived(Array.from({ length: rackShelfCount }, (_, i) => i + 1));
   const canManage = $derived(isReader === false);
 
   const racks = $derived.by(() => {
@@ -85,16 +130,48 @@
     return map;
   });
 
-  const rackKeys = $derived(
-    Object.keys(racks).sort((a, b) => {
+  const rackKeys = $derived.by<string[]>(() => {
+    const names = new Set([...Object.keys(racks), ...Object.keys(cont?.rackPositions ?? {})]);
+    return [...names].sort((a, b) => {
       const numA = parseInt(a, 10);
       const numB = parseInt(b, 10);
       if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
         return numA - numB;
       }
       return a.localeCompare(b);
-    }),
+    });
+  });
+
+  const selectedRackBoxes = $derived.by<RackBoxEntry[]>(() => {
+    if (selectedRack === null) return [];
+    const entries: RackBoxEntry[] = [];
+    for (const shelf of shelves) {
+      const parsed = parseDeepFreezerShelf(shelf);
+      if (parsed.rack !== selectedRack) continue;
+      entries.push({
+        shelf,
+        boxName: parsed.box,
+        shelfIndex: resolveRackShelfIndex({
+          rackShelf: shelf.rackShelf,
+          boxName: shelf.boxName ?? parsed.box,
+        }),
+      });
+    }
+    return entries;
+  });
+  const legacyRackBoxes = $derived(
+    selectedRackBoxes.filter(
+      (entry) => entry.shelfIndex === null || entry.shelfIndex < 1 || entry.shelfIndex > rackShelfCount,
+    ),
   );
+
+  function shelvesForRack(rackName: string): Shelf[] {
+    return shelves.filter((shelf) => parseDeepFreezerShelf(shelf).rack === rackName);
+  }
+
+  function boxesAtShelf(index: number): RackBoxEntry[] {
+    return selectedRackBoxes.filter((entry) => entry.shelfIndex === index);
+  }
 
   function toggleShelf(sid: string): void {
     const next = new Set(openShelves);
@@ -109,18 +186,184 @@
   function selectRack(rack: string): void {
     selectedRack = rack;
     selectedBox = null;
+    selectedBoxShelfId = null;
     navigateTo("detail", { roomId, containerId, rack, box: null });
   }
 
-  function selectBox(box: string): void {
+  function selectBox(box: string, shelfId?: string): void {
     selectedBox = box;
+    selectedBoxShelfId = shelfId ?? null;
     navigateTo("detail", { roomId, containerId, rack: selectedRack, box });
   }
 
   function resetSelection(): void {
     selectedRack = null;
     selectedBox = null;
+    selectedBoxShelfId = null;
     navigateTo("detail", { roomId, containerId });
+  }
+
+  function rackNameAtSlot(slot: number): string | undefined {
+    return Object.entries(cont?.rackPositions ?? {}).find(([, position]) => position === slot)?.[0];
+  }
+
+  function canDropDraggedRack(slot: number): boolean {
+    if (draggedRack === null || slot < 0 || slot >= rackGrid.capacity) return false;
+    const occupant = rackNameAtSlot(slot);
+    return occupant === undefined || occupant === draggedRack;
+  }
+
+  function onRackDragStart(event: DragEvent, rackName: string): void {
+    if (isReader || cont === undefined || cont.type !== "deepfreezer") {
+      event.preventDefault();
+      return;
+    }
+    draggedRack = rackName;
+    if (event.dataTransfer !== null) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-bioscom-rack", rackName);
+    }
+  }
+
+  function onRackDragEnd(): void {
+    draggedRack = null;
+    dragOverSlot = null;
+  }
+
+  function onRackDragOver(event: DragEvent, slot: number): void {
+    if (!canDropDraggedRack(slot)) {
+      dragOverSlot = null;
+      if (draggedRack !== null && event.dataTransfer !== null) event.dataTransfer.dropEffect = "none";
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "move";
+    dragOverSlot = slot;
+  }
+
+  function onRackDragLeave(slot: number): void {
+    if (dragOverSlot === slot) dragOverSlot = null;
+  }
+
+  async function moveRackToSlot(rackName: string, slot: number): Promise<boolean> {
+    const freezerId = cont?.id;
+    if (isReader || freezerId === undefined || slot < 0 || slot >= rackGrid.capacity) return false;
+    const occupant = rackNameAtSlot(slot);
+    if (occupant !== undefined && occupant !== rackName) {
+      showToast(`Slot ${slot + 1} is already occupied by Rack ${occupant}`, "error");
+      return false;
+    }
+    if (cont?.rackPositions?.[rackName] === slot) return true;
+    if (await opMoveDeepFreezerRack(freezerId, rackName, slot)) {
+      showToast(`Rack "${rackName}" moved to slot ${slot + 1}`);
+      return true;
+    }
+    return false;
+  }
+
+  async function onRackDrop(event: DragEvent, slot: number): Promise<void> {
+    const rackName = draggedRack;
+    if (rackName === null) return;
+    event.preventDefault();
+    draggedRack = null;
+    dragOverSlot = null;
+    await moveRackToSlot(rackName, slot);
+  }
+
+  async function onRackKeydown(event: KeyboardEvent, rackName: string): Promise<void> {
+    if (!event.ctrlKey || isReader) return;
+    const currentSlot = cont?.rackPositions?.[rackName];
+    if (currentSlot === undefined || !Number.isInteger(currentSlot)) return;
+    let delta = 0;
+    if (event.key === "ArrowLeft") delta = -1;
+    else if (event.key === "ArrowRight") delta = 1;
+    else if (event.key === "ArrowUp") delta = -rackGrid.columns;
+    else if (event.key === "ArrowDown") delta = rackGrid.columns;
+    else return;
+    const target = currentSlot + delta;
+    if (target < 0 || target >= rackGrid.capacity) return;
+    event.preventDefault();
+    await moveRackToSlot(rackName, target);
+  }
+
+  function canDropDraggedBox(index: number): boolean {
+    if (draggedBox === null || index < 1 || index > rackShelfCount) return false;
+    return boxesAtShelf(index).every((entry) => entry.shelf.id === draggedBox!.shelf.id);
+  }
+
+  function onBoxDragStart(event: DragEvent, entry: RackBoxEntry): void {
+    if (isReader || cont === undefined || cont.type !== "deepfreezer") {
+      event.preventDefault();
+      return;
+    }
+    draggedBox = entry;
+    if (event.dataTransfer !== null) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-bioscom-box", entry.shelf.id);
+    }
+  }
+
+  function onBoxDragEnd(): void {
+    draggedBox = null;
+    dragOverShelfIndex = null;
+  }
+
+  function onBoxDragOver(event: DragEvent, index: number): void {
+    if (draggedBox === null) return;
+    if (!canDropDraggedBox(index)) {
+      dragOverShelfIndex = null;
+      if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "none";
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "move";
+    dragOverShelfIndex = index;
+  }
+
+  function onBoxDragLeave(index: number): void {
+    if (dragOverShelfIndex === index) dragOverShelfIndex = null;
+  }
+
+  async function moveBoxToShelf(boxId: string, index: number): Promise<boolean> {
+    const freezerId = cont?.id;
+    if (isReader || freezerId === undefined || index < 1 || index > rackShelfCount) return false;
+    const occupants = boxesAtShelf(index).filter((entry) => entry.shelf.id !== boxId);
+    if (occupants.length > 0) {
+      showToast(`Shelf position ${index} is already occupied`, "error");
+      return false;
+    }
+    const moving = selectedRackBoxes.find((entry) => entry.shelf.id === boxId);
+    if (moving?.shelfIndex === index) return true;
+    if (await opMoveDeepFreezerBox(freezerId, boxId, index)) {
+      showToast(`Box "${moving?.boxName ?? boxId}" moved to shelf ${index}`);
+      return true;
+    }
+    return false;
+  }
+
+  async function onBoxDrop(event: DragEvent, index: number): Promise<void> {
+    const source = draggedBox;
+    if (source === null) return;
+    event.preventDefault();
+    const allowed = canDropDraggedBox(index);
+    draggedBox = null;
+    dragOverShelfIndex = null;
+    if (!allowed) {
+      showToast(`Shelf position ${index} is already occupied`, "error");
+      return;
+    }
+    await moveBoxToShelf(source.shelf.id, index);
+  }
+
+  async function onBoxKeydown(event: KeyboardEvent, entry: RackBoxEntry): Promise<void> {
+    if (!event.ctrlKey || isReader || entry.shelfIndex === null) return;
+    let target = 0;
+    if (event.key === "ArrowUp") target = entry.shelfIndex - 1;
+    else if (event.key === "ArrowDown") target = entry.shelfIndex + 1;
+    else return;
+    if (target < 1 || target > rackShelfCount) return;
+    event.preventDefault();
+    await moveBoxToShelf(entry.shelf.id, target);
   }
 
   async function adjustQty(shelfId: string, chemId: string, delta: number): Promise<void> {
@@ -238,12 +481,48 @@
   );
 </script>
 
+{#snippet rackBoxCard(entry: RackBoxEntry)}
+  {@const activeShelf = entry.shelf}
+  {@const sampleCount = (activeShelf.chemicals ?? []).length}
+  {@const boxColor = activeShelf.color ?? "#3b82f6"}
+  <div
+    class={`deepfreezer-card box-card ${activeShelf.color ? "has-custom-color" : ""}`}
+    style={activeShelf.color ? `--custom-bg: ${boxColor}2d; --custom-border: ${boxColor}; --custom-bg-hover: ${boxColor}4d;` : ""}
+    data-box-id={activeShelf.id}
+    draggable={!isReader}
+    role="group"
+    aria-label={`Box ${entry.boxName}`}
+    ondragstart={(event) => onBoxDragStart(event, entry)}
+    ondragend={onBoxDragEnd}
+  >
+    <button
+      class="rack-card-open"
+      type="button"
+      title={`Open Box ${entry.boxName} · Ctrl+Arrow Up/Down to change shelf`}
+      aria-label={`Open Box ${entry.boxName}. Ctrl+Arrow Up/Down changes shelf position.`}
+      onclick={() => selectBox(entry.boxName, activeShelf.id)}
+      onkeydown={(event) => onBoxKeydown(event, entry)}
+    >
+      <span class="deepfreezer-card-icon" style={`color: ${boxColor};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span>
+      <span class="deepfreezer-card-title">Box {design === "bauhaus" ? stripEmoji(entry.boxName) : entry.boxName}</span>
+      <span class="deepfreezer-card-subtitle">{sampleCount} samples</span>
+    </button>
+    {#if !isReader}
+      <div class="deepfreezer-card-actions" role="group" aria-label={`Box ${entry.boxName} actions`}>
+        <button class="card-action-btn" title="Rename Box" onclick={() => openRenameShelfForm(room!, cont!, activeShelf.id, activeShelf.name)}>{design === "bauhaus" ? "R" : "✏️"}</button>
+        <button class="card-action-btn" title="Change Color" onclick={() => openChangeBoxColorForm(room!, cont!, activeShelf.id)}>{design === "bauhaus" ? "C" : "🎨"}</button>
+        <button class="card-action-btn danger" title="Delete Box" onclick={() => deleteShelf(activeShelf)}>{design === "bauhaus" ? "D" : "🗑️"}</button>
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet directChemRow(ch: Chemical, opts: { containerId: string; canEdit: boolean })}
   {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
   {@const barcode = (ch.barcode ?? "").trim()}
   <tr class="fade-in" data-chemid={ch.id}>
     <td><span class="chem-pos">{ch.customPosition ?? ch.position ?? "—"}</span></td>
-    <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
+    <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
     <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
     <td>
       <div class="qty-adjuster">
@@ -353,10 +632,10 @@
                 {@const barcode = (ch.barcode ?? "").trim()}
                 <tr class="fade-in" data-chemid={ch.id}>
                   <td>
-                    <button class="deepfreezer-nav-btn" title="Go to Box" style="margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-weight: 600;" onclick={() => { selectedRack = match.rack; selectedBox = match.box; navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box }); }}>Rack {design === "bauhaus" ? stripEmoji(match.rack) : match.rack} / Box {design === "bauhaus" ? stripEmoji(match.box) : match.box}</button>
+                    <button class="deepfreezer-nav-btn" title="Go to Box" style="margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-weight: 600;" onclick={() => { selectedRack = match.rack; selectedBox = match.box; selectedBoxShelfId = match.shelfId; navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box }); }}>Rack {design === "bauhaus" ? stripEmoji(match.rack) : match.rack} / Box {design === "bauhaus" ? stripEmoji(match.box) : match.box}</button>
                   </td>
                   <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                  <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
+                  <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
                   <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
                   <td>
                     <div class="qty-adjuster">
@@ -392,30 +671,70 @@
               <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Rack</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerRackForm(cont)}>{design === "bauhaus" ? "+ Add Rack" : "➕ Add Rack"}</button>
+              <div class="deepfreezer-rack-actions">
+                <button id="btn-rack-grid-settings" class="btn-secondary" type="button" onclick={() => openDeepFreezerGridSettings(cont)}>Grid settings</button>
+                <button id="btn-add-rack" class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerRackForm(cont)}>{design === "bauhaus" ? "+ Add Rack" : "➕ Add Rack"}</button>
+              </div>
             {/if}
           </div>
         </div>
-        <div class="deepfreezer-grid-8x4">
-          {#each Array.from({ length: 32 }, (_, i) => i) as i (i)}
-            {@const rk = rackKeys.find((name) => racks[name] !== undefined)}
-            {@const rackAtSlot = Object.entries(cont.rackPositions ?? {}).find(([, slot]) => slot === i)?.[0]}
-            {#if rackAtSlot !== undefined && rackKeys.includes(rackAtSlot)}
-              {@const boxesCount = Object.keys(racks[rackAtSlot] ?? {}).length}
-              {@const totalItems = Object.values(racks[rackAtSlot] ?? {}).reduce((acc, sh) => acc + (sh.chemicals ?? []).length, 0)}
-              <div class="deepfreezer-grid-cell" data-slot={i}>
-                <div class="deepfreezer-card rack-card" onclick={() => selectRack(rackAtSlot!)}>
-                  <div class="deepfreezer-card-icon">{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}🗄️{/if}</div>
-                  <div class="deepfreezer-card-title">Rack {design === "bauhaus" ? stripEmoji(rackAtSlot) : rackAtSlot}</div>
-                  <div class="deepfreezer-card-subtitle">{boxesCount} Boxes ({totalItems} samples)</div>
+        <div class="deepfreezer-rack-grid-scroll">
+          <div class="deepfreezer-grid-8x4" style={`--rack-columns: ${rackGrid.columns}; min-width: ${Math.max(320, rackGrid.columns * 112)}px;`}>
+            {#each rackSlotIndexes as i (i)}
+              {@const rackAtSlot = rackNameAtSlot(i)}
+              {#if rackAtSlot !== undefined && rackKeys.includes(rackAtSlot)}
+                {@const boxesInRack = shelvesForRack(rackAtSlot)}
+                {@const boxesCount = boxesInRack.length}
+                {@const totalItems = boxesInRack.reduce((acc, sh) => acc + (sh.chemicals ?? []).length, 0)}
+                <div
+                  class="deepfreezer-grid-cell"
+                  class:drag-over={dragOverSlot === i}
+                  data-slot={i}
+                  role="group"
+                  aria-label={`Slot ${i + 1}`}
+                  ondragover={(event) => onRackDragOver(event, i)}
+                  ondragleave={() => onRackDragLeave(i)}
+                  ondrop={(event) => void onRackDrop(event, i)}
+                >
+                  <div
+                    class="deepfreezer-card rack-card"
+                    data-rack-name={rackAtSlot}
+                    draggable={!isReader}
+                    role="group"
+                    aria-label={`Rack ${rackAtSlot}`}
+                    ondragstart={(event) => onRackDragStart(event, rackAtSlot)}
+                    ondragend={onRackDragEnd}
+                  >
+                    <button
+                      class="rack-card-open"
+                      type="button"
+                      title={`Open Rack ${rackAtSlot} · Ctrl+Arrow keys to relocate`}
+                      aria-label={`Open Rack ${rackAtSlot}. Ctrl+Arrow keys relocate.`}
+                      onclick={() => selectRack(rackAtSlot!)}
+                      onkeydown={(event) => onRackKeydown(event, rackAtSlot)}
+                    >
+                      <span class="deepfreezer-card-icon">{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}🗄️{/if}</span>
+                      <span class="deepfreezer-card-title">Rack {design === "bauhaus" ? stripEmoji(rackAtSlot) : rackAtSlot}</span>
+                      <span class="deepfreezer-card-subtitle">{boxesCount === 0 ? "No boxes yet" : `${boxesCount} Boxes (${totalItems} samples)`}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            {:else}
-              <div class="deepfreezer-grid-cell" data-slot={i}>
-                <div class="deepfreezer-grid-empty-slot">Slot {i + 1}</div>
-              </div>
-            {/if}
-          {/each}
+              {:else}
+                <div
+                  class="deepfreezer-grid-cell"
+                  class:drag-over={dragOverSlot === i}
+                  data-slot={i}
+                  role="group"
+                  aria-label={`Slot ${i + 1}`}
+                  ondragover={(event) => onRackDragOver(event, i)}
+                  ondragleave={() => onRackDragLeave(i)}
+                  ondrop={(event) => void onRackDrop(event, i)}
+                >
+                  <div class="deepfreezer-grid-empty-slot">Slot {i + 1}</div>
+                </div>
+              {/if}
+            {/each}
+          </div>
         </div>
       {:else if selectedBox === null}
         <div class="deepfreezer-nav">
@@ -426,38 +745,59 @@
               <span class="deepfreezer-nav-text">Rack {design === "bauhaus" ? stripEmoji(selectedRack) : selectedRack}</span>
               <button class="deepfreezer-nav-btn" onclick={() => resetSelection()}>Change Rack</button>
               <span class="deepfreezer-nav-separator">/</span>
-              <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Box</span>
+              <span class="deepfreezer-nav-text" style="color: var(--text-muted);">Select a Shelf</span>
             </div>
             {#if !isReader}
-              <button class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerBoxForm(cont, selectedRack!)}>{design === "bauhaus" ? "+ Add Box" : "➕ Add Box"}</button>
+              <div class="deepfreezer-rack-actions">
+                <button id="btn-rack-shelf-settings" class="btn-secondary" type="button" onclick={() => openDeepFreezerShelfSettings(cont)}>Shelf settings ({rackShelfCount})</button>
+                <button id="btn-add-box" class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0;" onclick={() => openAddDeepFreezerBoxForm(cont, selectedRack!)}>{design === "bauhaus" ? "+ Add Box" : "➕ Add Box"}</button>
+              </div>
             {/if}
           </div>
         </div>
-        <div class="deepfreezer-boxes-column">
-          {#each Object.keys(racks[selectedRack] ?? {}).sort((a, b) => { const numA = parseInt(a, 10); const numB = parseInt(b, 10); if (!Number.isNaN(numA) && !Number.isNaN(numB)) return numA - numB; return a.localeCompare(b); }) as bk (bk)}
-            {@const activeShelf = racks[selectedRack]![bk]!}
-            {@const sampleCount = (activeShelf.chemicals ?? []).length}
-            {@const boxColor = activeShelf.color ?? "#3b82f6"}
+        <div class="deepfreezer-boxes-column deepfreezer-shelf-list">
+          {#if selectedRackBoxes.length === 0}
+            <div class="shelf-empty">No boxes in this rack yet. Add one, or drag a legacy box into a free shelf.</div>
+          {/if}
+          {#each rackShelfIndexes as index (index)}
+            {@const boxes = boxesAtShelf(index)}
             <div
-              class={`deepfreezer-card box-card ${activeShelf.color ? "has-custom-color" : ""}`}
-              style={activeShelf.color ? `--custom-bg: ${boxColor}2d; --custom-border: ${boxColor}; --custom-bg-hover: ${boxColor}4d;` : ""}
-              onclick={() => selectBox(bk)}
+              class="deepfreezer-shelf-position"
+              class:drag-over={dragOverShelfIndex === index}
+              data-shelf-index={index}
+              role="group"
+              aria-label={`Shelf position ${index}${boxes.length === 0 ? ", available" : ", occupied"}`}
+              ondragover={(event) => onBoxDragOver(event, index)}
+              ondragleave={() => onBoxDragLeave(index)}
+              ondrop={(event) => void onBoxDrop(event, index)}
             >
-              <div class="deepfreezer-card-icon" style={`color: ${boxColor};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</div>
-              <div class="deepfreezer-card-title">Box {design === "bauhaus" ? stripEmoji(bk) : bk}</div>
-              <div class="deepfreezer-card-subtitle">{sampleCount} samples</div>
-              {#if !isReader}
-                <div class="deepfreezer-card-actions" onclick={(e) => e.stopPropagation()}>
-                  <button class="card-action-btn" title="Rename Box" onclick={() => openRenameShelfForm(room, cont, activeShelf.id, activeShelf.name)}>{design === "bauhaus" ? "R" : "✏️"}</button>
-                  <button class="card-action-btn" title="Change Color" onclick={() => openChangeBoxColorForm(room, cont, activeShelf.id)}>{design === "bauhaus" ? "C" : "🎨"}</button>
-                  <button class="card-action-btn danger" title="Delete Box" onclick={() => deleteShelf(activeShelf)}>{design === "bauhaus" ? "D" : "🗑️"}</button>
-                </div>
-              {/if}
+              <div class="deepfreezer-shelf-position-label">Shelf {index}</div>
+              <div class="deepfreezer-shelf-position-content">
+                {#if boxes.length === 0}
+                  <div class="deepfreezer-shelf-available">Available</div>
+                {:else}
+                  {#each boxes as entry (entry.shelf.id)}
+                    {@render rackBoxCard(entry)}
+                  {/each}
+                {/if}
+              </div>
             </div>
           {/each}
         </div>
+        {#if legacyRackBoxes.length > 0}
+          <section class="deepfreezer-legacy-boxes deepfreezer-boxes-column" aria-label="Legacy boxes without a current shelf position">
+            <h3 class="detail-section-title">Legacy boxes without a current shelf</h3>
+            <p class="form-hint">Custom names are not renumbered. Drag a box into any free shelf above.</p>
+            {#each legacyRackBoxes as entry (entry.shelf.id)}
+              <div class="deepfreezer-legacy-item">
+                <div class="deepfreezer-legacy-note">{entry.shelfIndex === null ? "No shelf assigned" : `Stored shelf ${entry.shelfIndex} is outside current settings`}</div>
+                {@render rackBoxCard(entry)}
+              </div>
+            {/each}
+          </section>
+        {/if}
       {:else}
-        {@const activeShelf = racks[selectedRack]?.[selectedBox]}
+        {@const activeShelf = selectedBoxShelfId !== null ? shelves.find((shelf) => shelf.id === selectedBoxShelfId) : racks[selectedRack]?.[selectedBox]}
         {#if activeShelf !== undefined}
           <div class="deepfreezer-explorer">
             <div class="deepfreezer-nav">
@@ -494,7 +834,7 @@
                         {@const barcode = (ch.barcode ?? "").trim()}
                         <tr class="fade-in" data-chemid={ch.id}>
                           <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                          <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
+                          <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
                           <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
                           <td>
                             <div class="qty-adjuster">
@@ -601,7 +941,7 @@
                         {#each boxChems as ch (ch.id)}
                           {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                           {@const barcode = (ch.barcode ?? "").trim()}
-                          <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
+                          <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                         {/each}
                       </tbody></table>
                     {:else}
@@ -619,7 +959,7 @@
                 {#each chems as ch (ch.id)}
                   {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                   {@const barcode = (ch.barcode ?? "").trim()}
-                  <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class="status-badge" style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
+                  <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                 {/each}
               </tbody></table>
             {:else if boxes.length === 0}

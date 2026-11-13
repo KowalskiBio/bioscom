@@ -1,5 +1,16 @@
 import type Database from "better-sqlite3";
-import { relocateDeepFreezers, type Chemical, type Container, type InventoryTree, type Room, type Shelf } from "@bioscom/shared";
+import {
+  DEFAULT_RACK_COLUMNS,
+  DEFAULT_RACK_ROWS,
+  relocateDeepFreezers,
+  resolveRackShelfIndex,
+  resolveRackShelves,
+  type Chemical,
+  type Container,
+  type InventoryTree,
+  type Room,
+  type Shelf,
+} from "@bioscom/shared";
 import { loadDoc } from "./doc.js";
 
 interface LocationRow {
@@ -20,6 +31,10 @@ interface LocationRow {
   range_end: string | null;
   owner_group_id: string | null;
   owner_group_name: string | null;
+  rack_rows: number | null;
+  rack_columns: number | null;
+  rack_shelves: number | null;
+  shelf_index: number | null;
   rack_positions: string | null;
   sort_index: number | null;
 }
@@ -138,6 +153,8 @@ function shelfFromRow(sh: LocationRow, chemicals: StockJoinRow[]): Shelf {
   if (sh.parent_shelf_id !== null) shelf.parentShelfId = sh.parent_shelf_id;
   if (sh.box_name !== null) shelf.boxName = sh.box_name;
   if (sh.rack_name !== null) shelf.rackName = sh.rack_name;
+  const rackShelf = resolveRackShelfIndex({ rackShelf: sh.shelf_index, boxName: sh.box_name });
+  if (rackShelf !== null) shelf.rackShelf = rackShelf;
   if (sh.is_range_shelf === 1) shelf.isRangeShelf = true;
   if (sh.range_start !== null) shelf.rangeStart = sh.range_start;
   if (sh.range_end !== null) shelf.rangeEnd = sh.range_end;
@@ -193,6 +210,9 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
         }
         if (cont.description !== null) container.description = cont.description;
         if (cont.emoji !== null) container.emoji = cont.emoji;
+        if (cont.rack_rows !== null) container.rackRows = cont.rack_rows;
+        if (cont.rack_columns !== null) container.rackColumns = cont.rack_columns;
+        container.rackShelves = resolveRackShelves({ rackShelves: cont.rack_shelves });
         if (cont.rack_positions !== null) {
           container.rackPositions = JSON.parse(cont.rack_positions) as Record<string, number>;
         }
@@ -229,6 +249,9 @@ export function assembleInventoryFromRelational(db: Database.Database, groupId: 
       };
       if (cont.description !== null) container.description = cont.description;
       if (cont.emoji !== null) container.emoji = cont.emoji;
+      if (cont.rack_rows !== null) container.rackRows = cont.rack_rows;
+      if (cont.rack_columns !== null) container.rackColumns = cont.rack_columns;
+      container.rackShelves = resolveRackShelves({ rackShelves: cont.rack_shelves });
       if (cont.rack_positions !== null) container.rackPositions = JSON.parse(cont.rack_positions) as Record<string, number>;
       if (cont.owner_group_id !== null) container.ownerGroupId = cont.owner_group_id;
       if (cont.owner_group_name !== null) container.ownerGroupName = cont.owner_group_name;
@@ -289,6 +312,9 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
         sharedWithGroupIds: [...(cont.sharedWithGroupIds ?? [])].sort(),
         ownerGroupId: cont.ownerGroupId ?? null,
         ownerGroupName: cont.ownerGroupName ?? null,
+        rackRows: cont.rackRows ?? DEFAULT_RACK_ROWS,
+        rackColumns: cont.rackColumns ?? DEFAULT_RACK_COLUMNS,
+        rackShelves: resolveRackShelves(cont),
         rackPositions: cont.rackPositions ?? null,
         chemicals: (cont.chemicals ?? []).length,
       });
@@ -304,6 +330,7 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
           parentShelfId: shelf.parentShelfId ?? null,
           boxName: shelf.boxName ?? null,
           rackName: shelf.rackName ?? null,
+          rackShelf: resolveRackShelfIndex(shelf),
           isRangeShelf: shelf.isRangeShelf ?? null,
           rangeStart: shelf.rangeStart ?? null,
           rangeEnd: shelf.rangeEnd ?? null,
@@ -324,6 +351,9 @@ function canonicalTree(tree: InventoryTree): Map<string, unknown> {
       sharedWithGroupIds: [...(cont.sharedWithGroupIds ?? [])].sort(),
       ownerGroupId: cont.ownerGroupId ?? null,
       ownerGroupName: cont.ownerGroupName ?? null,
+      rackRows: cont.rackRows ?? DEFAULT_RACK_ROWS,
+      rackColumns: cont.rackColumns ?? DEFAULT_RACK_COLUMNS,
+      rackShelves: resolveRackShelves(cont),
       rackPositions: cont.rackPositions ?? null,
     });
     for (const ch of cont.chemicals ?? []) {
