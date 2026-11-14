@@ -621,7 +621,9 @@
         {#if matching.length === 0}
           <div class="shelf-empty">No results found for "{searchQuery}" in this deep freezer</div>
         {:else}
-          <table class="chemicals-table">
+          <div class="room-chemical-list room-chemical-list--nested">
+            <div class="room-chemical-table-wrap">
+              <table class="chemicals-table">
             <thead>
               <tr><th>Location</th><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr>
             </thead>
@@ -660,7 +662,9 @@
                 </tr>
               {/each}
             </tbody>
-          </table>
+              </table>
+            </div>
+          </div>
         {/if}
       {:else if selectedRack === null}
         <div class="deepfreezer-nav">
@@ -826,7 +830,9 @@
               </div>
               <div class="shelf-body">
                 {#if (activeShelf.chemicals ?? []).length > 0}
-                  <table class="chemicals-table">
+                  <div class="room-chemical-list room-chemical-list--nested">
+                    <div class="room-chemical-table-wrap">
+                      <table class="chemicals-table">
                     <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
                     <tbody>
                       {#each sortChems(activeShelf.chemicals ?? [], posMap) as ch (ch.id)}
@@ -859,7 +865,9 @@
                         </tr>
                       {/each}
                     </tbody>
-                  </table>
+                      </table>
+                    </div>
+                  </div>
                 {:else}
                   <div class="shelf-empty">Empty box</div>
                 {/if}
@@ -879,7 +887,7 @@
         {@const isFridgeOrFreezer = cont.type === "fridge" || isFreezer}
         {@const icon = isFridgeOrFreezer ? (sh.name.startsWith("Door") ? "🚪" : isFreezer ? "🧊" : "❄️") : "📁"}
         {@const typeChip = shelfTypeChip(sh.type)}
-        <div class={`shelf-section ${isOpen ? "open" : ""}`} data-sid={sh.id}>
+        <div class={`shelf-section shelf-section--chemical-list ${isOpen ? "open" : ""}`} data-sid={sh.id}>
           <div class="shelf-header" onclick={() => toggleShelf(sh.id)}>
             <div class="shelf-info">
               <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}{icon}{/if}</span>
@@ -925,7 +933,7 @@
               {#each boxes as box (box.id)}
                 {#if openShelves.has(box.id) || q !== ""}
                   {@const boxChems = sortChems((box.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
-                  <div class="box-chemicals-section" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem; background: rgba(255,255,255,0.015); box-shadow: inset 0 0 10px rgba(0,0,0,0.1);">
+                  <div class="box-chemicals-section room-chemical-list room-chemical-list--nested" style="margin-bottom: 1.25rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">
                       <h4 style="margin: 0; color: var(--text-primary); font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem;">
                         <span style={`color: ${box.color ?? "#3b82f6"};`}>{#if design === "bauhaus"}<span class="glyph glyph-box" aria-hidden="true"></span>{:else}📦{/if}</span>
@@ -937,13 +945,15 @@
                       {/if}
                     </div>
                     {#if boxChems.length > 0}
-                      <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
+                      <div class="room-chemical-table-wrap">
+                        <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
                         {#each boxChems as ch (ch.id)}
                           {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                           {@const barcode = (ch.barcode ?? "").trim()}
                           <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                         {/each}
                       </tbody></table>
+                      </div>
                     {:else}
                       <div class="shelf-empty">{q !== "" ? "No results" : "Empty box"}</div>
                     {/if}
@@ -955,13 +965,17 @@
               {#if boxes.length > 0}
                 <h4 style="margin: 0.75rem 0 0.5rem 0; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Direct Shelf Chemicals</h4>
               {/if}
-              <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
-                {#each chems as ch (ch.id)}
+              <div class="room-chemical-list room-chemical-list--nested">
+                <div class="room-chemical-table-wrap">
+                  <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
+                 {#each chems as ch (ch.id)}
                   {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
                   {@const barcode = (ch.barcode ?? "").trim()}
                   <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
                 {/each}
-              </tbody></table>
+                  </tbody></table>
+                </div>
+              </div>
             {:else if boxes.length === 0}
               <div class="shelf-empty">{q !== "" ? "No results" : "Empty shelf"}</div>
             {/if}

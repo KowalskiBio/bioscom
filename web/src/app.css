@@ -2122,6 +2122,8 @@ a.stat-card:focus-visible { outline-color:var(--dash-accent, var(--accent-blue))
 
 /* Room and container direct chemical lists: package-like rows on a quiet surface. */
 .room-chemical-list {
+    min-width: 0;
+    max-width: 100%;
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
@@ -2135,7 +2137,11 @@ a.stat-card:focus-visible { outline-color:var(--dash-accent, var(--accent-blue))
     padding: 0.75rem 1rem;
 }
 .room-chemical-heading .detail-section-title { margin: 0; }
-.room-chemical-table-wrap { overflow-x: auto; }
+.room-chemical-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
 .room-chemical-list .chemicals-table { min-width: 0; }
 .room-chemical-list .chemicals-table,
 .room-chemical-list .detail-table { background: transparent; }
@@ -2158,6 +2164,9 @@ a.stat-card:focus-visible { outline-color:var(--dash-accent, var(--accent-blue))
     font-size: 0.75rem;
 }
 .room-chemical-list--nested { margin-top: 0.6rem; }
+.room-chemical-list--nested .chemicals-table { min-width: 950px; }
+.shelf-section--chemical-list > .shelf-body { background: var(--bg-card); }
+body[data-design="bauhaus"] .shelf-section--chemical-list > .shelf-body { background: var(--bg-primary); }
 body[data-design="bauhaus"] .room-chemical-list {
     background: var(--bg-primary);
     border: 0;
