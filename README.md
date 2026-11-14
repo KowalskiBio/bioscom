@@ -14,7 +14,7 @@
 
 BioSCom is the inventory system used by the biochemistry labs at the Faculty of Science, Masaryk
 University. It used to run on Google Firebase; since October 2026 it is fully self-hosted on the
-faculty VM at **https://bioscom.ubch.sci.muni.cz** and has no Firebase dependency of any kind:
+faculty VM at **https://lab.ubch.sci.muni.cz** and has no Firebase dependency of any kind:
 no Firebase database, no Firebase authentication, no Firebase hosting.
 
 All existing data was migrated from the Firebase Realtime Database (snapshot from October 21,

@@ -1,6 +1,6 @@
 # BioSCom deployment runbook (proxmox1)
 
-Target: **https://bioscom.ubch.sci.muni.cz** — Fastify + SQLite app bound to `127.0.0.1:8004`, behind the shared nginx on proxmox1, managed by systemd (`bioscom.service`). No Docker (house pattern).
+Target: **https://lab.ubch.sci.muni.cz** — Fastify + SQLite app bound to `127.0.0.1:8004`, behind the shared nginx on proxmox1, managed by systemd (`bioscom.service`). No Docker (house pattern).
 
 ## Layout
 
@@ -12,16 +12,16 @@ Target: **https://bioscom.ubch.sci.muni.cz** — Fastify + SQLite app bound to `
 | App env | `/home/kowalski/BioSCom/.env` (chmod 600, referenced by the unit's `EnvironmentFile`) |
 | Database | `/home/kowalski/BioSCom/bioscom.db` (SQLite, WAL) |
 | systemd unit | `/etc/systemd/system/bioscom.service` (copy of `deploy/bioscom.service`) |
-| nginx site | `/etc/nginx/sites-available/bioscom` (copy of `deploy/nginx-bioscom.conf`) |
-| TLS cert | `/etc/letsencrypt/live/bioscom.ubch.sci.muni.cz/` (certbot) |
+| nginx site | `/etc/nginx/sites-available/lab.ubch.sci.muni.cz` (from `deploy/nginx-lab.ubch.sci.muni.cz.conf`, then certbot-managed) |
+| TLS cert | `/etc/letsencrypt/live/lab.ubch.sci.muni.cz/` (certbot) |
 
 ## Port note
 
-The migration plan originally specified port 8003 (free at recon time). The sibling app **thermool has since taken 8003** on proxmox1 — BioSCom uses **8004**. Verify with `ss -tln | grep 8004` before provisioning; if 8004 is ever taken too, pick the next free port and update `.env`, both nginx confs, and this file together.
+The migration plan originally specified port 8003 (free at recon time). The sibling app **thermool has since taken 8003** on proxmox1 — BioSCom uses **8004**. Verify with `ss -tln | grep 8004` before provisioning; if 8004 is ever taken too, pick the next free port and update `.env`, the installed nginx site, `deploy/nginx-lab.ubch.sci.muni.cz.conf`, and this file together.
 
 ## User actions (the only steps that need a human)
 
-1. **DNS**: A record `bioscom.ubch.sci.muni.cz` → `147.251.22.180` (MUNI network team).
+1. **DNS**: `lab.ubch.sci.muni.cz` → `147.251.22.180` (MUNI network team) — live as of 2026-11-14.
 2. **sudo** on proxmox1 for the unit / nginx / certbot steps (kowalski's account, password sudo).
 3. **Resend**: API key + a verified sender for `bioscom@ubch.sci.muni.cz` — set `RESEND_API_KEY` in `/home/kowalski/BioSCom/.env` (needed for forgot-password / reset emails).
 
@@ -44,57 +44,51 @@ Create `/home/kowalski/BioSCom/.env` (chmod 600):
 PORT=8004
 DB_PATH=/home/kowalski/BioSCom/bioscom.db
 SESSION_SECRET=<openssl rand -hex 32>
-PUBLIC_URL=https://bioscom.ubch.sci.muni.cz
+PUBLIC_URL=https://lab.ubch.sci.muni.cz
 RESEND_API_KEY=<user action 3>
 ```
 
 Smoke (no sudo needed): `ssh proxmox1 'cd BioSCom && PORT=8004 DB_PATH=$PWD/bioscom.db SESSION_SECRET=dev node server/dist/index.js &'` then `curl http://127.0.0.1:8004/api/health` → `{"status":"ok"}` (verified 2026-10-24).
 
-### Remaining privileged steps (user action 2)
+### Privileged steps (user action 2)
 
-One command (idempotent — installs the unit + bootstrap site, and once DNS resolves + cert issued, swaps in the final TLS site):
+Same pattern as thermool / primerool: one nginx site file named after the hostname, then `certbot --nginx` rewrites it in place to add TLS and the 80 → 443 redirect. One idempotent command does all of it:
 
 ```bash
 sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh
 ```
 
-If DNS is not live yet it installs the HTTP bootstrap and exits 0 — rerun after the record exists. Manual equivalent:
+It installs the systemd unit, removes the retired `bioscom` bootstrap site, installs `deploy/nginx-lab.ubch.sci.muni.cz.conf` as `/etc/nginx/sites-available/lab.ubch.sci.muni.cz` (only while no cert exists — after certbot the installed file is certbot-managed and is never overwritten), runs `certbot --nginx -d lab.ubch.sci.muni.cz --redirect` if needed, restarts the app and checks `/api/health` over https. It exits 1 if DNS does not resolve yet. Manual equivalent:
 
 ```bash
 sudo cp /home/kowalski/BioSCom/deploy/bioscom.service /etc/systemd/system/bioscom.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now bioscom
-sudo cp /home/kowalski/BioSCom/deploy/nginx-bioscom-bootstrap.conf /etc/nginx/sites-available/bioscom
-sudo ln -s /etc/nginx/sites-available/bioscom /etc/nginx/sites-enabled/bioscom
+sudo cp /home/kowalski/BioSCom/deploy/nginx-lab.ubch.sci.muni.cz.conf /etc/nginx/sites-available/lab.ubch.sci.muni.cz
+sudo ln -s /etc/nginx/sites-available/lab.ubch.sci.muni.cz /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/bioscom
 sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d lab.ubch.sci.muni.cz      # choose "redirect"
+curl -sS https://lab.ubch.sci.muni.cz/api/health
 ```
 
-The bootstrap site (HTTP-only) exists because the final conf references TLS certs that do not exist yet.
+Then set production values in `.env` (see "Trial history" below for what the trial values were) and `sudo systemctl restart bioscom`:
 
-## Temporary access via IP (until DNS is live)
+- `PUBLIC_URL=https://lab.ubch.sci.muni.cz` — base of reset links; `https` also makes the session cookie `Secure`
+- remove `RESET_REDIRECT_EMAIL` at cutover so members get their own reset links
+- keep `RESEND_API_KEY` / `RESEND_FROM`
 
-The MUNI network only passes 22/80/443 to the VM — the app port 8004 is NOT reachable from outside (verified: connection to 147.251.22.180:8004 times out; 80/443 answer). Until the DNS record exists, the app is served over plain HTTP on port 80 by IP:
+Renewal: certbot's standard timer (`sudo certbot renew`) handles it, as for the other sites. WS check through nginx: open the app in a browser, `wss://lab.ubch.sci.muni.cz/ws` must stay connected >60s (30s server heartbeat).
 
-1. Run `sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh` (installs the systemd unit + bootstrap nginx site — its server_name matches both `bioscom.ubch.sci.muni.cz` and `147.251.22.180`, so the same site later serves the DNS name pre-TLS).
-2. Browse `http://147.251.22.180`.
-3. Trial values in `/home/kowalski/BioSCom/.env` (set 2026-10-24, flip back at TLS time):
-   - `PUBLIC_URL=http://147.251.22.180` — keeps the session cookie non-Secure (HTTP) and makes reset links directly clickable
-   - `RESEND_API_KEY` + `RESEND_FROM="BioSCom <notifications@octoslave.karamazov.website>"` — email delivery via the same Resend account Oligool uses (key copied on the VM from `~/Oligool/backend/.env`; it never enters the repo)
-   - `RESET_REDIRECT_EMAIL` — during the trial all password-reset emails go to this single address (the Oligool `REPORT_NOTIFY_EMAIL` address) instead of each account's own inbox; REMOVE at cutover so members get their own reset links
-4. When DNS is live: rerun `sudo ./deploy/enable-on-vm.sh` (cert + final TLS site) AND flip `.env` to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, remove `RESET_REDIRECT_EMAIL`, keep `RESEND_API_KEY` — then `sudo systemctl restart bioscom`.
+## Trial history (2026-10-24 → DNS)
 
-## TLS issuance (after DNS is live — user action 1)
+The MUNI network only passes 22/80/443 to the VM — the app port 8004 is NOT reachable from outside (verified: connection to 147.251.22.180:8004 times out). Before DNS existed, the app was served over plain HTTP by IP through a bootstrap site `/etc/nginx/sites-available/bioscom` (server_name `bioscom.ubch.sci.muni.cz 147.251.22.180`). That site is retired by `enable-on-vm.sh`; the hostname originally planned, `bioscom.ubch.sci.muni.cz`, was never assigned — the DNS record issued is `lab.ubch.sci.muni.cz`.
 
-Either rerun `sudo /home/kowalski/BioSCom/deploy/enable-on-vm.sh` (it detects DNS + missing cert and completes the swap), or manually:
+Trial values in `/home/kowalski/BioSCom/.env`:
 
-```bash
-sudo certbot certonly --webroot -w /var/www/html -d bioscom.ubch.sci.muni.cz
-sudo cp /home/kowalski/BioSCom/deploy/nginx-bioscom.conf /etc/nginx/sites-available/bioscom
-sudo nginx -t && sudo systemctl reload nginx
-curl -sS https://bioscom.ubch.sci.muni.cz/api/health
-```
-
-Renewal: the port-80 block keeps the `/.well-known/acme-challenge/` webroot location, so plain `sudo certbot renew` works (certbot's standard timer). WS check through nginx: open the app in a browser, `wss://bioscom.ubch.sci.muni.cz/ws` must stay connected >60s (30s server heartbeat).
+- `PUBLIC_URL=http://147.251.22.180` — kept the session cookie non-Secure (HTTP) and made reset links directly clickable
+- `RESEND_API_KEY` + `RESEND_FROM="BioSCom <notifications@octoslave.karamazov.website>"` — email delivery via the same Resend account Oligool uses (key copied on the VM from `~/Oligool/backend/.env`; it never enters the repo)
+- `RESET_REDIRECT_EMAIL` — all password-reset emails go to this single address (the Oligool `REPORT_NOTIFY_EMAIL` address) instead of each account's own inbox
 
 ## Staged data import (todo 21 — no-Firebase variant, executed 2026-10-24)
 
@@ -114,10 +108,10 @@ Read-heavy E2E only against production data; destructive tests run against a scr
 
 Data source is FINAL per user decision (2026-10-24): the 2026-10-21 export already staged on the VM — no fresh capture. Checklist, in order:
 
-1. Preconditions: DNS live, `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `.env` flipped to production values — `PUBLIC_URL=https://bioscom.ubch.sci.muni.cz`, `RESET_REDIRECT_EMAIL` removed, `RESEND_API_KEY` present — and `sudo systemctl restart bioscom`.
+1. Preconditions: DNS live (done), `sudo ./deploy/enable-on-vm.sh` run (unit active + TLS), `.env` flipped to production values — `PUBLIC_URL=https://lab.ubch.sci.muni.cz`, `RESET_REDIRECT_EMAIL` removed, `RESEND_API_KEY` present — and `sudo systemctl restart bioscom`.
 2. Pre-cutover archive: `ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-cutover.db\""'`.
 3. Re-import + seed (idempotent, confirms the staged state is the cutover state): `ssh proxmox1 'cd BioSCom && node migrate/dist/import.js --legacy ../bioscom-db-export.json --db bioscom.db && node migrate/dist/seed-admin.js --db bioscom.db'`.
-4. Verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; two real logins via reset emails (one must be the superadmin).
+4. Verify: `curl -sS https://lab.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; two real logins via reset emails (one must be the superadmin).
 5. Send the announcement (template below) — the legacy app CANNOT be frozen or redirected (no Firebase access), so the message must be explicit about deprecation.
 6. Monitor 24h: `ssh proxmox1 'journalctl -u bioscom --since "1 hour ago" | grep -iE "error|warn"'` and WS stability (browser stays connected >60s).
 
@@ -127,7 +121,7 @@ Announcement template (user composes/sends):
 >
 > Hi everyone,
 >
-> BioSCom now runs on our own server: **https://bioscom.ubch.sci.muni.cz**
+> BioSCom now runs on our own server: **https://lab.ubch.sci.muni.cz**
 > The old address (bioscom-ca01a.web.app) is DEPRECATED — please stop using it. Anything entered there after Oct 21, 2026 will NOT be carried over.
 >
 > First login: go to the new address, enter your email and any password — you'll get an email with a link to set your new password. Your data (inventories, history, notices, bookings) is all there as of Oct 21.
@@ -138,7 +132,7 @@ Rollback (documented drill): stop the unit, restore `bioscom-pre-cutover.db` int
 
 Execution log (fill during cutover):
 
-- [ ] DNS live (date/time)
+- [x] DNS live (lab.ubch.sci.muni.cz, confirmed 2026-11-14)
 - [ ] enable-on-vm.sh run, health 200 over https
 - [ ] RESEND_API_KEY set, unit restarted
 - [ ] pre-cutover archive taken (path + sha256)
