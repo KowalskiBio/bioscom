@@ -552,9 +552,9 @@
 {/snippet}
 
 {#if cont !== undefined && room !== undefined}
-  {#if (room.chemicals?.length ?? 0) > 0}
+  {#if route.view !== "detail" && (room.chemicals?.length ?? 0) > 0}
     {@const roomDirectChems = sortChems((room.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
-    <div class="shelf-section open" id="room-direct-chemicals" style="margin-bottom:1rem;">
+    <div class="room-chemical-list" id="room-direct-chemicals" style="margin-bottom:1rem;">
       <div class="shelf-header" style="cursor:default;">
         <div class="shelf-info">
           <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🏠{/if}</span>
@@ -568,7 +568,7 @@
             <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
             <tbody>
               {#each roomDirectChems as ch (ch.id)}
-                {@render directChemRow(ch, { containerId: "", canEdit: false })}
+                {@render directChemRow(ch, { containerId: "", canEdit: true })}
               {/each}
             </tbody>
           </table>
@@ -580,7 +580,7 @@
   {/if}
   {#if (cont.chemicals?.length ?? 0) > 0}
     {@const contDirectChems = sortChems((cont.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
-    <div class="shelf-section open" id="container-direct-chemicals" style="margin-bottom:1rem;">
+    <div class="room-chemical-list" id="container-direct-chemicals" style="margin-bottom:1rem;">
       <div class="shelf-header" style="cursor:default;">
         <div class="shelf-info">
           <span class="shelf-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📦{/if}</span>

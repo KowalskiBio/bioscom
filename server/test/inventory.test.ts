@@ -31,6 +31,14 @@ interface InventoryState {
     rooms: Array<{
       id: string;
       name: string;
+      chemicals?: Array<{
+        id: string;
+        name: string;
+        cas?: string;
+        quantity?: number;
+        unit?: string;
+        position?: string;
+      }>;
       containers: Array<{
         id: string;
         name: string;
@@ -244,6 +252,68 @@ describe("container, shelf and chemical ops", () => {
       .send({ roomId });
     expect(removedContainer.status).toBe(200);
     expect((removedContainer.body as InventoryState).tree.rooms[0]?.containers).toEqual([]);
+  });
+});
+
+describe("direct room chemicals", () => {
+  it("stores a chemical on the room and mirrors stock/material without a fabricated container or shelf", async () => {
+    const roomResponse = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/rooms")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ name: "Direct Stock Room" });
+    expect(roomResponse.status).toBe(201);
+    const roomsAfterCreate = (roomResponse.body as InventoryState).tree.rooms;
+    const room = roomsAfterCreate[roomsAfterCreate.length - 1];
+    expect(room?.name).toBe("Direct Stock Room");
+    expect(room?.containers).toEqual([]);
+    const roomId = room?.id ?? "";
+    expect(roomId).not.toBe("");
+
+    const created = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId, name: "Room-only ethanol", cas: "64-17-5", quantity: 500, unit: "ml" });
+    expect(created.status).toBe(201);
+
+    const createdRoom = (created.body as InventoryState).tree.rooms.find((candidate) => candidate.id === roomId);
+    expect(createdRoom?.containers).toEqual([]);
+    expect(createdRoom?.chemicals).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        name: "Room-only ethanol",
+        cas: "64-17-5",
+        quantity: 500,
+        unit: "ml",
+      }),
+    ]);
+    const chemicalId = createdRoom?.chemicals?.[0]?.id ?? "";
+    expect(chemicalId).not.toBe("");
+
+    const db = getDatabase(dbPath);
+    expect(
+      db.prepare("SELECT location_id, batch_id, current_quantity, quantity_unit FROM stocks WHERE id = ?").get(chemicalId),
+    ).toEqual({ location_id: roomId, batch_id: `b-${chemicalId}`, current_quantity: 500, quantity_unit: "ml" });
+    expect(db.prepare("SELECT name FROM materials WHERE id = ?").get(`m-${chemicalId}`)).toEqual({
+      name: "Room-only ethanol",
+    });
+    expect(db.prepare("SELECT material_id FROM batches WHERE id = ?").get(`b-${chemicalId}`)).toEqual({
+      material_id: `m-${chemicalId}`,
+    });
+    expect(
+      db
+        .prepare("SELECT stock_id FROM legacy_chemical_map WHERE group_id = 'group-a' AND chemical_id = ?")
+        .get(chemicalId),
+    ).toEqual({ stock_id: chemicalId });
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM locations WHERE parent_id = ? AND kind IN ('container', 'shelf')").get(roomId),
+    ).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM stocks WHERE location_id = ?").get(roomId)).toEqual({ n: 1 });
+
+    const parity = await request(baseUrl).get("/api/groups/group-a/inventory/parity").set("Cookie", ownerCookie);
+    expect(parity.status).toBe(200);
+    expect(parity.body).toEqual({ ok: true, issues: [] });
   });
 });
 

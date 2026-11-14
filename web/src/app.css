@@ -2119,6 +2119,60 @@ a.stat-card:focus-visible { outline-color:var(--dash-accent, var(--accent-blue))
 .detail-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
 .detail-table th { text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); padding:0.3rem 0.5rem; border-bottom:1px solid var(--border-subtle); }
 .detail-table td { padding:0.45rem 0.5rem; border-bottom:1px solid var(--border-subtle); color:var(--text-secondary); }
+
+/* Room and container direct chemical lists: package-like rows on a quiet surface. */
+.room-chemical-list {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+}
+.room-chemical-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+}
+.room-chemical-heading .detail-section-title { margin: 0; }
+.room-chemical-table-wrap { overflow-x: auto; }
+.room-chemical-list .chemicals-table { min-width: 0; }
+.room-chemical-list .chemicals-table,
+.room-chemical-list .detail-table { background: transparent; }
+.room-chemical-list .shelf-header {
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border-bottom: 0;
+}
+.room-chemical-list .shelf-header:hover { background: transparent; }
+.room-chemical-list .shelf-body {
+    max-height: none;
+    border-top: 0;
+    overflow-x: auto;
+}
+.room-chemical-list .shelf-info { gap: 0.65rem; }
+.room-chemical-list .row-actions { justify-content: flex-end; }
+.room-chemical-meta {
+    margin-top: 0.15rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+.room-chemical-list--nested { margin-top: 0.6rem; }
+body[data-design="bauhaus"] .room-chemical-list {
+    background: var(--bg-primary);
+    border: 0;
+    border-radius: 0;
+    padding: 0.5rem 1rem;
+}
+body[data-design="bauhaus"] .room-chemical-list .shelf-header { padding: 0.5rem 0; }
+body[data-design="bauhaus"] .room-chemical-list .chemicals-table th {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid rgba(23, 21, 18, 0.2);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+}
+.room-chemical-list--nested,
+body[data-design="bauhaus"] .room-chemical-list--nested { padding: 0.5rem; }
 .catalog-tabs-nav { display:flex; gap:1.25rem; border-bottom:1px solid var(--border-subtle); margin-bottom:1rem; padding-bottom:0.25rem; }
 .stocks-dim { color:var(--text-muted); }
 .stocks-mono { font-family:var(--font-family); font-variant-numeric:tabular-nums; }

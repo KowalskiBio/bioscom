@@ -1,10 +1,17 @@
 <script lang="ts">
-  import type { Container } from "@bioscom/shared";
+  import { materialTypeLabels } from "@bioscom/shared";
+  import type { Chemical, Container } from "@bioscom/shared";
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
-  import { countChems, stripEmoji } from "../../lib/inventoryUtils";
+  import { countChems, escapeHtml, materialTypeColorClass, quantityClass, stripEmoji } from "../../lib/inventoryUtils";
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
+  import { session } from "../../lib/stores/session.svelte";
+  import { opAdjustQty, opDeleteChemical } from "../../lib/ops";
+  import { openChemicalForm, openStockLabelModal } from "../../lib/forms";
+  import { closeModal, openModal } from "../../lib/modal.svelte";
+  import { showToast } from "../../lib/stores/toast.svelte";
+  import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -33,6 +40,36 @@
   const fridges = $derived(containers.filter((c) => c.type === "fridge"));
   const freezers = $derived(containers.filter((c) => c.type === "freezer" || c.type === "deepfreezer"));
   const showEmpty = $derived(containers.length === 0);
+  const labels = materialTypeLabels();
+  const isReader = $derived(session.user?.role === "reader");
+
+  async function adjustRoomQuantity(chemId: string, delta: number): Promise<void> {
+    if (isReader || room === undefined) return;
+    await opAdjustQty(room.id, "", "", chemId, delta);
+  }
+
+  function editRoomChemical(ch: Chemical): void {
+    if (isReader || room === undefined) return;
+    openChemicalForm(room, undefined, { editChemId: ch.id });
+  }
+
+  function deleteRoomChemical(ch: Chemical): void {
+    if (isReader || room === undefined) return;
+    const currentRoom = room;
+    openModal({
+      title: "Delete Chemical",
+      bodyHtml: `<p>Delete <strong>${escapeHtml(ch.name ?? "")}</strong> from this room?</p>`,
+      btnText: "Delete",
+      onConfirm: () => {
+        verifyCaptchaAndExecute(async () => {
+          if (await opDeleteChemical(currentRoom.id, "", "", ch.id)) {
+            closeModal();
+            showToast("Deleted");
+          }
+        });
+      },
+    });
+  }
 </script>
 
 {#snippet card(cont: Container, typeName: string, icon: string, cls: string)}
@@ -59,25 +96,63 @@
       {/if}
     </div>
     <div class="card-stats"><div class="card-stat">{#if design !== "bauhaus"}📁 {/if}<span class="card-stat-value">{(cont.shelves ?? []).length}</span> shelves</div><div class="card-stat">{#if design !== "bauhaus"}🧪 {/if}<span class="card-stat-value">{chemCount}</span> chemicals</div></div>
-    {#if (cont.chemicals ?? []).length > 0}
-      <div style="margin-top:0.6rem;">
-        <div class="detail-section-title" style="margin:0.4rem 0 0.25rem;">Directly in container ({(cont.chemicals ?? []).length})</div>
-        <table class="detail-table">
-          <thead><tr><th>Name</th><th>Qty</th><th>Unit</th></tr></thead>
-          <tbody>
-            {#each (cont.chemicals ?? []) as ch (ch.id)}
-              <tr>
-                <td>{design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? "")}</td>
-                <td>{ch.quantity ?? 0}</td>
-                <td>{ch.unit ?? "pcs"}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
   </div>
 {/snippet}
+
+{#if route.view === "containers" && room !== undefined && (room.chemicals ?? []).length > 0}
+  <section id="room-direct-chemicals" class="room-chemical-list" aria-labelledby="room-direct-chemicals-title">
+    <div class="room-chemical-heading">
+      <h2 class="detail-section-title" id="room-direct-chemicals-title">Directly in this room</h2>
+      <span class="shelf-count">{(room.chemicals ?? []).length} chemicals</span>
+    </div>
+    <div class="room-chemical-table-wrap">
+      <table class="detail-table" aria-label="Chemicals stored directly in this room">
+        <thead>
+          <tr><th>Name</th><th>Type</th><th>Quantity</th><th>Unit</th><th>Location</th><th style="width: 9rem; text-align: right;">Actions</th></tr>
+        </thead>
+        <tbody>
+          {#each room.chemicals ?? [] as ch (ch.id)}
+            {@const barcode = (ch.barcode ?? "").trim()}
+            {@const concentration = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : ""}
+            <tr data-chemid={ch.id}>
+              <td>
+                <strong>{design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? "")}</strong>
+                {#if concentration !== ""}<div class="room-chemical-meta">{concentration}</div>{/if}
+              </td>
+              <td><span class={`status-badge ${materialTypeColorClass(ch.type ?? "chemical")}`}>{labels[ch.type ?? "chemical"] ?? ch.type ?? "chemical"}</span></td>
+              <td>
+                <div class="qty-adjuster" aria-label={`Quantity of ${ch.name ?? "chemical"}`}>
+                  {#if !isReader}<button class="btn-qty" title="Decrease quantity" aria-label={`Decrease quantity of ${ch.name}`} onclick={() => void adjustRoomQuantity(ch.id, -1)}>−</button>{/if}
+                  <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
+                  {#if !isReader}<button class="btn-qty" title="Increase quantity" aria-label={`Increase quantity of ${ch.name}`} onclick={() => void adjustRoomQuantity(ch.id, 1)}>+</button>{/if}
+                </div>
+              </td>
+              <td>{ch.unit ?? "pcs"}</td>
+              <td>{design === "bauhaus" ? stripEmoji(room.name) : room.name}</td>
+              <td>
+                <div class="row-actions">
+                  {#if barcode !== ""}
+                    <button class="btn-inline" title={`Print label for ${ch.name}`} aria-label={`Print label for ${ch.name}`} onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: room.name, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg>
+                    </button>
+                  {/if}
+                  {#if !isReader}
+                    <button class="btn-inline" title={`Edit ${ch.name}`} aria-label={`Edit ${ch.name}`} onclick={() => editRoomChemical(ch)}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="btn-inline danger" title={`Delete ${ch.name}`} aria-label={`Delete ${ch.name}`} onclick={() => deleteRoomChemical(ch)}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                  {/if}
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{/if}
 
 <div id="containers-split" class="containers-split" style={`display: ${showEmpty ? "none" : "flex"};`}>
     <div class="containers-col">
