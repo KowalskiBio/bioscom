@@ -7,7 +7,7 @@ import { closeDatabase, getDatabase } from "../src/db.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { ensureParityChecked } from "../src/inventory/assemble.js";
 import { ensureBackfilled } from "../src/inventory/sync.js";
-import { schemaSqlPath } from "../src/paths.js";
+import { schemaSqlPath, serverDir } from "../src/paths.js";
 
 function tempDbPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "bioscom-migrations-test-"));
@@ -41,6 +41,7 @@ describe("migration runner", () => {
       "stocks",
       "batch_inputs",
       "legacy_chemical_map",
+      "user_settings",
     ]) {
       expect(tables.has(table)).toBe(true);
     }
@@ -83,6 +84,8 @@ describe("migration runner", () => {
       { version: 5, name: "migration_0005_chemical_fields_trim.sql" },
       { version: 6, name: "migration_0006_location_rack_grid.sql" },
       { version: 7, name: "migration_0007_location_rack_shelves.sql" },
+      { version: 8, name: "migration_0008_user_settings.sql" },
+      { version: 9, name: "migration_0009_primer_target_species.sql" },
     ]);
 
     const chemFields = JSON.parse(types.find((t) => t.key === "chemical")!.fields) as Array<Record<string, unknown>>;
@@ -91,11 +94,60 @@ describe("migration runner", () => {
     const host = antibodyFields.find((f) => f.key === "host_species");
     expect(host).toMatchObject({ dataType: "enum" });
     expect(host!.options as string[]).toContain("Rabbit");
+    const primerFields = JSON.parse(types.find((t) => t.key === "primer")!.fields) as Array<Record<string, unknown>>;
+    expect(primerFields.filter((field) => field.key === "target_species")).toEqual([
+      {
+        key: "target_species",
+        label: "Target species",
+        dataType: "string",
+        required: false,
+        searchable: true,
+      },
+    ]);
   });
 
   it("applies nothing when run again", () => {
     const db = getDatabase(tempDbPath());
     expect(runMigrations(db)).toEqual([]);
+  });
+
+  it("replays the primer target species migration without duplication or overwriting a custom definition", () => {
+    const db = getDatabase(tempDbPath());
+    const sql = readFileSync(
+      join(serverDir, "src", "db", "migrations", "migration_0009_primer_target_species.sql"),
+      "utf8",
+    );
+    const updatePrimer = db.prepare("UPDATE material_types SET fields = ? WHERE key = 'primer'");
+    const primerFields = (): Array<Record<string, unknown>> =>
+      JSON.parse(
+        (db.prepare("SELECT fields FROM material_types WHERE key = 'primer'").get() as { fields: string }).fields,
+      ) as Array<Record<string, unknown>>;
+
+    const existingCustom = [
+      { key: "sequence", label: "Custom sequence", dataType: "sequence", required: false },
+      { key: "target_species", label: "Custom target label", dataType: "string", required: false },
+    ];
+    updatePrimer.run(JSON.stringify(existingCustom));
+    db.exec(sql);
+    expect(primerFields()).toEqual(existingCustom);
+
+    const customWithoutTarget = [
+      { key: "sequence", label: "Custom sequence", dataType: "sequence", required: false },
+      { key: "lab_notes", label: "Lab notes", dataType: "text", required: false },
+    ];
+    updatePrimer.run(JSON.stringify(customWithoutTarget));
+    db.exec(sql);
+    db.exec(sql);
+
+    const fields = primerFields();
+    expect(fields.filter((field) => field.key === "target_species")).toHaveLength(1);
+    expect(fields.find((field) => field.key === "target_species")).toMatchObject({
+      label: "Target species",
+      dataType: "string",
+      searchable: true,
+    });
+    expect(fields.find((field) => field.key === "lab_notes")).toMatchObject({ label: "Lab notes" });
+    expect(fields.find((field) => field.key === "sequence")).toMatchObject({ label: "Custom sequence" });
   });
 
   it("still bootstraps the legacy schema before versioned migrations", () => {
@@ -106,7 +158,7 @@ describe("migration runner", () => {
     expect(tableNames(raw).has("materials")).toBe(false);
 
     const applied = runMigrations(raw);
-    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     const tables = tableNames(raw);
     expect(tables.has("groups")).toBe(true);

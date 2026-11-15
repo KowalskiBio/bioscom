@@ -2,12 +2,28 @@
   import { theme, setDesign, type DesignTheme } from "../../lib/theme.svelte";
   import { NAV_ITEMS, navPrefs } from "../../lib/stores/navPrefs.svelte";
   import { prefs, setRadioMode } from "../../lib/stores/prefs.svelte";
+  import { openCatalogColumnSettings } from "../../lib/catalogColumnSettings";
 
   const OPTIONS: Array<{ value: DesignTheme; name: string; desc: string }> = [
     { value: "original", name: "Original", desc: "The classic BioSCom look" },
     { value: "bauhaus", name: "Bauhaus", desc: "Clean, minimal, professional" },
   ];
 </script>
+
+<div class="form-group">
+    <span class="form-label">Packages</span>
+    <button
+        type="button"
+        class="btn-secondary catalog-columns-trigger"
+        id="btn-settings-catalog-columns"
+        aria-label="Choose package table columns"
+        onclick={() => openCatalogColumnSettings()}
+    >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Choose table columns</span>
+    </button>
+    <p class="form-hint">Select separate columns for All and each material type. Saved to your account for every lab.</p>
+</div>
 
 <div class="form-group">
     <span class="form-label">Theme</span>

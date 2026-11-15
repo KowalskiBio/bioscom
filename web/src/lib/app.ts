@@ -12,12 +12,14 @@ import { clearPrint } from "./stores/print.svelte";
 import { clearGames } from "./stores/game.svelte";
 import { clearHistory, fetchHistory, fetchBackups } from "./stores/history.svelte";
 import { clearCatalog } from "./stores/catalog.svelte";
+import { clearCatalogColumnPreferences } from "./stores/catalogColumnPreferences.svelte";
 import { showToast } from "./stores/toast.svelte";
 
 let ws: WsClient | null = null;
 
 onUnauthorized(() => {
   clearSession();
+  clearCatalogColumnPreferences();
 });
 
 export function startApp(): void {
@@ -91,6 +93,7 @@ export async function logout(): Promise<void> {
     clearGames();
     clearHistory();
     clearCatalog();
+    clearCatalogColumnPreferences();
     showToast("Logged out", "info");
   }
 }

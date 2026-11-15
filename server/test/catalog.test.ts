@@ -37,7 +37,7 @@ function seed(): void {
   mat.run("m-tris", "chemical", "Tris base", JSON.stringify({ cas_number: "77-86-1", molecular_formula: "C4H11NO3" }));
   mat.run("m-gapdh", "antibody", "Anti-GAPDH", JSON.stringify({ target: "GAPDH", host_species: "Rabbit", clonality: "Polyclonal" }));
   mat.run("m-pbs", "solution", "PBS 1x", JSON.stringify({ composition: "137 mM NaCl" }));
-  mat.run("m-primer", "primer", "GeneX_F", JSON.stringify({ sequence: "ACGTGGATCCAAAN" }));
+  mat.run("m-primer", "primer", "GeneX_F", JSON.stringify({ sequence: "ACGTGGATCCAAAN", target_species: "tobacco" }));
 
   db.prepare("INSERT INTO products (id, material_id, manufacturer_name, catalog_number, created_at, updated_at) VALUES ('p-tris-sigma', 'm-tris', 'Sigma', 'T123', 1, 1)").run();
 
@@ -117,6 +117,12 @@ describe("GET /api/groups/:id/material-types", () => {
     ]);
     const chem = res.body.types.find((t: { key: string }) => t.key === "chemical");
     expect(chem.fields[0]).toMatchObject({ key: "cas_number", dataType: "string" });
+    const primer = res.body.types.find((t: { key: string }) => t.key === "primer");
+    expect(primer.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "target_species", label: "Target species", searchable: true }),
+      ]),
+    );
   });
 
   it("rejects unauthenticated and foreign members", async () => {
@@ -199,13 +205,15 @@ describe("GET /api/groups/:id/stocks", () => {
     expect(byExpiry.body.stocks[0].batch.expiresAt).toBe(SOON);
   });
 
-  it("searches name, cas, catalog number, lot code, sequence", async () => {
+  it("searches name, cas, catalog number, lot code, sequence, product manufacturer and target species", async () => {
     const cases: Array<[string, string[]]> = [
       ["tris", ["st-tris-1", "st-tris-2"]],
       ["77-86-1", ["st-tris-1", "st-tris-2"]],
       ["T123", ["st-tris-1"]],
+      ["Sigma", ["st-tris-1"]],
       ["LOT-02", ["st-tris-2"]],
       ["GGATCC", ["st-primer"]],
+      ["tobacco", ["st-primer"]],
       ["GAPDH", ["st-gapdh"]],
     ];
     for (const [q, expected] of cases) {

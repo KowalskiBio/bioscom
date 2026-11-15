@@ -99,6 +99,13 @@ export const MATERIAL_TYPES = [
     fields: [
       { key: "sequence", label: "Sequence (5' to 3')", dataType: "sequence", required: false, searchable: true },
       { key: "sequence_length", label: "Sequence length", dataType: "number", required: false, unit: "nt" },
+      {
+        key: "target_species",
+        label: "Target species",
+        dataType: "string",
+        required: false,
+        searchable: true,
+      },
       { key: "modifications", label: "Modifications", dataType: "string", required: false },
       {
         key: "purification",

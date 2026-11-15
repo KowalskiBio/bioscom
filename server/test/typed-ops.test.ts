@@ -139,6 +139,66 @@ describe("typed item write flows", () => {
     expect(res.status).toBe(400);
   });
 
+  it("round-trips primer target species through the normal create and edit API", async () => {
+    const created = await request(baseUrl)
+      .post("/api/groups/group-t/inventory/chemicals")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({
+        roomId: "r-1",
+        containerId: "c-1",
+        shelfId: "s-1",
+        name: "Species primer",
+        type: "primer",
+        attributes: { sequence: "ACGTACGT", target_species: "tobacco" },
+      });
+    expect(created.status).toBe(201);
+    const id = created.body.tree.rooms[0].containers[0].shelves[0].chemicals.at(-1).id as string;
+    const createdRow = created.body.tree.rooms[0].containers[0].shelves[0].chemicals.find(
+      (c: { id: string }) => c.id === id,
+    );
+    expect(createdRow.attributes).toMatchObject({ target_species: "tobacco", sequence: "ACGTACGT" });
+    expect(
+      JSON.parse(one<{ attributes: string }>("SELECT attributes FROM materials WHERE id = ?", `m-${id}`).attributes),
+    ).toMatchObject({ target_species: "tobacco" });
+
+    const tobaccoSearch = await request(baseUrl)
+      .get("/api/groups/group-t/stocks?q=tobacco")
+      .set("Cookie", cookie);
+    expect(tobaccoSearch.status).toBe(200);
+    expect(
+      tobaccoSearch.body.stocks.find((stock: { id: string }) => stock.id === id).attributes.target_species,
+    ).toBe("tobacco");
+
+    const edited = await request(baseUrl)
+      .put(`/api/groups/group-t/inventory/chemicals/${id}`)
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({
+        roomId: "r-1",
+        containerId: "c-1",
+        shelfId: "s-1",
+        attributes: { sequence: "ACGTACGT", target_species: "human" },
+      });
+    expect(edited.status).toBe(200);
+    const editedRow = edited.body.tree.rooms[0].containers[0].shelves[0].chemicals.find(
+      (c: { id: string }) => c.id === id,
+    );
+    expect(editedRow.attributes).toMatchObject({ target_species: "human", sequence: "ACGTACGT" });
+    expect(
+      JSON.parse(one<{ attributes: string }>("SELECT attributes FROM materials WHERE id = ?", `m-${id}`).attributes),
+    ).toMatchObject({ target_species: "human" });
+
+    const humanSearch = await request(baseUrl)
+      .get("/api/groups/group-t/stocks?q=human")
+      .set("Cookie", cookie);
+    expect(humanSearch.status).toBe(200);
+    expect(humanSearch.body.stocks.some((stock: { id: string }) => stock.id === id)).toBe(true);
+    expect(
+      humanSearch.body.stocks.find((stock: { id: string }) => stock.id === id).attributes.target_species,
+    ).toBe("human");
+  });
+
   it("edit updates product/batchInfo maps; product removal prunes orphan product", async () => {
     const res = await request(baseUrl)
       .put(`/api/groups/group-t/inventory/chemicals/${antibodyId}`)

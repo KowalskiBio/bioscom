@@ -11,6 +11,7 @@
     if (
       event.key === "Enter" &&
       modal.state.open &&
+      modal.state.onConfirm !== null &&
       document.activeElement !== null &&
       document.activeElement.tagName !== "TEXTAREA"
     ) {
@@ -31,8 +32,10 @@
         </div>
         <div id="modal-body" class="modal-body">
             {#if modal.state.component !== null}
-                {@const Body = modal.state.component}
-                <Body {...modal.state.props} />
+                {#key modal.state.component}
+                    {@const Body = modal.state.component}
+                    <Body {...modal.state.props} />
+                {/key}
             {:else}
                 <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                 {@html modal.state.bodyHtml}

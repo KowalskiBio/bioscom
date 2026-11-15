@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import type { Chemical, Container, Room, Shelf } from "@bioscom/shared";
-  import { materialTypeLabels, resolveRackGrid, resolveRackShelves, resolveRackShelfIndex } from "@bioscom/shared";
+  import { resolveRackGrid, resolveRackShelves, resolveRackShelfIndex } from "@bioscom/shared";
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
   import { session } from "../../lib/stores/session.svelte";
@@ -9,13 +9,9 @@
     computePositions,
     parseDeepFreezerShelf,
     chemMatchesQuery,
-    quantityClass,
     sortChems,
-    renderFormulaHtml,
-    highlightHtml,
     countChems,
     stripEmoji,
-    materialTypeColorClass,
   } from "../../lib/inventoryUtils";
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
@@ -26,7 +22,6 @@
     opDeleteShelf,
     opMoveDeepFreezerRack,
     opMoveDeepFreezerBox,
-    roleCanWrite,
   } from "../../lib/ops";
   import {
     openChemicalForm,
@@ -43,6 +38,11 @@
   } from "../../lib/forms";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { theme } from "../../lib/theme.svelte";
+  import ChemicalTable from "./ChemicalTable.svelte";
+  import {
+    catalogColumnPreferences,
+    loadCatalogColumnPreferences,
+  } from "../../lib/stores/catalogColumnPreferences.svelte";
 
   const design = $derived(theme.design);
 
@@ -50,6 +50,13 @@
     shelf: Shelf;
     boxName: string;
     shelfIndex: number | null;
+  }
+
+  interface DeepFreezerMatch {
+    chem: Chemical;
+    shelfId: string;
+    rack: string;
+    box: string;
   }
 
   let {
@@ -70,6 +77,25 @@
   });
   const cont = $derived(room?.containers.find((c) => c.id === containerId));
   const isReader = $derived(session.user?.role === "reader");
+  const preferencesConfirmed = $derived(
+    session.user?.uid !== undefined &&
+      catalogColumnPreferences.accountId === session.user.uid &&
+      catalogColumnPreferences.confirmed,
+  );
+  const activeColumns = $derived(
+    catalogColumnPreferences.columnsForUser(session.user?.uid ?? "", "all"),
+  );
+
+  $effect(() => {
+    const userId = session.user?.uid ?? null;
+    if (route.view === "detail") {
+      void loadCatalogColumnPreferences(userId);
+    }
+  });
+
+  function retryColumnPreferences(): void {
+    void loadCatalogColumnPreferences(session.user?.uid ?? null, true);
+  }
 
   let openShelves = $state<Set<string>>(new Set());
   let selectedRack = $state<string | null>(null);
@@ -194,6 +220,17 @@
     selectedBox = box;
     selectedBoxShelfId = shelfId ?? null;
     navigateTo("detail", { roomId, containerId, rack: selectedRack, box });
+  }
+
+  function openMatchingBox(match: DeepFreezerMatch): void {
+    selectedRack = match.rack;
+    selectedBox = match.box;
+    selectedBoxShelfId = match.shelfId;
+    navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box });
+  }
+
+  function matchingLocation(match: DeepFreezerMatch): string {
+    return `Rack ${match.rack} / Box ${match.box}`;
   }
 
   function resetSelection(): void {
@@ -517,41 +554,46 @@
   </div>
 {/snippet}
 
-{#snippet directChemRow(ch: Chemical, opts: { containerId: string; canEdit: boolean })}
-  {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
+{#snippet directChemicalActions(ch: Chemical, opts: { containerId: string; canEdit: boolean })}
   {@const barcode = (ch.barcode ?? "").trim()}
-  <tr class="fade-in" data-chemid={ch.id}>
-    <td><span class="chem-pos">{ch.customPosition ?? ch.position ?? "—"}</span></td>
-    <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
-    <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
-    <td>
-      <div class="qty-adjuster">
-        <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustDirectQty(opts.containerId, ch.id, -1); }}>−</button>
-        <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
-        <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustDirectQty(opts.containerId, ch.id, 1); }}>+</button>
-      </div>
-    </td>
-    <td>{ch.unit ?? "pcs"}</td>
-    <td style="white-space:nowrap">{conc}</td>
-    <td>{ch.cas ?? "—"}</td>
-    <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
-    <td>
-      <div class="row-actions">
-        {#if barcode !== ""}
-          <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
-        {/if}
-        {#if opts.canEdit && !isReader && room !== undefined && cont !== undefined}
-          <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        {/if}
-        {#if !isReader}
-          <button class="btn-inline danger" title="Delete" onclick={() => deleteDirectChemical(opts.containerId, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-        {/if}
-      </div>
-    </td>
-  </tr>
+  <div class="row-actions">
+    {#if barcode !== ""}
+      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
+    {/if}
+    {#if opts.canEdit && !isReader && room !== undefined && cont !== undefined}
+      <button class="btn-inline" title="Edit" aria-label={`Edit ${ch.name}`} onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+    {/if}
+    {#if !isReader}
+      <button class="btn-inline danger" title="Delete" aria-label={`Delete ${ch.name}`} onclick={() => deleteDirectChemical(opts.containerId, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet shelfChemicalActions(ch: Chemical, shelfId: string)}
+  {@const barcode = (ch.barcode ?? "").trim()}
+  <div class="row-actions">
+    {#if barcode !== ""}
+      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
+    {/if}
+    <button class="btn-inline" title="Edit" aria-label={`Edit ${ch.name}`} onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+    {#if !isReader}
+      <button class="btn-inline danger" title="Delete" aria-label={`Delete ${ch.name}`} onclick={() => deleteChemical(shelfId, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+    {/if}
+  </div>
 {/snippet}
 
 {#if cont !== undefined && room !== undefined}
+  {#if catalogColumnPreferences.loading && !catalogColumnPreferences.confirmed}
+    <div class="catalog-column-sync" role="status">Loading your saved room columns… The existing columns are shown until loading finishes.</div>
+  {:else if catalogColumnPreferences.loadError !== ""}
+    <div class="catalog-column-sync warning" role="alert">
+      <span>
+        {catalogColumnPreferences.loadError}
+        {catalogColumnPreferences.confirmed ? "Showing your last loaded selections." : "Showing the existing room columns, not confirmed account settings."}
+      </span>
+      <button type="button" class="btn-inline" onclick={retryColumnPreferences}>Try again</button>
+    </div>
+  {/if}
   {#if route.view !== "detail" && (room.chemicals?.length ?? 0) > 0}
     {@const roomDirectChems = sortChems((room.chemicals ?? []).filter((c) => q === "" || chemMatchesQuery(c, q)), posMap)}
     <div class="room-chemical-list" id="room-direct-chemicals" style="margin-bottom:1rem;">
@@ -564,14 +606,19 @@
       </div>
       <div class="shelf-body">
         {#if roomDirectChems.length > 0}
-          <table class="chemicals-table">
-            <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
-            <tbody>
-              {#each roomDirectChems as ch (ch.id)}
-                {@render directChemRow(ch, { containerId: "", canEdit: true })}
-              {/each}
-            </tbody>
-          </table>
+          <ChemicalTable
+            tableId="detail-room-direct-chemicals-table"
+            items={roomDirectChems}
+            columns={activeColumns}
+            legacy={!preferencesConfirmed}
+            query={q}
+            posMap={posMap}
+            onAdjust={(chem, delta) => void adjustDirectQty("", chem.id, delta)}
+          >
+            {#snippet actions(ch)}
+              {@render directChemicalActions(ch, { containerId: "", canEdit: true })}
+            {/snippet}
+          </ChemicalTable>
         {:else}
           <div class="shelf-empty">No results</div>
         {/if}
@@ -590,14 +637,19 @@
       </div>
       <div class="shelf-body">
         {#if contDirectChems.length > 0}
-          <table class="chemicals-table">
-            <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
-            <tbody>
-              {#each contDirectChems as ch (ch.id)}
-                {@render directChemRow(ch, { containerId: cont.id, canEdit: true })}
-              {/each}
-            </tbody>
-          </table>
+          <ChemicalTable
+            tableId="container-direct-chemicals-table"
+            items={contDirectChems}
+            columns={activeColumns}
+            legacy={!preferencesConfirmed}
+            query={q}
+            posMap={posMap}
+            onAdjust={(chem, delta) => void adjustDirectQty(cont.id, chem.id, delta)}
+          >
+            {#snippet actions(ch)}
+              {@render directChemicalActions(ch, { containerId: cont.id, canEdit: true })}
+            {/snippet}
+          </ChemicalTable>
         {:else}
           <div class="shelf-empty">No results</div>
         {/if}
@@ -623,46 +675,34 @@
         {:else}
           <div class="room-chemical-list room-chemical-list--nested">
             <div class="room-chemical-table-wrap">
-              <table class="chemicals-table">
-            <thead>
-              <tr><th>Location</th><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr>
-            </thead>
-            <tbody>
-              {#each sortChems(matching.map((m) => m.chem), posMap) as ch (ch.id)}
-                {@const match = matching.find((m) => m.chem.id === ch.id)!}
-                {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                {@const barcode = (ch.barcode ?? "").trim()}
-                <tr class="fade-in" data-chemid={ch.id}>
-                  <td>
-                    <button class="deepfreezer-nav-btn" title="Go to Box" style="margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-weight: 600;" onclick={() => { selectedRack = match.rack; selectedBox = match.box; selectedBoxShelfId = match.shelfId; navigateTo("detail", { roomId, containerId, rack: match.rack, box: match.box }); }}>Rack {design === "bauhaus" ? stripEmoji(match.rack) : match.rack} / Box {design === "bauhaus" ? stripEmoji(match.box) : match.box}</button>
-                  </td>
-                  <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                  <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
-                  <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
-                  <td>
-                    <div class="qty-adjuster">
-                      <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(match.shelfId, ch.id, -1); }}>−</button>
-                      <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
-                      <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(match.shelfId, ch.id, 1); }}>+</button>
-                    </div>
-                  </td>
-                  <td>{ch.unit ?? "pcs"}</td>
-                  <td style="white-space:nowrap">{conc}</td>
-                  <td>{ch.cas ?? "—"}</td>
-                  <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
-                  <td>
-                    <div class="row-actions">
-                      {#if barcode !== ""}
-                        <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
-                      {/if}
-                      <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                      {#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(match.shelfId, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}
-                    </div>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-              </table>
+              <ChemicalTable
+                tableId="deepfreezer-search-chemicals-table"
+                items={sortChems(matching.map((m) => m.chem), posMap)}
+                columns={activeColumns}
+                layout="deepfreezer-search"
+                legacy={!preferencesConfirmed}
+                query={q}
+                posMap={posMap}
+                locationText={(chem) => {
+                  const match = matching.find((entry) => entry.chem.id === chem.id);
+                  return match === undefined ? "—" : matchingLocation(match);
+                }}
+                onOpenLocation={(chem) => {
+                  const match = matching.find((entry) => entry.chem.id === chem.id);
+                  if (match !== undefined) openMatchingBox(match);
+                }}
+                onAdjust={(chem, delta) => {
+                  const match = matching.find((entry) => entry.chem.id === chem.id);
+                  if (match !== undefined) void adjustQty(match.shelfId, chem.id, delta);
+                }}
+              >
+                {#snippet actions(ch)}
+                  {@const match = matching.find((entry) => entry.chem.id === ch.id)}
+                  {#if match !== undefined}
+                    {@render shelfChemicalActions(ch, match.shelfId)}
+                  {/if}
+                {/snippet}
+              </ChemicalTable>
             </div>
           </div>
         {/if}
@@ -832,40 +872,20 @@
                 {#if (activeShelf.chemicals ?? []).length > 0}
                   <div class="room-chemical-list room-chemical-list--nested">
                     <div class="room-chemical-table-wrap">
-                      <table class="chemicals-table">
-                    <thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead>
-                    <tbody>
-                      {#each sortChems(activeShelf.chemicals ?? [], posMap) as ch (ch.id)}
-                        {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                        {@const barcode = (ch.barcode ?? "").trim()}
-                        <tr class="fade-in" data-chemid={ch.id}>
-                          <td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td>
-                          <td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td>
-                          <td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td>
-                          <td>
-                            <div class="qty-adjuster">
-                              <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(activeShelf.id, ch.id, -1); }}>−</button>
-                              <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
-                              <button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(activeShelf.id, ch.id, 1); }}>+</button>
-                            </div>
-                          </td>
-                          <td>{ch.unit ?? "pcs"}</td>
-                          <td style="white-space:nowrap">{conc}</td>
-                          <td>{ch.cas ?? "—"}</td>
-                          <td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td>
-                          <td>
-                            <div class="row-actions">
-                              {#if barcode !== ""}
-                                <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
-                              {/if}
-                              <button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                              {#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(activeShelf.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}
-                            </div>
-                          </td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                      </table>
+                      <ChemicalTable
+                        tableId="deepfreezer-box-chemicals-table"
+                        items={sortChems(activeShelf.chemicals ?? [], posMap)}
+                        columns={activeColumns}
+                        legacy={!preferencesConfirmed}
+                        query={q}
+                        posMap={posMap}
+                        fridgePositions={true}
+                        onAdjust={(chem, delta) => void adjustQty(activeShelf.id, chem.id, delta)}
+                      >
+                        {#snippet actions(ch)}
+                          {@render shelfChemicalActions(ch, activeShelf.id)}
+                        {/snippet}
+                      </ChemicalTable>
                     </div>
                   </div>
                 {:else}
@@ -946,13 +966,20 @@
                     </div>
                     {#if boxChems.length > 0}
                       <div class="room-chemical-table-wrap">
-                        <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
-                        {#each boxChems as ch (ch.id)}
-                          {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                          {@const barcode = (ch.barcode ?? "").trim()}
-                          <tr class="fade-in" data-chemid={ch.id}><td><span class="chem-pos fridge">{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(box.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(box.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
-                        {/each}
-                      </tbody></table>
+                        <ChemicalTable
+                          tableId={"nested-box-chemicals-table-" + box.id}
+                          items={boxChems}
+                          columns={activeColumns}
+                          legacy={!preferencesConfirmed}
+                          query={q}
+                          posMap={posMap}
+                          fridgePositions={true}
+                          onAdjust={(chem, delta) => void adjustQty(box.id, chem.id, delta)}
+                        >
+                          {#snippet actions(ch)}
+                            {@render shelfChemicalActions(ch, box.id)}
+                          {/snippet}
+                        </ChemicalTable>
                       </div>
                     {:else}
                       <div class="shelf-empty">{q !== "" ? "No results" : "Empty box"}</div>
@@ -967,13 +994,20 @@
               {/if}
               <div class="room-chemical-list room-chemical-list--nested">
                 <div class="room-chemical-table-wrap">
-                  <table class="chemicals-table"><thead><tr><th>Pos.</th><th>Name</th><th>Formula</th><th>Qty</th><th>Unit</th><th>Conc.</th><th>CAS</th><th>Note</th><th style="width:80px;text-align:center">Actions</th></tr></thead><tbody>
-                 {#each chems as ch (ch.id)}
-                  {@const conc = ch.concentration !== null && ch.concentration !== undefined ? `${ch.concentration} ${ch.concUnit ?? ""}` : "—"}
-                  {@const barcode = (ch.barcode ?? "").trim()}
-                  <tr class="fade-in" data-chemid={ch.id}><td><span class={`chem-pos ${isFridgeOrFreezer ? "fridge" : ""}`}>{posMap[ch.id] ?? "—"}</span></td><td class="chem-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(ch.name ?? "") : (ch.name ?? ""), q)}{#if (ch.type ?? "chemical") !== "chemical"}<span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{materialTypeLabels()[ch.type ?? "chemical"] ?? ch.type}</span>{/if}</td><td class="chem-formula"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(ch.formula)}</td><td><div class="qty-adjuster"><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, -1); }}>−</button><span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span><button class="btn-qty" onclick={(e) => { e.stopPropagation(); void adjustQty(sh.id, ch.id, 1); }}>+</button></div></td><td>{ch.unit ?? "pcs"}</td><td style="white-space:nowrap">{conc}</td><td>{ch.cas ?? "—"}</td><td>{design === "bauhaus" ? stripEmoji(ch.note ?? "—") : (ch.note ?? "—")}</td><td><div class="row-actions">{#if barcode !== ""}<button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room.name} / ${cont.name}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>{/if}<button class="btn-inline" title="Edit" onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>{#if !isReader}<button class="btn-inline danger" title="Delete" onclick={() => deleteChemical(sh.id, ch)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>{/if}</div></td></tr>
-                {/each}
-                  </tbody></table>
+                  <ChemicalTable
+                    tableId={"shelf-chemicals-table-" + sh.id}
+                    items={chems}
+                    columns={activeColumns}
+                    legacy={!preferencesConfirmed}
+                    query={q}
+                    posMap={posMap}
+                    fridgePositions={isFridgeOrFreezer}
+                    onAdjust={(chem, delta) => void adjustQty(sh.id, chem.id, delta)}
+                  >
+                    {#snippet actions(ch)}
+                      {@render shelfChemicalActions(ch, sh.id)}
+                    {/snippet}
+                  </ChemicalTable>
                 </div>
               </div>
             {:else if boxes.length === 0}

@@ -326,9 +326,9 @@ export function registerCatalogRoutes(app: FastifyInstance, config: ServerConfig
     if (typeof query.q === "string" && query.q.trim() !== "") {
       const like = `%${query.q.trim()}%`;
       where.push(
-        "(m.name LIKE ? COLLATE NOCASE OR json_extract(m.attributes, '$.cas_number') LIKE ? OR json_extract(m.attributes, '$.target') LIKE ? OR json_extract(m.attributes, '$.sequence') LIKE ? OR p.catalog_number LIKE ? OR b.lot_code LIKE ? OR s.position LIKE ? OR s.custom_position LIKE ? OR s.barcode LIKE ?)",
+        "(m.name LIKE ? COLLATE NOCASE OR json_extract(m.attributes, '$.cas_number') LIKE ? OR json_extract(m.attributes, '$.target') LIKE ? OR json_extract(m.attributes, '$.sequence') LIKE ? OR p.catalog_number LIKE ? OR b.lot_code LIKE ? OR s.position LIKE ? OR s.custom_position LIKE ? OR s.barcode LIKE ? OR json_extract(m.attributes, '$.target_species') LIKE ? OR p.manufacturer_name LIKE ?)",
       );
-      whereParams.push(like, like, like, like, like, like, like, like, like);
+      whereParams.push(like, like, like, like, like, like, like, like, like, like, like);
     }
 
     const whereSql = where.join(" AND ");

@@ -47,12 +47,19 @@ describe("MATERIAL_TYPES", () => {
     expect(primer?.fields.map((field) => field.key)).toEqual([
       "sequence",
       "sequence_length",
+      "target_species",
       "modifications",
       "purification",
       "tm_celsius",
     ]);
     expect(chemical?.fields.find((field) => field.key === "cas_number")?.searchable).toBe(true);
     expect(primer?.fields.find((field) => field.key === "sequence")?.dataType).toBe("sequence");
+    expect(primer?.fields.find((field) => field.key === "target_species")).toMatchObject({
+      label: "Target species",
+      dataType: "string",
+      required: false,
+      searchable: true,
+    });
   });
 
   it("returns labels keyed by type key", () => {
