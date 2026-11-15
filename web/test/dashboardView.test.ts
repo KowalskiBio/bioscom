@@ -42,6 +42,51 @@ const SAMPLE_NOTICES: Notice[] = [
   } as Notice,
 ];
 
+const NOTICE_CATEGORY_CASES = [
+  {
+    id: "notice-category-issue",
+    sourceCategory: "issue",
+    dataCategory: "issue",
+    label: "Issue",
+    colorToken: "--accent-red",
+  },
+  {
+    id: "notice-category-info",
+    sourceCategory: "info",
+    dataCategory: "info",
+    label: "Info",
+    colorToken: "--accent-blue",
+  },
+  {
+    id: "notice-category-suggestion",
+    sourceCategory: "suggestion",
+    dataCategory: "suggestion",
+    label: "Suggestion",
+    colorToken: "--accent-green",
+  },
+  {
+    id: "notice-category-general",
+    sourceCategory: "general",
+    dataCategory: "general",
+    label: "General",
+    colorToken: "--text-muted",
+  },
+  {
+    id: "notice-category-other",
+    sourceCategory: "other",
+    dataCategory: "general",
+    label: "General",
+    colorToken: "--text-muted",
+  },
+] as const;
+const CATEGORY_NOTICES = NOTICE_CATEGORY_CASES.map((item, index) => ({
+  id: item.id,
+  title: `${item.label} category post`,
+  content: `${item.sourceCategory} board content`,
+  category: item.sourceCategory,
+  timestamp: Date.UTC(2026, 10, 15 - index),
+})) as Notice[];
+
 type DismissalPut = { method: string; path: string; body: unknown };
 let dismissals: string[] = [];
 let noticesPayload: Notice[] = [];
@@ -161,6 +206,7 @@ function url(query = ""): string {
 }
 
 async function gotoDashboard(query = ""): Promise<void> {
+  await page!.setViewportSize({ width: 1100, height: 900 });
   await page!.goto(url(query), { waitUntil: "networkidle" });
   await page!.waitForSelector("#dash-attention");
 }
@@ -169,6 +215,17 @@ async function waitForBoardReady(): Promise<void> {
   await page!.waitForFunction(
     () => document.getElementById("dash-attention")?.getAttribute("data-board-ready") === "true",
   );
+}
+
+async function resolvedThemeColor(token: string): Promise<string> {
+  return page!.evaluate((property) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${property})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
 }
 
 type StockRow = { id: string; kind: string; href: string; path: string; detail: string; text: string };
@@ -260,6 +317,112 @@ describe("mounted Dashboard attention", () => {
     expect(pageErrors).toEqual([]);
   }, 40_000);
 
+  for (const design of ["bauhaus", "original"] as const) {
+    it(`uses notice-board category colors and preserves interactions in ${design}`, async () => {
+      noticesPayload = CATEGORY_NOTICES;
+      await gotoDashboard(`case=category-colors&design=${design}`);
+      await waitForBoardReady();
+      await page!.waitForFunction(
+        (count) => document.querySelectorAll("#dash-notice-attention-list .dash-notice-item").length === count,
+        NOTICE_CATEGORY_CASES.length,
+      );
+
+      for (const item of NOTICE_CATEGORY_CASES) {
+        const row = page!.locator(`#dash-notice-attention-list [data-notice-id="${item.id}"]`);
+        const expectedColor = await resolvedThemeColor(item.colorToken);
+        expect(await row.getAttribute("data-notice-category")).toBe(item.dataCategory);
+        expect((await row.locator(".dash-notice-category").textContent())?.trim()).toBe(item.label);
+
+        const readColors = () =>
+          row.evaluate((element) => {
+            const rowStyle = getComputedStyle(element);
+            const label = element.querySelector(".dash-notice-category");
+            const glyph = element.querySelector(".stat-glyph");
+            if (label === null || glyph === null) throw new Error("Missing notice label or glyph");
+            return {
+              borderColor: rowStyle.borderLeftColor,
+              borderStyle: rowStyle.borderLeftStyle,
+              borderWidth: rowStyle.borderLeftWidth,
+              labelColor: getComputedStyle(label).color,
+              glyphColor: getComputedStyle(glyph).backgroundColor,
+            };
+          });
+
+        expect(await readColors()).toEqual({
+          borderColor: expectedColor,
+          borderStyle: "solid",
+          borderWidth: "4px",
+          labelColor: expectedColor,
+          glyphColor: expectedColor,
+        });
+        await row.locator(".dash-notice-link").hover();
+        expect((await readColors()).labelColor).toBe(expectedColor);
+      }
+
+      const issueLink = page!.locator(
+        '#dash-notice-attention-list [data-notice-id="notice-category-issue"] .dash-notice-link',
+      );
+      await page!.keyboard.press("Tab");
+      await issueLink.focus();
+      const focusStyle = await issueLink.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          focusVisible: element.matches(":focus-visible"),
+          outlineStyle: style.outlineStyle,
+          outlineWidth: style.outlineWidth,
+        };
+      });
+      expect(focusStyle.focusVisible).toBe(true);
+      expect(focusStyle.outlineStyle).not.toBe("none");
+      expect(focusStyle.outlineWidth).not.toBe("0px");
+
+      await page!.setViewportSize({ width: 390, height: 844 });
+      const mobileRows = await page!.$$eval("#dash-notice-attention-list .dash-notice-item", (rows) =>
+        rows.map((row) => {
+          const rowRect = row.getBoundingClientRect();
+          const buttonRect = row.querySelector("button")!.getBoundingClientRect();
+          return {
+            rowLeft: rowRect.left,
+            rowRight: rowRect.right,
+            buttonLeft: buttonRect.left,
+            buttonRight: buttonRect.right,
+            scrollWidth: (row as HTMLElement).scrollWidth,
+            clientWidth: (row as HTMLElement).clientWidth,
+          };
+        }),
+      );
+      for (const row of mobileRows) {
+        expect(row.rowLeft).toBeGreaterThanOrEqual(0);
+        expect(row.rowRight).toBeLessThanOrEqual(390.5);
+        expect(row.buttonLeft).toBeGreaterThanOrEqual(row.rowLeft);
+        expect(row.buttonRight).toBeLessThanOrEqual(row.rowRight + 0.5);
+        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+      }
+
+      const issueDismiss = page!.locator(
+        '#dash-notice-attention-list [data-notice-id="notice-category-issue"] [data-dashboard-dismiss]',
+      );
+      await issueDismiss.focus();
+      await page!.keyboard.press("Enter");
+      await page!.waitForSelector('#dash-notice-attention-list [data-notice-id="notice-category-issue"]', {
+        state: "detached",
+      });
+      await page!.waitForFunction(
+        () =>
+          (document.activeElement as HTMLElement | null)?.dataset.dismissalKey ===
+          "notice:notice-category-info",
+      );
+      expect(putCalls).toEqual([
+        {
+          method: "PUT",
+          path: DISMISSAL_PATH,
+          body: { key: "notice:notice-category-issue", dismissed: true },
+        },
+      ]);
+      expect(pageErrors).toEqual([]);
+    }, 40_000);
+  }
+
   it("caps visible stock rows at 8 while reporting the true total", async () => {
     await gotoDashboard("case=cap");
     await waitForBoardReady();
@@ -323,6 +486,88 @@ describe("mounted Dashboard attention", () => {
     ).toBe(1);
     expect(noticesCalls).toBe(1);
     expect(dismissalsGetCalls).toBe(1);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("reproduces late inventory delivery for the already-selected lab", async () => {
+    // Real app order: Dashboard mounts, then fetchInventory/applyBroadcast sets
+    // the tree while the selected group ID stays "group-a".
+    await gotoDashboard("case=main&load=delayed");
+    await waitForBoardReady();
+
+    // Before the delayed tree arrives the lab is unconfirmed, never zero-as-fact,
+    // and no stock from another lab may leak in.
+    expect(await page!.getAttribute("#dash-attention", "data-stock-ready")).toBe("false");
+    expect(await page!.textContent("#stat-chems .stat-value")).toBe("0");
+    expect(await page!.textContent("#stat-protocols .stat-value")).toBe("0");
+    expect(await page!.textContent("#dash-stock-attention-loading")).toContain(
+      "Waiting for confirmed inventory for this lab",
+    );
+    expect(await page!.locator("#dash-stock-attention-list").count()).toBe(0);
+
+    await page!.evaluate(() =>
+      (window as unknown as { __dashboardFixtureDeliver(): void }).__dashboardFixtureDeliver(),
+    );
+    await page!
+      .waitForFunction(
+        () => document.querySelector("#dash-attention")?.getAttribute("data-stock-ready") === "true",
+        undefined,
+        { timeout: 5_000 },
+      )
+      .catch(() => undefined);
+
+    const delivered = {
+      chems: await page!.textContent("#stat-chems .stat-value"),
+      containers: await page!.textContent("#stat-containers .stat-value"),
+      protocols: await page!.textContent("#stat-protocols .stat-value"),
+      ready: await page!.getAttribute("#dash-attention", "data-stock-ready"),
+      rows: (await stockRows()).map((row) => row.id).sort(),
+    };
+    expect(delivered).toEqual({
+      chems: "6",
+      containers: "2",
+      protocols: "2",
+      ready: "true",
+      rows: [
+        "container-direct",
+        "freezer-stock",
+        "nested-stock",
+        "nested-stock",
+        "room-direct",
+        "shelf-stock",
+      ],
+    });
+
+    // Selecting a different lab must not show the previous lab's stock before
+    // its own tree arrives, even though the old tree is still in the store.
+    await page!.evaluate(() =>
+      (
+        window as unknown as { __dashboardFixtureSelectGroup(groupId: string): void }
+      ).__dashboardFixtureSelectGroup("group-b"),
+    );
+    await page!.waitForFunction(
+      () => document.querySelector("#dash-attention")?.getAttribute("data-stock-ready") === "false",
+    );
+    expect(await page!.textContent("#stat-chems .stat-value")).toBe("0");
+    expect(await page!.textContent("#stat-protocols .stat-value")).toBe("0");
+    expect(
+      await page!.locator('#dash-stock-attention-list [data-stock-id="room-direct"]').count(),
+    ).toBe(0);
+    expect(await page!.textContent("#dash-stock-attention-loading")).toContain(
+      "Waiting for confirmed inventory for this lab",
+    );
+
+    await page!.evaluate(() =>
+      (
+        window as unknown as { __dashboardFixtureDeliver(groupId: string): void }
+      ).__dashboardFixtureDeliver("group-b"),
+    );
+    await page!.waitForFunction(
+      () => document.querySelector("#dash-attention")?.getAttribute("data-stock-ready") === "true",
+    );
+    expect(await page!.textContent("#stat-chems .stat-value")).toBe("1");
+    expect(await page!.textContent("#stat-protocols .stat-value")).toBe("0");
+    expect((await stockRows()).map((row) => row.id)).toEqual(["other-lab-stock"]);
     expect(pageErrors).toEqual([]);
   }, 40_000);
 

@@ -3,7 +3,7 @@
   import { MATERIAL_TYPES, materialTypeLabels, type MaterialFieldDef } from "@bioscom/shared";
   import { catalog } from "../../lib/stores/catalog.svelte";
   import { session } from "../../lib/stores/session.svelte";
-  import { openMaterialMergeModal } from "../../lib/forms";
+  import { openCatalogStockEditForm, openMaterialMergeModal } from "../../lib/forms";
   import { materialTypeColorClass } from "../../lib/inventoryUtils";
 
   let { materialId }: { materialId: string } = $props();
@@ -23,6 +23,13 @@
 
   const detail = $derived(catalog.detail);
   const material = $derived(detail?.material ?? null);
+  const editableStock = $derived.by(() => {
+    if (detail === null || material === null) {
+      return null;
+    }
+    const stocks = detail.stocks.filter((stock) => stock.materialId === material.id);
+    return stocks.find((stock) => material.id === `m-${stock.id}`) ?? stocks[0] ?? null;
+  });
 
   const fieldDefs = $derived.by<readonly MaterialFieldDef[]>(() => {
     if (material === null) {
@@ -74,38 +81,13 @@
     return new Date(value).toISOString().slice(0, 10);
   }
 
-  function expiryHint(value: number | null): string {
-    if (value === null) {
-      return "";
+  function openSelectedStockEditor(): void {
+    if (material === null || editableStock === null) {
+      return;
     }
-    const days = Math.ceil((value - Date.now()) / 86_400_000);
-    if (days < 0 || days > 60) {
-      return "";
-    }
-    return days === 1 ? "expires in 1 day" : `expires in ${days} days`;
-  }
-
-  function statusClass(status: string): string {
-    switch (status) {
-      case "available":
-        return "done";
-      case "depleted":
-        return "pending";
-      case "discarded":
-        return "rejected";
-      case "reserved":
-        return "printing";
-      default:
-        return "pending";
-    }
-  }
-
-  function statusLabel(status: string): string {
-    return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-
-  function stockPosition(stock: { position: string | null; customPosition: string | null }): string {
-    return stock.customPosition ?? stock.position ?? "—";
+    openCatalogStockEditForm(editableStock.id, () => {
+      void catalog.fetchMaterialDetail(material.id);
+    });
   }
 </script>
 
@@ -116,18 +98,28 @@
         {/each}
     </div>
 {:else}
-    <div id="material-detail" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
-        <h3 style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">{material.name}</h3>
+    <div id="material-detail" class="material-detail-header">
+        <h3 class="material-detail-heading">{material.name}</h3>
         <span class={`chem-pos ${materialTypeColorClass(material.type)}`}>{labels[material.type] ?? material.type}</span>
-        <span style="font-size: 0.75rem; color: var(--text-muted);">Created {formatDate(material.createdAt)}</span>
+        <span class="material-detail-created">Created {formatDate(material.createdAt)}</span>
         {#if session.user?.role !== "reader"}
-            <button
-                type="button"
-                class="btn-secondary"
-                id="material-merge-open"
-                style="margin-left: auto; padding: 0.3rem 0.7rem; font-size: 0.8rem;"
-                onclick={() => openMaterialMergeModal(material.id, material.name)}
-            >Merge into…</button>
+            <div class="material-detail-actions" role="group" aria-label="Material actions">
+                <button
+                    type="button"
+                    class="btn-secondary material-detail-action"
+                    id="material-merge-open"
+                    onclick={() => openMaterialMergeModal(material.id, material.name)}
+                >Merge into…</button>
+                <button
+                    type="button"
+                    class="btn-secondary material-detail-action"
+                    id="material-edit-open"
+                    aria-label="Edit material details"
+                    title={editableStock === null ? "Edit unavailable: this material has no stock records." : "Edit material details"}
+                    disabled={editableStock === null}
+                    onclick={openSelectedStockEditor}
+                >Edit</button>
+            </div>
         {/if}
     </div>
     {#if material.description}
@@ -142,68 +134,47 @@
             {/each}
         </div>
     {/if}
-
-    {@const productById = new Map((detail.products ?? []).map((p) => [p.id, p]))}
-    <h4 class="detail-section-title">Packages</h4>
-    {#if detail.batches.length === 0}
-        <p style="font-size: 0.85rem; color: var(--text-muted);">No packages recorded.</p>
-    {:else}
-        <table class="detail-table">
-            <thead>
-                <tr><th>Lot</th><th>Origin</th><th>Manufacturer</th><th>Catalog #</th><th>Received</th><th>Expires</th></tr>
-            </thead>
-            <tbody>
-                {#each detail.batches as batch (batch.id)}
-                    {@const product = batch.productId !== null && batch.productId !== undefined ? productById.get(batch.productId) : undefined}
-                    <tr>
-                        <td class="stocks-mono">{batch.lotCode ?? "—"}</td>
-                        <td>{batch.originType}</td>
-                        <td>{product?.manufacturer ?? "—"}</td>
-                        <td class="stocks-mono">{product?.catalogNumber ?? "—"}</td>
-                        <td>{formatDate(batch.receivedAt)}</td>
-                        <td>
-                            {formatDate(batch.expiresAt)}
-                            {#if expiryHint(batch.expiresAt) !== ""}
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">{expiryHint(batch.expiresAt)}</div>
-                            {/if}
-                        </td>
-                    </tr>
-                {/each}
-            </tbody>
-        </table>
-    {/if}
-
-    <h4 class="detail-section-title">Locations</h4>
-    {#if detail.stocks.length === 0}
-        <p style="font-size: 0.85rem; color: var(--text-muted);">No stock records.</p>
-    {:else}
-        <table class="detail-table">
-            <thead>
-                <tr><th>Location</th><th>Position</th><th>Quantity</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-                {#each detail.stocks as stock (stock.id)}
-                    <tr>
-                        <td>
-                            <div>{stock.location.path || "—"}</div>
-                            {#if stock.location.rackName || stock.location.boxName}
-                                <div style="font-family: monospace; font-size: 0.7rem; color: var(--text-muted);">
-                                    {[stock.location.rackName, stock.location.boxName].filter((part) => part !== null && part !== "").join(" / ")}
-                                </div>
-                            {/if}
-                        </td>
-                        <td>
-                            {#if stock.customPosition !== null && stock.customPosition !== ""}
-                                <span class="chem-pos">{stock.customPosition}</span>
-                            {:else}
-                                {stockPosition(stock)}
-                            {/if}
-                        </td>
-                        <td>{stock.quantity ?? "—"} {stock.unit ?? ""}</td>
-                        <td><span class={`status-badge ${statusClass(stock.status)}`}>{statusLabel(stock.status)}</span></td>
-                    </tr>
-                {/each}
-            </tbody>
-        </table>
-    {/if}
 {/if}
+
+<style>
+    .material-detail-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        min-width: 0;
+        margin-bottom: 0.5rem;
+    }
+
+    .material-detail-heading {
+        min-width: 0;
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.2rem;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+    }
+
+    .material-detail-created {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
+
+    .material-detail-actions {
+        display: flex;
+        flex: 0 1 auto;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        min-width: 0;
+        max-width: 100%;
+        margin-left: auto;
+    }
+
+    .material-detail-action {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+</style>

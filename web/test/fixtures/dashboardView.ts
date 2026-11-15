@@ -12,6 +12,10 @@ const requestedGroupId = params.get("group") ?? "group-a";
 const groupId = requestedGroupId === "none" ? null : requestedGroupId;
 const fixtureCase = params.get("case") ?? "main";
 const design = params.get("design") === "original" ? "original" : "bauhaus";
+// "delayed" mimics the real app: App/Dashboard mount first, and the lab's
+// inventory tree arrives afterwards (fetchInventory/applyBroadcast) while the
+// selected group ID stays unchanged.
+const loadMode = params.get("load") ?? "eager";
 const currentDate = new Date();
 const todayUtc = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), currentDate.getUTCDate());
 const day = 86_400_000;
@@ -30,6 +34,10 @@ function stock(id: string, name: string, quantity: unknown, expiresAt?: number):
 
 function mainTree(): InventoryTree {
   return {
+    protocols: [
+      { id: "protocol-alpha", title: "Synthetic Protocol Alpha" },
+      { id: "protocol-beta", title: "Synthetic Protocol Beta", content: "Steps for beta." },
+    ],
     rooms: [
       {
         id: "room-main",
@@ -122,12 +130,19 @@ setUser({
 });
 setCurrentGroup(groupId, groupId === null ? null : groupId === "group-a" ? "Synthetic Lab A" : "Synthetic Lab B");
 let version = 0;
+function treeFor(nextGroupId: string): InventoryTree {
+  return nextGroupId === "group-b" ? otherGroupTree() : fixtureCase === "cap" ? capTree() : mainTree();
+}
 function installGroupTree(nextGroupId: string): void {
-  const tree = nextGroupId === "group-b" ? otherGroupTree() : fixtureCase === "cap" ? capTree() : mainTree();
+  const tree = treeFor(nextGroupId);
   version += 1;
   applyBroadcast({ groupId: nextGroupId, version, tree }, nextGroupId);
 }
-if (groupId !== null) installGroupTree(groupId);
+if (groupId !== null && loadMode !== "delayed") installGroupTree(groupId);
+
+function groupLabel(nextGroupId: string): string {
+  return nextGroupId === "group-a" ? "Synthetic Lab A" : "Synthetic Lab B";
+}
 
 Object.assign(window, {
   __dashboardFixtureSwitch(next: { uid: string; groupId: string }): void {
@@ -138,8 +153,24 @@ Object.assign(window, {
       groupId: next.groupId,
       email: null,
     });
-    setCurrentGroup(next.groupId, next.groupId === "group-a" ? "Synthetic Lab A" : "Synthetic Lab B");
+    setCurrentGroup(next.groupId, groupLabel(next.groupId));
     installGroupTree(next.groupId);
+  },
+  // Change the selected lab without delivering its inventory yet, so tests can
+  // prove the previous lab's stock is never shown for the newly selected one.
+  __dashboardFixtureSelectGroup(nextGroupId: string): void {
+    setUser({
+      uid,
+      name: "Synthetic Dashboard User",
+      role: "reader",
+      groupId: nextGroupId,
+      email: null,
+    });
+    setCurrentGroup(nextGroupId, groupLabel(nextGroupId));
+  },
+  // Deliver a lab's inventory after mount, keeping the selected group unchanged.
+  __dashboardFixtureDeliver(nextGroupId: string = groupId ?? "group-a"): void {
+    installGroupTree(nextGroupId);
   },
 });
 

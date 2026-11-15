@@ -14,7 +14,11 @@ let tree = $state<InventoryTree | null>(null);
 let version = $state(0);
 let loaded = $state(false);
 let sharedContainers = $state<SharedContainerListItem[]>([]);
-let subscribedGroupId: string | null = null;
+// Reactive so inventoryFor() re-runs when the first tree for the selected lab
+// arrives after mount. As a plain variable it changed silently: inventoryFor()
+// short-circuits before reading `tree` while unsubscribed, so the Dashboard
+// derived never tracked `tree` and stayed at zero until an unrelated change.
+let subscribedGroupId = $state<string | null>(null);
 
 export const inventory = {
   get tree(): InventoryTree | null {

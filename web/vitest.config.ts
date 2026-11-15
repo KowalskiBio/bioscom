@@ -12,7 +12,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
-    // Several fixtures each launch Vite and Chromium; cap concurrent startup contention.
-    maxWorkers: 2,
+    // Each fixture launches Vite and Chromium; serialize to avoid pending WebSocket races.
+    maxWorkers: 1,
   },
 });
