@@ -1,8 +1,10 @@
 import { mount } from "svelte";
 import type { InventoryTree } from "@bioscom/shared";
+import "../../src/app.css";
 import { setUser } from "../../src/lib/stores/session.svelte";
 import { setCurrentGroup } from "../../src/lib/stores/currentGroup.svelte";
 import { applyBroadcast } from "../../src/lib/stores/inventory.svelte";
+import { setDesign } from "../../src/lib/theme.svelte";
 
 const params = new URLSearchParams(window.location.search);
 const role = params.get("role") ?? "editor";
@@ -16,6 +18,7 @@ setUser({
   email: null,
 });
 setCurrentGroup("group-a", "Synthetic Lab");
+setDesign(params.get("design") === "bauhaus" ? "bauhaus" : "original");
 
 const tree = {
   rooms: [
@@ -37,6 +40,29 @@ const tree = {
               position: "C-Direct",
               note: "Container direct note",
             },
+            {
+              id: "container-chip-chemical",
+              name: "Chip chemical",
+              type: "chemical",
+              quantity: 1,
+              unit: "mL",
+              note: "Synthetic inline chemical chip",
+            },
+            {
+              id: "container-chip-bio",
+              name: "Chip bio",
+              type: "biological_stock",
+              quantity: 1,
+              unit: "pcs",
+              note: "Synthetic inline biological chip",
+            },
+            {
+              id: "container-chip-legacy",
+              name: "Chip legacy",
+              quantity: 1,
+              unit: "pcs",
+              note: "Synthetic legacy chemical chip",
+            },
           ],
           shelves: [
             {
@@ -52,6 +78,22 @@ const tree = {
                   unit: "g",
                   position: "S-3",
                   note: "Shelf note",
+                },
+                {
+                  id: "shelf-chip-chemical",
+                  name: "Chip chemical",
+                  type: "chemical",
+                  quantity: 1,
+                  unit: "mL",
+                  note: "Synthetic shelf chemical chip",
+                },
+                {
+                  id: "shelf-chip-bio",
+                  name: "Chip bio",
+                  type: "biological_stock",
+                  quantity: 1,
+                  unit: "pcs",
+                  note: "Synthetic shelf biological chip",
                 },
               ],
             },
@@ -70,6 +112,22 @@ const tree = {
                   position: "N-2",
                   note: "Nested box note",
                   attributes: { target_species: "zebrafish" },
+                },
+                {
+                  id: "nested-chip-chemical",
+                  name: "Chip chemical",
+                  type: "chemical",
+                  quantity: 1,
+                  unit: "mL",
+                  note: "Synthetic box chemical chip",
+                },
+                {
+                  id: "nested-chip-bio",
+                  name: "Chip bio",
+                  type: "biological_stock",
+                  quantity: 1,
+                  unit: "pcs",
+                  note: "Synthetic box biological chip",
                 },
               ],
             },
@@ -105,6 +163,22 @@ const tree = {
                   attributes: { target_species: "mouse", sequence: "acgt" },
                   product: { manufacturer: "Cold Products", catalogNumber: "CRYO-1" },
                   batchInfo: { lotCode: "DEEP-LOT", receivedAt: 0, expiresAt: Date.UTC(2028, 1, 3) },
+                },
+                {
+                  id: "deep-chip-chemical",
+                  name: "Chip chemical",
+                  type: "chemical",
+                  quantity: 1,
+                  unit: "mL",
+                  note: "Synthetic deep chemical chip",
+                },
+                {
+                  id: "deep-chip-bio",
+                  name: "Chip bio",
+                  type: "biological_stock",
+                  quantity: 1,
+                  unit: "pcs",
+                  note: "Synthetic deep biological chip",
                 },
               ],
             },
@@ -155,6 +229,14 @@ const tree = {
           unit: "pcs",
           note: null,
           attributes: { custom_notes: "Other room descriptor fallback" },
+        },
+        {
+          id: "room-chip-bio",
+          name: "Chip room bio",
+          type: "biological_stock",
+          quantity: 1,
+          unit: "pcs",
+          note: "Synthetic room biological type",
         },
       ],
     },

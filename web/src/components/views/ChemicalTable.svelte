@@ -133,23 +133,34 @@
       <tr class="fade-in" data-chemid={ch.id}>
         {#each model.columns as column (column.id)}
           {#if column.kind === "name"}
+            {@const materialType = ch.type ?? "chemical"}
+            {@const fullTypeLabel = labels[materialType] ?? materialType}
+            {@const compactInlineType = materialType === "chemical" || materialType === "biological_stock"}
             <td class={`${column.className} chem-name`} data-column={column.id}>
-              {#if onOpenLocation !== undefined}
-                <button
-                  type="button"
-                  class="chemical-name-link"
-                  title={`Open ${rowLocationText(ch)}`}
-                  aria-label={`Open ${rowLocationText(ch)} for ${ch.name ?? "chemical"}`}
-                  onclick={() => onOpenLocation(ch)}
-                ><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(displayText(ch.name ?? ""), query)}</button>
-              {:else if layout === "room"}
-                <strong>{displayText(ch.name ?? "")}</strong>
-              {:else}
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(displayText(ch.name ?? ""), query)}
-              {/if}
-              {#if layout !== "room" && model.selected.has("type") && (ch.type ?? "chemical") !== "chemical"}
-                <span class={`status-badge ${materialTypeColorClass(ch.type)}`} style="margin-left:0.4rem;">{labels[ch.type ?? "chemical"] ?? ch.type}</span>
-              {/if}
+              <span class={`chemical-name-line${layout !== "room" && model.selected.has("type") && compactInlineType ? " has-compact-type" : ""}`}>
+                <span class="chemical-name-text">
+                  {#if onOpenLocation !== undefined}
+                    <button
+                      type="button"
+                      class="chemical-name-link"
+                      title={`Open ${rowLocationText(ch)}`}
+                      aria-label={`Open ${rowLocationText(ch)} for ${ch.name ?? "chemical"}`}
+                      onclick={() => onOpenLocation(ch)}
+                    ><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(displayText(ch.name ?? ""), query)}</button>
+                  {:else if layout === "room"}
+                    <strong>{displayText(ch.name ?? "")}</strong>
+                  {:else}
+                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(displayText(ch.name ?? ""), query)}
+                  {/if}
+                </span>
+                {#if layout !== "room" && model.selected.has("type")}
+                  <span
+                    class={`status-badge ${materialTypeColorClass(materialType)}${compactInlineType ? " chemical-inline-type" : ""}`}
+                    style={compactInlineType ? undefined : "margin-left:0.4rem;"}
+                    title={compactInlineType ? fullTypeLabel : undefined}
+                  >{materialType === "chemical" ? "Chemical" : materialType === "biological_stock" ? "Biological stock" : fullTypeLabel}</span>
+                {/if}
+              </span>
               {#if layout === "room" && legacy && ch.concentration !== null && ch.concentration !== undefined}
                 <div class="room-chemical-meta">{ch.concentration}{ch.concUnit ? ` ${ch.concUnit}` : ""}</div>
               {/if}

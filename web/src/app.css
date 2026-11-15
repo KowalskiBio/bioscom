@@ -363,6 +363,21 @@ body::after {
 .chemicals-table tbody tr:hover { background:rgba(255,255,255,0.03); }
 .chemicals-table tbody tr:last-child td { border-bottom:none; }
 .chem-name { font-weight:600; color:var(--text-primary); }
+/* Keep the compact Chemical/Biological stock chip beside the name, not on a second inline line. */
+.chemical-preference-table .chemical-name-line.has-compact-type {
+    display:flex;
+    align-items:center;
+    gap:0.4rem;
+}
+.chemical-preference-table .chemical-name-line.has-compact-type .chemical-name-text {
+    min-width:0;
+    overflow-wrap:anywhere;
+}
+.chemical-preference-table .chemical-name-line .chemical-inline-type {
+    flex:0 0 auto;
+    padding-inline:0.45rem;
+    white-space:nowrap;
+}
 .chem-formula { font-family:'Times New Roman',serif; font-style:italic; color:var(--accent-teal); }
 .qty-adjuster {
     display: inline-flex;

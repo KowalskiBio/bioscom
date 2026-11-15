@@ -2,7 +2,7 @@ import http from "node:http";
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
@@ -15,7 +15,7 @@ let page: Page | null = null;
 let fixtureUrl = "";
 let navigation = 0;
 let preferenceStatus = 200;
-let roomPreferenceColumns = [
+const allRoomPreferenceColumns = [
   "name",
   "type",
   "quantity",
@@ -33,6 +33,7 @@ let roomPreferenceColumns = [
   "note",
   "actions",
 ];
+let roomPreferenceColumns = [...allRoomPreferenceColumns];
 const pageErrors: string[] = [];
 const adjustCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
 
@@ -131,6 +132,188 @@ async function cellText(tableId: string, chemicalId: string, columnId: string): 
   const cell = page!.locator(`#${tableId} tbody tr[data-chemid="${chemicalId}"] td[data-column="${columnId}"]`);
   return (await cell.textContent())?.trim() ?? "";
 }
+
+interface InlineChipGeometry {
+  name: { top: number; bottom: number; left: number; right: number; lineCount: number } | null;
+  chip: {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+    width: number;
+    height: number;
+    lineCount: number;
+    whiteSpace: string;
+  } | null;
+  cellWidth: number;
+  documentWidth: number;
+  viewportWidth: number;
+}
+
+async function inlineChipGeometry(tableId: string, chemicalId: string): Promise<InlineChipGeometry> {
+  const cell = page!.locator(`#${tableId} tbody tr[data-chemid="${chemicalId}"] td[data-column="name"]`);
+  return cell.evaluate((element) => {
+    const textRects = (target: Node): DOMRect[] => {
+      const nodes: Node[] = target.nodeType === Node.TEXT_NODE ? [target] : [];
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node !== null) {
+        nodes.push(node);
+        node = walker.nextNode();
+      }
+      return nodes.flatMap((text) => {
+        if ((text.textContent ?? "").trim() === "") return [];
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        return Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+      });
+    };
+    const chip = element.querySelector<HTMLElement>(".status-badge");
+    const nameTarget = element.querySelector(".chemical-name-text") ?? Array.from(element.childNodes).find((node) =>
+      node !== chip && !(node instanceof HTMLElement && node.classList.contains("room-chemical-meta")) &&
+      (node.textContent ?? "").trim() !== "",
+    );
+    let name: InlineChipGeometry["name"] = null;
+    if (nameTarget !== undefined) {
+      const rectangles = textRects(nameTarget);
+      if (rectangles.length > 0) {
+        name = {
+          top: Math.min(...rectangles.map((rect) => rect.top)),
+          bottom: Math.max(...rectangles.map((rect) => rect.bottom)),
+          left: Math.min(...rectangles.map((rect) => rect.left)),
+          right: Math.max(...rectangles.map((rect) => rect.right)),
+          lineCount: new Set(rectangles.map((rect) => Math.round(rect.top))).size,
+        };
+      }
+    }
+    let chipGeometry: InlineChipGeometry["chip"] = null;
+    if (chip !== null) {
+      const rect = chip.getBoundingClientRect();
+      chipGeometry = {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+        lineCount: new Set(textRects(chip).map((textRect) => Math.round(textRect.top))).size,
+        whiteSpace: getComputedStyle(chip).whiteSpace,
+      };
+    }
+    return {
+      name,
+      chip: chipGeometry,
+      cellWidth: element.getBoundingClientRect().width,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+}
+
+const inlineChipContexts = [
+  { name: "container detail", hash: "detail/room-main/cont-main", query: "Chip", table: "container-direct-chemicals-table", prefix: "container-chip" },
+  { name: "shelf", hash: "detail/room-main/cont-main", query: "Chip", table: "shelf-chemicals-table-shelf-main", prefix: "shelf-chip" },
+  { name: "box", hash: "detail/room-main/cont-main", query: "Chip", table: "nested-box-chemicals-table-nested-box", prefix: "nested-chip" },
+  { name: "root deep-freezer search", hash: "detail/room-main/cont-freezer", query: "Chip", table: "deepfreezer-search-chemicals-table", prefix: "deep-chip" },
+  { name: "deep-freezer box", hash: "detail/room-main/cont-freezer/rack/7/box/B4", query: "", table: "deepfreezer-box-chemicals-table", prefix: "deep-chip" },
+] as const;
+
+function expectSameVisualLine(geometry: InlineChipGeometry): void {
+  expect(geometry.name).not.toBeNull();
+  expect(geometry.chip).not.toBeNull();
+  expect(geometry.name!.lineCount, JSON.stringify(geometry)).toBe(1);
+  expect(geometry.chip!.top, JSON.stringify(geometry)).toBeLessThan(geometry.name!.bottom);
+  expect(geometry.chip!.bottom, JSON.stringify(geometry)).toBeGreaterThan(geometry.name!.top);
+  expect(geometry.chip!.lineCount, JSON.stringify(geometry)).toBe(1);
+  expect(geometry.chip!.whiteSpace).toBe("nowrap");
+  expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+}
+
+describe("mounted material type chips", () => {
+  afterEach(() => {
+    roomPreferenceColumns = [...allRoomPreferenceColumns];
+  });
+
+  it("shows Chemical for explicit and legacy detail rows while preserving its material palette", async () => {
+    roomPreferenceColumns = ["name", "type", "quantity", "location", "note", "actions"];
+    await openView("detail/room-main/cont-main", "case=inline-chemical&q=Chip&design=original");
+    for (const chemicalId of ["container-chip-chemical", "container-chip-legacy"]) {
+      const chip = page!.locator(`#container-direct-chemicals-table tr[data-chemid="${chemicalId}"] td[data-column="name"] .status-badge`);
+      expect(await chip.isVisible()).toBe(true);
+      expect(await chip.textContent()).toBe("Chemical");
+      expect(await chip.getAttribute("class")).toContain("material-type-chemical");
+      const geometry = await inlineChipGeometry("container-direct-chemicals-table", chemicalId);
+      expectSameVisualLine(geometry);
+    }
+  }, 40_000);
+
+  it("keeps compact biological chips on the Name line in every shared detail context and theme", async () => {
+    roomPreferenceColumns = ["name", "type", "quantity", "location", "note", "actions"];
+    await page!.setViewportSize({ width: 390, height: 844 });
+    for (const design of ["original", "bauhaus"]) {
+      for (const context of inlineChipContexts) {
+        const query = context.query === "" ? "" : `&q=${context.query}`;
+        await openView(context.hash, `case=inline-${design}-${context.prefix}${query}&design=${design}`);
+        await page!.waitForSelector(`#${context.table} tr[data-chemid="${context.prefix}-bio"]`);
+        const bioChip = page!.locator(`#${context.table} tr[data-chemid="${context.prefix}-bio"] td[data-column="name"] .status-badge`);
+        expect(await bioChip.isVisible()).toBe(true);
+        const geometry = await inlineChipGeometry(context.table, `${context.prefix}-bio`);
+        expectSameVisualLine(geometry);
+        expect(await bioChip.textContent()).toBe("Biological stock");
+        expect(await bioChip.getAttribute("title")).toBe("Biological / glycerol stock");
+        expect(await bioChip.getAttribute("class")).toContain("material-type-biological_stock");
+
+        const chemicalChip = page!.locator(`#${context.table} tr[data-chemid="${context.prefix}-chemical"] td[data-column="name"] .status-badge`);
+        expect(await chemicalChip.isVisible()).toBe(true);
+        expect(await chemicalChip.textContent()).toBe("Chemical");
+        expect(await chemicalChip.getAttribute("class")).toContain("material-type-chemical");
+      }
+    }
+    await page!.setViewportSize({ width: 1200, height: 800 });
+    expect(pageErrors).toEqual([]);
+  }, 120_000);
+
+  it("honors hidden Type, keeps direct-room labels canonical, and contains narrow overflow locally", async () => {
+    roomPreferenceColumns = ["name", "quantity", "location", "note", "actions"];
+    await openView("detail/room-main/cont-main", "case=inline-hidden&q=Chip");
+    await page!.waitForSelector('#container-direct-chemicals-table tr[data-chemid="container-chip-bio"]');
+    expect(await page!.locator('#container-direct-chemicals-table td[data-column="name"] .status-badge').count()).toBe(0);
+
+    roomPreferenceColumns = ["name", "type", "quantity", "location", "note", "actions"];
+    await openView("containers/room-main", "case=inline-room-types");
+    const roomBioType = page!.locator('#room-direct-chemicals-table tr[data-chemid="room-chip-bio"] td[data-column="type"] .status-badge');
+    expect(await roomBioType.textContent()).toBe("Biological / glycerol stock");
+    expect(await roomBioType.getAttribute("class")).toContain("material-type-biological_stock");
+    const roomChemicalType = page!.locator('#room-direct-chemicals-table tr[data-chemid="room-blank"] td[data-column="type"] .status-badge');
+    expect(await roomChemicalType.textContent()).toBe("Chemical / compound");
+    expect(await roomChemicalType.getAttribute("class")).toContain("material-type-chemical");
+    expect(await page!.locator('#room-direct-chemicals-table td[data-column="name"] .status-badge').count()).toBe(0);
+
+    for (const design of ["original", "bauhaus"]) {
+      await page!.setViewportSize({ width: 390, height: 844 });
+      await openView("detail/room-main/cont-main", `case=inline-mobile-${design}&q=Chip&design=${design}`);
+      await page!.waitForSelector('#container-direct-chemicals-table tr[data-chemid="container-chip-bio"]');
+      const geometry = await inlineChipGeometry("container-direct-chemicals-table", "container-chip-bio");
+      expectSameVisualLine(geometry);
+      expect(geometry.documentWidth).toBeLessThanOrEqual(390);
+      const scrolling = await page!.locator("#container-direct-chemicals-table").evaluate((table) => {
+        let ancestor = table.parentElement;
+        while (ancestor !== null && ancestor.scrollWidth <= ancestor.clientWidth) ancestor = ancestor.parentElement;
+        return ancestor === null ? null : {
+          clientWidth: ancestor.clientWidth,
+          scrollWidth: ancestor.scrollWidth,
+          overflowX: getComputedStyle(ancestor).overflowX,
+        };
+      });
+      expect(scrolling, `missing local table scroller in ${design}`).not.toBeNull();
+      expect(scrolling!.scrollWidth).toBeGreaterThan(scrolling!.clientWidth);
+      expect(["auto", "scroll"]).toContain(scrolling!.overflowX);
+      const actions = page!.locator('#container-direct-chemicals-table tr[data-chemid="container-chip-bio"] td[data-column="actions"]');
+      expect(await actions.count()).toBe(1);
+      await page!.setViewportSize({ width: 1200, height: 800 });
+    }
+  }, 90_000);
+});
 
 describe("mounted room All column preferences", () => {
   it("renders real direct-room values, descriptors, Note and status in semantic column order", async () => {
