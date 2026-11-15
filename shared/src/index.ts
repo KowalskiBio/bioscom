@@ -12,4 +12,5 @@ export * from "./game.js";
 export * from "./inventory.js";
 export * from "./material.js";
 export * from "./catalogColumns.js";
+export * from "./dashboardAlerts.js";
 export * from "./legacy.js";

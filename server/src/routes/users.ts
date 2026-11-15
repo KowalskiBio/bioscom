@@ -4,12 +4,19 @@ import type Database from "better-sqlite3";
 import {
   CATALOG_COLUMN_SCOPES,
   CatalogColumnUpdateSchema,
+  DASHBOARD_DISMISSED_ALERTS_SETTINGS_KEY,
+  DashboardDismissalKeysError,
+  DashboardDismissalLimitError,
+  DashboardDismissalUpdateBodySchema,
   RegisterBodySchema,
   UpdateProfileBodySchema,
   UpdateRoleBodySchema,
+  applyDashboardDismissal,
   defaultCatalogColumnSelections,
+  normalizeDashboardDismissalKeys,
   type CatalogColumnScope,
   type CatalogColumnSelections,
+  type DashboardDismissalsResponse,
 } from "@bioscom/shared";
 import { getDatabase } from "../db.js";
 import type { ServerConfig } from "../config.js";
@@ -128,6 +135,59 @@ function writeCatalogColumnPreferences(
   return save.immediate();
 }
 
+function normalizeStoredDismissals(raw: unknown): string[] {
+  try {
+    return normalizeDashboardDismissalKeys(raw);
+  } catch (error) {
+    if (error instanceof DashboardDismissalKeysError) {
+      throw new StoredSettingsError("dashboardDismissedAlerts is invalid");
+    }
+    throw error;
+  }
+}
+
+function readDashboardDismissals(db: Database.Database, uid: string): DashboardDismissalsResponse {
+  const { root, updatedAt } = readSettingsRoot(db, uid);
+  return {
+    dismissals: normalizeStoredDismissals(root[DASHBOARD_DISMISSED_ALERTS_SETTINGS_KEY]),
+    updatedAt,
+  };
+}
+
+function writeDashboardDismissal(
+  db: Database.Database,
+  uid: string,
+  key: string,
+  dismissed: boolean,
+): DashboardDismissalsResponse {
+  // Keep the read/merge/write atomic so dismissing an alert cannot clobber a
+  // concurrent catalog-column update or any other additive root property.
+  const save = db.transaction((): DashboardDismissalsResponse => {
+    const { root, updatedAt } = readSettingsRoot(db, uid);
+    const current = normalizeStoredDismissals(root[DASHBOARD_DISMISSED_ALERTS_SETTINGS_KEY]);
+    const result = applyDashboardDismissal(current, key, dismissed);
+    if (!result.changed) {
+      return { dismissals: result.dismissals, updatedAt };
+    }
+    const serialized = JSON.stringify({
+      ...root,
+      [DASHBOARD_DISMISSED_ALERTS_SETTINGS_KEY]: result.dismissals,
+    });
+    if (serialized.length > MAX_USER_SETTINGS_LENGTH) {
+      // This is a client-facing capacity limit, not corrupt persisted data:
+      // the stored document is valid, but this new dismissal cannot fit.
+      throw new DashboardDismissalLimitError("too many dismissed dashboard alerts");
+    }
+    const nextUpdatedAt = Date.now();
+    db.prepare(
+      `INSERT INTO user_settings (uid, settings, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(uid) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`,
+    ).run(uid, serialized, nextUpdatedAt);
+    return { dismissals: result.dismissals, updatedAt: nextUpdatedAt };
+  });
+  return save.immediate();
+}
+
 export function registerUserRoutes(app: FastifyInstance, config: ServerConfig): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
@@ -204,6 +264,41 @@ export function registerUserRoutes(app: FastifyInstance, config: ServerConfig): 
       if (error instanceof StoredSettingsError) {
         request.log.error({ err: error }, "invalid stored user settings");
         return reply.status(500).send({ error: "Stored user settings are invalid" });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/users/me/dashboard-dismissals", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    try {
+      return readDashboardDismissals(db(), user.uid);
+    } catch (error) {
+      if (error instanceof StoredSettingsError) {
+        request.log.error({ err: error }, "invalid stored user settings");
+        return reply.status(500).send({ error: "Stored user settings are invalid" });
+      }
+      throw error;
+    }
+  });
+
+  app.put("/api/users/me/dashboard-dismissals", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const body = DashboardDismissalUpdateBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Invalid request" });
+    }
+    try {
+      return writeDashboardDismissal(db(), user.uid, body.data.key, body.data.dismissed);
+    } catch (error) {
+      if (error instanceof StoredSettingsError) {
+        request.log.error({ err: error }, "invalid stored user settings");
+        return reply.status(500).send({ error: "Stored user settings are invalid" });
+      }
+      if (error instanceof DashboardDismissalLimitError) {
+        return reply.status(400).send({ error: "Too many dismissed dashboard alerts" });
       }
       throw error;
     }

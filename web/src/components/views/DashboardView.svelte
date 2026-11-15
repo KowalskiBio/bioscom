@@ -1,60 +1,142 @@
 <script lang="ts">
-  import type { Chemical, Room } from "@bioscom/shared";
-  import { inventory } from "../../lib/stores/inventory.svelte";
+  import { onDestroy, tick } from "svelte";
+  import { inventory, inventoryFor } from "../../lib/stores/inventory.svelte";
   import { instrumentList } from "../../lib/stores/instruments.svelte";
   import { historyData } from "../../lib/stores/history.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
-  import { quantityClass, stripEmoji } from "../../lib/inventoryUtils";
+  import { session } from "../../lib/stores/session.svelte";
+  import { fetchNotices, noticeList } from "../../lib/stores/notices.svelte";
+  import {
+    dashboardDismissals,
+    dismissDashboardAlert,
+    loadDashboardDismissals,
+  } from "../../lib/stores/dashboardDismissals.svelte";
+  import {
+    buildDashboardNoticeAlerts,
+    buildDashboardStockAlerts,
+    collectDashboardStockLocations,
+    DASHBOARD_STOCK_ALERT_LIMIT,
+    withoutDismissedAlerts,
+  } from "../../lib/dashboardAttention";
+  import { stripEmoji } from "../../lib/inventoryUtils";
   import { openChemicalForm } from "../../lib/forms";
   import { navigateTo } from "../../lib/router.svelte";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
-
-  const tree = $derived(inventory.tree);
-  const rooms = $derived<Room[]>(tree?.rooms ?? []);
-
-  function allChems(rooms_: Room[]): Array<{ ch: Chemical; path: string }> {
-    const out: Array<{ ch: Chemical; path: string }> = [];
-    for (const room of rooms_) {
-      for (const cont of room.containers ?? []) {
-        for (const shelf of cont.shelves ?? []) {
-          for (const ch of shelf.chemicals ?? []) {
-            out.push({ ch, path: `${room.name ?? room.id} · ${cont.name ?? cont.id}` });
-          }
-        }
-      }
-    }
-    return out;
-  }
-
-  const chems = $derived(allChems(rooms));
-  const chemCount = $derived(chems.length);
-  const contCount = $derived(rooms.reduce((sum, r) => sum + (r.containers ?? []).length, 0));
+  const userId = $derived(session.user?.uid ?? null);
+  const tree = $derived(inventoryFor(currentGroup.groupId));
+  const rooms = $derived(tree?.rooms ?? []);
+  const stockLocations = $derived(collectDashboardStockLocations(tree));
+  const chemCount = $derived(stockLocations.length);
+  const contCount = $derived(
+    rooms.reduce((sum, room) => sum + (room.containers ?? []).length, 0) +
+      (tree?.deepFreezers?.length ?? 0),
+  );
   const protocolCount = $derived(tree?.protocols?.length ?? 0);
 
-  interface AttentionItem {
-    name: string;
-    path: string;
-    qty: number;
-    unit: string;
-    level: "low" | "medium";
-  }
-  const attention = $derived.by<AttentionItem[]>(() => {
-    const out: AttentionItem[] = [];
-    for (const { ch, path } of chems) {
-      const lvl = quantityClass(ch.quantity);
-      if (lvl === "ok") continue;
-      out.push({
-        name: ch.name ?? "—",
-        path,
-        qty: parseFloat(String(ch.quantity ?? 0)) || 0,
-        unit: ch.unit ?? "",
-        level: lvl as "low" | "medium",
-      });
+  let noticesLoading = $state(false);
+  let noticesError = $state("");
+  let noticesAttemptedUid = $state<string | null>(null);
+  let noticeRequest = 0;
+  let announcement = $state("");
+
+  async function loadDashboardNotices(): Promise<void> {
+    if (noticesLoading || noticeList.loaded) return;
+    const request = ++noticeRequest;
+    noticesLoading = true;
+    noticesError = "";
+    try {
+      await fetchNotices();
+    } catch {
+      if (request === noticeRequest) {
+        noticesError = "Couldn’t load board posts. The notice-board list is not confirmed yet.";
+      }
+    } finally {
+      if (request === noticeRequest) noticesLoading = false;
     }
-    return out.sort((a, b) => a.qty - b.qty).slice(0, 8);
+  }
+
+  function requestDashboardNotices(force = false): void {
+    const uid = userId;
+    if (
+      uid === null ||
+      noticeList.loaded ||
+      noticesLoading ||
+      (!force && noticesAttemptedUid === uid)
+    ) {
+      return;
+    }
+    // Mark the attempt before clearing errors or starting the request so a
+    // failure cannot re-trigger this effect as a background retry loop.
+    noticesAttemptedUid = uid;
+    void loadDashboardNotices();
+  }
+
+  $effect(() => {
+    const uid = userId;
+    void loadDashboardDismissals(uid);
+    if (uid !== null) requestDashboardNotices();
   });
+
+  onDestroy(() => {
+    noticeRequest += 1;
+  });
+
+  const dismissalsConfirmed = $derived(
+    userId !== null && dashboardDismissals.accountId === userId && dashboardDismissals.confirmed,
+  );
+  const stockSourcesConfirmed = $derived(dismissalsConfirmed && tree !== null);
+  const boardSourcesConfirmed = $derived(
+    dismissalsConfirmed && noticeList.loaded && !noticesLoading,
+  );
+  const activeStockAlerts = $derived.by(() => {
+    if (!stockSourcesConfirmed || userId === null) return [];
+    return withoutDismissedAlerts(
+      buildDashboardStockAlerts(tree),
+      dashboardDismissals.dismissalsFor(userId),
+    );
+  });
+  const visibleStockAlerts = $derived(activeStockAlerts.slice(0, DASHBOARD_STOCK_ALERT_LIMIT));
+  const noticeAlerts = $derived.by(() => {
+    if (!boardSourcesConfirmed || userId === null) return [];
+    return withoutDismissedAlerts(
+      buildDashboardNoticeAlerts(noticeList.items),
+      dashboardDismissals.dismissalsFor(userId),
+    );
+  });
+  const shownAttentionCount = $derived(visibleStockAlerts.length + noticeAlerts.length);
+
+  function retryAttentionSources(): void {
+    void loadDashboardDismissals(userId, true);
+    if (!noticeList.loaded) requestDashboardNotices(true);
+  }
+
+  function nextDismissControl(key: string): string | null {
+    const controls = [...document.querySelectorAll<HTMLElement>("[data-dashboard-dismiss]")];
+    const index = controls.findIndex((control) => control.dataset.dismissalKey === key);
+    if (index < 0) return null;
+    return controls[index + 1]?.dataset.dismissalKey ?? controls[index - 1]?.dataset.dismissalKey ?? null;
+  }
+
+  async function onDismiss(event: MouseEvent, key: string, name: string): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    const uid = userId;
+    if (uid === null || dashboardDismissals.pendingFor(uid, key)) return;
+    const nextControl = nextDismissControl(key);
+    announcement = `Dismissing ${name} for you. The item stays visible until the save is confirmed.`;
+    const saved = await dismissDashboardAlert(uid, key);
+    if (!saved) {
+      announcement = `Couldn’t dismiss ${name} for you. It remains visible.`;
+      return;
+    }
+    announcement = `Dismissed ${name} for you. Other users are not affected.`;
+    await tick();
+    const controls = [...document.querySelectorAll<HTMLElement>("[data-dashboard-dismiss]")];
+    const target = controls.find((control) => control.dataset.dismissalKey === nextControl);
+    (target ?? document.getElementById("dash-attention-title"))?.focus();
+  }
 
   function todayLocal(): string {
     const d = new Date();
@@ -143,8 +225,8 @@
     return `${p(d.getDate())}.${p(d.getMonth() + 1)}.`;
   }
 
-  function fmtQty(q: number): string {
-    return Number.isInteger(q) ? String(q) : q.toFixed(1);
+  function noticeMeta(authorName: string | null, authorLab: string | null, date: string | null): string {
+    return [authorName, authorLab, date].filter((part): part is string => part !== null).join(" · ");
   }
 </script>
 
@@ -191,28 +273,155 @@
 
 <!-- Row 2 -->
 <section class="dash-grid" id="dash-row2">
-    <div class="card dash-card dash-span2" id="dash-attention">
+    <div class="card dash-card dash-span2" id="dash-attention" data-stock-ready={stockSourcesConfirmed ? "true" : "false"} data-board-ready={boardSourcesConfirmed ? "true" : "false"}>
         <div class="dash-card-head">
-            <span class="stat-glyph g-square g-red"></span>
-            <h2 class="dash-card-title">Attention required</h2>
-            {#if attention.length > 0}<span class="dash-count">{attention.length}</span>{/if}
+            <span class="stat-glyph g-square g-red" aria-hidden="true"></span>
+            <h2 class="dash-card-title" id="dash-attention-title" tabindex="-1">Attention required</h2>
+            {#if (stockSourcesConfirmed || boardSourcesConfirmed) && shownAttentionCount > 0}
+                <span class="dash-count" id="dash-attention-count" title="Attention rows currently shown" aria-label={`${shownAttentionCount} attention rows shown`}>{shownAttentionCount}</span>
+            {/if}
         </div>
-        {#if attention.length === 0}
-            <p class="dash-empty" id="dash-attention-empty">All levels nominal — nothing below par.</p>
-        {:else}
-            <ul class="dash-list">
-                {#each attention as item (item.name + item.path)}
-                    <li class="dash-item">
-                        <span class="stat-glyph {item.level === "low" ? "g-square g-red" : "g-tri g-yellow"}"></span>
-                        <span class="dash-item-main">
-                            <span class="dash-item-title">{design === "bauhaus" ? stripEmoji(item.name) : item.name}</span>
-                            <span class="dash-item-sub">{design === "bauhaus" ? stripEmoji(item.path) : item.path}</span>
-                        </span>
-                        <span class="dash-qty {item.level}">{fmtQty(item.qty)} {item.unit}</span>
-                    </li>
-                {/each}
-            </ul>
+        <p class="dash-sr-only" role="status" aria-live="polite">{announcement}</p>
+
+        {#if dashboardDismissals.loadError !== "" || noticesError !== ""}
+            <div class="dash-attention-message warning" id="dash-attention-error" role="alert">
+                <div>
+                    {#if dashboardDismissals.loadError !== ""}<p>{dashboardDismissals.loadError}</p>{/if}
+                    {#if noticesError !== ""}<p>{noticesError}</p>{/if}
+                    {#if stockSourcesConfirmed || boardSourcesConfirmed}<p>Showing the available sections from the last confirmed data.</p>{/if}
+                </div>
+                <button type="button" class="btn-inline" id="dash-attention-retry" onclick={retryAttentionSources}>Try again</button>
+            </div>
         {/if}
+
+        {#if stockSourcesConfirmed && boardSourcesConfirmed && activeStockAlerts.length === 0 && noticeAlerts.length === 0}
+            <p class="dash-empty" id="dash-attention-empty">You’re caught up — no active stock, expiry, or notice-board items remain after your personal dismissals.</p>
+        {/if}
+
+            <section class="dash-attention-section" aria-labelledby="dash-stock-attention-title">
+                <div class="dash-attention-section-head">
+                    <h3 id="dash-stock-attention-title">Stock &amp; expiry</h3>
+                    <p id="dash-stock-attention-summary">
+                        {#if !stockSourcesConfirmed}
+                            Stock alerts are not confirmed yet.
+                        {:else if activeStockAlerts.length > DASHBOARD_STOCK_ALERT_LIMIT}
+                            Showing {visibleStockAlerts.length} of {activeStockAlerts.length} stock alerts · the stock list is limited to {DASHBOARD_STOCK_ALERT_LIMIT} rows.
+                        {:else}
+                            {activeStockAlerts.length} {activeStockAlerts.length === 1 ? "stock alert" : "stock alerts"} shown.
+                        {/if}
+                    </p>
+                </div>
+                {#if !stockSourcesConfirmed}
+                    <p class="dash-attention-group-empty" id="dash-stock-attention-loading" role="status">
+                        {#if currentGroup.groupId === null}
+                            Select a lab to confirm its stock and expiry alerts. No stock empty state is assumed.
+                        {:else if dashboardDismissals.loading}
+                            Loading your personal dismissals before showing stock alerts…
+                        {:else if dashboardDismissals.loadError !== ""}
+                            Stock alerts stay unconfirmed until your personal dismissals load successfully.
+                        {:else}
+                            Waiting for confirmed inventory for this lab. No stock empty state is assumed.
+                        {/if}
+                    </p>
+                {:else if visibleStockAlerts.length === 0}
+                    <p class="dash-attention-group-empty">No active stock or expiry alerts.</p>
+                {:else}
+                    <ul class="dash-list" id="dash-stock-attention-list">
+                        {#each visibleStockAlerts as item (item.dismissalKey)}
+                            {@const pending = userId !== null && dashboardDismissals.pendingFor(userId, item.dismissalKey)}
+                            {@const error = userId !== null ? dashboardDismissals.errorFor(userId, item.dismissalKey) : ""}
+                            <li class="dash-item dash-attention-item" data-attention-key={item.dismissalKey} data-stock-id={item.chemicalId} data-alert-kind={item.kind}>
+                                <a class="dash-attention-link" href={item.href} aria-label={`${item.name}. ${item.detail}. Open stock location`}>
+                                    <span class="stat-glyph {item.level === "low" ? "g-square g-red" : "g-tri g-yellow"}" aria-hidden="true"></span>
+                                    <span class="dash-item-main">
+                                        <span class="dash-item-title">{item.name}</span>
+                                        <span class="dash-item-sub">{item.path}</span>
+                                        <span class="dash-attention-detail {item.level}">{item.detail}</span>
+                                    </span>
+                                </a>
+                                <div class="dash-attention-action">
+                                    <button
+                                        type="button"
+                                        class="btn-inline dash-dismiss-button"
+                                        data-dashboard-dismiss
+                                        data-dismissal-key={item.dismissalKey}
+                                        aria-label={pending ? `Dismissing ${item.name} for me` : `Dismiss ${item.name} for me`}
+                                        aria-describedby={error !== "" ? `attention-error-${item.dismissalKey}` : undefined}
+                                        aria-busy={pending}
+                                        title="Dismiss for me (does not affect other users)"
+                                        disabled={pending}
+                                        onclick={(event) => void onDismiss(event, item.dismissalKey, item.name)}
+                                    >{pending ? "Dismissing…" : "Dismiss"}</button>
+                                    {#if error !== ""}<span class="dash-attention-row-error" id={`attention-error-${item.dismissalKey}`} role="alert">{error}</span>{/if}
+                                </div>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </section>
+
+            <section class="dash-attention-section" aria-labelledby="dash-notice-attention-title">
+                <div class="dash-attention-section-head">
+                    <h3 id="dash-notice-attention-title">Notice board</h3>
+                    <p id="dash-notice-attention-summary">
+                        {#if boardSourcesConfirmed}
+                            {noticeAlerts.length} current {noticeAlerts.length === 1 ? "post" : "posts"} shown · all shared board posts are included.
+                        {:else}
+                            Board posts are not confirmed yet.
+                        {/if}
+                    </p>
+                </div>
+                {#if !boardSourcesConfirmed}
+                    <p class="dash-attention-group-empty" id="dash-board-attention-loading" role="status">
+                        {#if noticesLoading}
+                            Loading shared board posts…
+                        {:else if noticesError !== ""}
+                            Board posts stay unconfirmed until the shared board loads successfully.
+                        {:else if dashboardDismissals.loading}
+                            Loading shared board posts and your personal dismissals…
+                        {:else}
+                            Board posts stay unconfirmed until your personal dismissals load successfully.
+                        {/if}
+                    </p>
+                {:else if noticeAlerts.length === 0}
+                    <p class="dash-attention-group-empty">No current board posts after your personal dismissals.</p>
+                {:else}
+                    <!-- svelte-ignore a11y_no_noninteractive_tabindex -- focusable scroll region is intentional -->
+                    <div class="dash-attention-notice-scroll" tabindex="0" role="group" aria-label="Scrollable notice-board posts">
+                        <ul class="dash-list" id="dash-notice-attention-list">
+                            {#each noticeAlerts as item (item.dismissalKey)}
+                                {@const pending = userId !== null && dashboardDismissals.pendingFor(userId, item.dismissalKey)}
+                                {@const error = userId !== null ? dashboardDismissals.errorFor(userId, item.dismissalKey) : ""}
+                                <li class="dash-item dash-attention-item dash-notice-item" data-attention-key={item.dismissalKey} data-notice-id={item.noticeId} data-notice-category={item.category.toLowerCase()}>
+                                    <a class="dash-attention-link dash-notice-link" href={item.href} aria-label={`${item.title}. Open notice board`}>
+                                        <span class="stat-glyph g-square g-blue" aria-hidden="true"></span>
+                                        <span class="dash-item-main">
+                                            <span class="dash-notice-heading"><span class="dash-notice-category">{item.category}</span><span class="dash-item-title">{item.title}</span></span>
+                                            {#if item.content !== ""}<span class="dash-notice-content">{item.content}</span>{/if}
+                                            {#if noticeMeta(item.authorName, item.authorLab, item.date) !== ""}<span class="dash-item-sub">{noticeMeta(item.authorName, item.authorLab, item.date)}</span>{/if}
+                                        </span>
+                                    </a>
+                                    <div class="dash-attention-action">
+                                        <button
+                                            type="button"
+                                            class="btn-inline dash-dismiss-button"
+                                            data-dashboard-dismiss
+                                            data-dismissal-key={item.dismissalKey}
+                                            aria-label={pending ? `Dismissing ${item.title} for me` : `Dismiss ${item.title} for me`}
+                                            aria-describedby={error !== "" ? `attention-error-${item.dismissalKey}` : undefined}
+                                            aria-busy={pending}
+                                            title="Dismiss for me (does not affect other users)"
+                                            disabled={pending}
+                                            onclick={(event) => void onDismiss(event, item.dismissalKey, item.title)}
+                                        >{pending ? "Dismissing…" : "Dismiss"}</button>
+                                        {#if error !== ""}<span class="dash-attention-row-error" id={`attention-error-${item.dismissalKey}`} role="alert">{error}</span>{/if}
+                                    </div>
+                                </li>
+                            {/each}
+                        </ul>
+                    </div>
+                {/if}
+            </section>
     </div>
 
     <div class="card dash-card" id="dash-reservations">
