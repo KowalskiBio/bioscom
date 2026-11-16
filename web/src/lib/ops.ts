@@ -398,13 +398,21 @@ export function opDeleteProtocol(protocolId: string): Promise<boolean> {
   return run("Failed to delete protocol", () => api.del(`/api/groups/${gid()}/inventory/protocols/${protocolId}`));
 }
 
-export function opAddAssetRoom(name: string): Promise<boolean> {
-  return run("Failed to add asset room", () => api.post(`/api/groups/${gid()}/inventory/asset-rooms`, { name }));
+export function opAddAssetRoom(name: string, linkedRoomId?: string | null): Promise<boolean> {
+  return run("Failed to add asset room", () =>
+    api.post(`/api/groups/${gid()}/inventory/asset-rooms`, {
+      name,
+      ...(linkedRoomId !== undefined ? { linkedRoomId } : {}),
+    }),
+  );
 }
 
-export function opEditAssetRoom(roomId: string, name: string): Promise<boolean> {
+export function opEditAssetRoom(roomId: string, name: string, linkedRoomId?: string | null): Promise<boolean> {
   return run("Failed to save asset room", () =>
-    api.put(`/api/groups/${gid()}/inventory/asset-rooms/${roomId}`, { name }),
+    api.put(`/api/groups/${gid()}/inventory/asset-rooms/${roomId}`, {
+      name,
+      ...(linkedRoomId !== undefined ? { linkedRoomId } : {}),
+    }),
   );
 }
 

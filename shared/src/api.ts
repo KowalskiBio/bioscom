@@ -7,6 +7,56 @@ const rackSlotSchema = z.number().int().min(0).max(MAX_RACK_SLOTS - 1);
 const rackShelvesSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
 const rackShelfSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
 
+/** A nullable, nonempty stable document id used by optional room links. */
+const nullableBodyIdSchema = z.string().trim().min(1).nullable();
+
+interface InstrumentRoomLinkValues {
+  roomGroupId?: string | null;
+  roomId?: string | null;
+}
+
+/**
+ * Instrument room links are all-or-nothing. Both fields omitted means legacy /
+ * unassigned (no change on update); both null clears the link; both nonempty
+ * ids assign it. Anything else, including a present-but-undefined half, is a
+ * broken pair and must not be silently treated as "no change".
+ */
+function refineInstrumentRoomLink(value: InstrumentRoomLinkValues, ctx: z.RefinementCtx): void {
+  const hasGroupId = Object.prototype.hasOwnProperty.call(value, "roomGroupId");
+  const hasRoomId = Object.prototype.hasOwnProperty.call(value, "roomId");
+  if (!hasGroupId && !hasRoomId) return;
+  if (!hasGroupId || !hasRoomId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must be provided together",
+      path: [hasGroupId ? "roomId" : "roomGroupId"],
+    });
+    return;
+  }
+  const groupId = value.roomGroupId;
+  const roomId = value.roomId;
+  if (groupId === undefined || roomId === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must be nonempty ids or both null",
+      path: [groupId === undefined ? "roomGroupId" : "roomId"],
+    });
+    return;
+  }
+  if ((groupId === null) !== (roomId === null)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must both be null or both be set",
+      path: [groupId === null ? "roomGroupId" : "roomId"],
+    });
+  }
+}
+
+const instrumentRoomLinkFields = {
+  roomGroupId: nullableBodyIdSchema.optional(),
+  roomId: nullableBodyIdSchema.optional(),
+};
+
 export const RegisterBodySchema = z.object({
   email: z.email().max(254),
   password: z.string().min(6).max(1024),
@@ -311,11 +361,15 @@ export const EditProtocolBodySchema = z
 
 export const AddAssetRoomBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
+  linkedRoomId: nullableBodyIdSchema.optional(),
 });
 
 export const EditAssetRoomBodySchema = z
-  .object({ name: z.string().trim().min(1).max(100).optional() })
-  .refine((value) => value.name !== undefined, { message: "empty update" });
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    linkedRoomId: nullableBodyIdSchema.optional(),
+  })
+  .refine((value) => value.name !== undefined || value.linkedRoomId !== undefined, { message: "empty update" });
 
 export const AddAssetBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -355,13 +409,16 @@ export const ReactionBodySchema = z.object({
   text: z.string().trim().min(1).max(16),
 });
 
-export const CreateInstrumentBodySchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  description: z.string().trim().max(4000).optional(),
-  location: z.string().trim().min(1).max(200),
-  contactPerson: z.string().trim().max(200).optional(),
-  contactEmail: z.string().trim().max(254).optional(),
-});
+export const CreateInstrumentBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(4000).optional(),
+    location: z.string().trim().min(1).max(200),
+    contactPerson: z.string().trim().max(200).optional(),
+    contactEmail: z.string().trim().max(254).optional(),
+    ...instrumentRoomLinkFields,
+  })
+  .superRefine(refineInstrumentRoomLink);
 
 export const UpdateInstrumentBodySchema = z
   .object({
@@ -370,7 +427,9 @@ export const UpdateInstrumentBodySchema = z
     location: z.string().trim().min(1).max(200).optional(),
     contactPerson: z.string().trim().max(200).optional(),
     contactEmail: z.string().trim().max(254).optional(),
+    ...instrumentRoomLinkFields,
   })
+  .superRefine(refineInstrumentRoomLink)
   .refine((value) => Object.keys(value).length > 0, { message: "empty update" });
 
 export const BookingBodySchema = z.object({

@@ -54,6 +54,21 @@ describe("migration runner", () => {
     expect(locationColumns).toContain("rack_shelves");
     expect(locationColumns).toContain("shelf_index");
 
+    const instrumentColumns = db
+      .prepare("PRAGMA table_info(instruments)")
+      .all() as Array<{ name: string; notnull: number }>;
+    for (const column of ["room_group_id", "room_id"]) {
+      const info = instrumentColumns.find((candidate) => candidate.name === column);
+      expect(info).toBeDefined();
+      expect(info!.notnull).toBe(0);
+    }
+    const instrumentIndexColumns = (
+      db.prepare("PRAGMA index_info(idx_instruments_room_link)").all() as Array<{ name: string; seqno: number }>
+    )
+      .sort((a, b) => a.seqno - b.seqno)
+      .map((column) => column.name);
+    expect(instrumentIndexColumns).toEqual(["room_group_id", "room_id"]);
+
     const types = db
       .prepare("SELECT key, label, schema_version, fields FROM material_types ORDER BY key")
       .all() as Array<{ key: string; label: string; schema_version: number; fields: string }>;
@@ -86,6 +101,7 @@ describe("migration runner", () => {
       { version: 7, name: "migration_0007_location_rack_shelves.sql" },
       { version: 8, name: "migration_0008_user_settings.sql" },
       { version: 9, name: "migration_0009_primer_target_species.sql" },
+      { version: 10, name: "migration_0010_instrument_room_links.sql" },
     ]);
 
     const chemFields = JSON.parse(types.find((t) => t.key === "chemical")!.fields) as Array<Record<string, unknown>>;
@@ -158,7 +174,7 @@ describe("migration runner", () => {
     expect(tableNames(raw).has("materials")).toBe(false);
 
     const applied = runMigrations(raw);
-    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
     const tables = tableNames(raw);
     expect(tables.has("groups")).toBe(true);
@@ -167,6 +183,29 @@ describe("migration runner", () => {
     expect(tables.has("materials")).toBe(true);
     const seeded = raw.prepare("SELECT COUNT(*) AS n FROM material_types").get() as { n: number };
     expect(seeded.n).toBe(7);
+    raw.close();
+  });
+
+  it("preserves legacy instrument rows when adding optional room link columns", () => {
+    const path = tempDbPath();
+    const raw = new Database(path);
+    raw.exec(readFileSync(schemaSqlPath, "utf8"));
+    raw.prepare(
+      "INSERT INTO instruments (id, source, group_id, name, location) VALUES (?, 'shared', NULL, ?, ?)",
+    ).run("inst-legacy-1", "Legacy HPLC", "Room B302, Desk 4");
+
+    expect(runMigrations(raw).map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    const row = raw
+      .prepare(
+        "SELECT location, room_group_id AS roomGroupId, room_id AS roomId FROM instruments WHERE id = ?",
+      )
+      .get("inst-legacy-1") as { location: string; roomGroupId: string | null; roomId: string | null };
+    expect(row).toEqual({
+      location: "Room B302, Desk 4",
+      roomGroupId: null,
+      roomId: null,
+    });
     raw.close();
   });
 

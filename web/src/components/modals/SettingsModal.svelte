@@ -57,7 +57,7 @@
             <span>{theme.design === "bauhaus" ? item.labelBauhaus : item.label}</span>
         </label>
     {/each}
-    <p class="form-hint">Dashboard and Chemicals are always shown. These options take effect in the Bauhaus theme; Original always shows everything.</p>
+    <p class="form-hint">Dashboard and Rooms &amp; equipment are always shown. These options take effect in the Bauhaus theme; Original always shows everything.</p>
 </div>
 
 <div class="form-group">

@@ -111,30 +111,56 @@ export function openNoticeForm(edit?: { id: string; title: string; content: stri
   });
 }
 
-export function openInstrumentForm(edit?: { id: string; name: string; description: string; location: string; contactPerson: string; contactEmail: string }): void {
+export function openInstrumentForm(edit?: {
+  id: string;
+  name: string;
+  description: string;
+  location: string;
+  contactPerson: string;
+  contactEmail: string;
+  roomGroupId?: string | null;
+  roomId?: string | null;
+}): void {
+  const groupId = currentGroup.groupId;
+  const physicalRooms = inventoryFor(groupId)?.rooms ?? [];
+  const confirmedRoomId = edit !== undefined && edit.roomGroupId === groupId ? (edit.roomId ?? null) : null;
   const form = {
     name: edit?.name ?? "",
     description: edit?.description ?? "",
     location: edit?.location ?? "",
     contactPerson: edit?.contactPerson ?? "",
     contactEmail: edit?.contactEmail ?? "",
+    roomId: confirmedRoomId ?? "",
   };
   openModal({
     title: edit === undefined ? "Add Instrument" : "Edit Instrument",
     component: InstrumentFormModal,
-    props: { form },
+    props: { form, rooms: physicalRooms },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
-      const location = form.location.trim();
+      const selectedRoom = physicalRooms.find((room) => room.id === form.roomId);
+      // Only a new record may borrow the selected room's name for the required
+      // legacy location. Editing never silently rewrites existing location text.
+      const location = edit === undefined && form.location.trim() === "" ? (selectedRoom?.name ?? "") : form.location.trim();
       if (name === "" || location === "") {
         showToast("Name and location are required", "error");
         return;
       }
+
+      let roomLink: { roomGroupId?: string | null; roomId?: string | null } = {};
+      if (edit === undefined && selectedRoom !== undefined && groupId !== null) {
+        roomLink = { roomGroupId: groupId, roomId: selectedRoom.id };
+      } else if (edit !== undefined && form.roomId !== (confirmedRoomId ?? "")) {
+        roomLink = selectedRoom !== undefined && groupId !== null
+          ? { roomGroupId: groupId, roomId: selectedRoom.id }
+          : { roomGroupId: null, roomId: null };
+      }
+
       const ok =
         edit === undefined
-          ? await opCreateInstrument({ name, description: form.description.trim() || undefined, location, contactPerson: form.contactPerson.trim() || undefined, contactEmail: form.contactEmail.trim() || undefined })
-          : await opUpdateInstrument(edit.id, { name, description: form.description.trim(), location, contactPerson: form.contactPerson.trim(), contactEmail: form.contactEmail.trim() });
+          ? await opCreateInstrument({ name, description: form.description.trim() || undefined, location, contactPerson: form.contactPerson.trim() || undefined, contactEmail: form.contactEmail.trim() || undefined, ...roomLink })
+          : await opUpdateInstrument(edit.id, { name, description: form.description.trim(), location, contactPerson: form.contactPerson.trim(), contactEmail: form.contactEmail.trim(), ...roomLink });
       if (ok) {
         closeModal();
         showToast(edit === undefined ? "Instrument added" : "Instrument saved");
@@ -1278,12 +1304,19 @@ export function openProtocolForm(edit?: { id: string; title: string; content: st
   });
 }
 
-export function openAssetRoomForm(edit?: { id: string; name: string }): void {
-  const form = { name: edit?.name ?? "" };
+export function openAssetRoomForm(
+  edit?: { id: string; name: string; linkedRoomId?: string | null },
+  options?: { preferredRoomId?: string | null },
+): void {
+  const physicalRooms = inventoryFor(currentGroup.groupId)?.rooms ?? [];
+  const form = {
+    name: edit?.name ?? "",
+    linkedRoomId: edit?.linkedRoomId ?? options?.preferredRoomId ?? "",
+  };
   openModal({
     title: edit === undefined ? "Add Asset Room" : "Edit Asset Room",
     component: AssetRoomFormModal,
-    props: { form },
+    props: { form, physicalRooms },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -1291,7 +1324,15 @@ export function openAssetRoomForm(edit?: { id: string; name: string }): void {
         showToast("Enter name", "error");
         return;
       }
-      const ok = edit === undefined ? await opAddAssetRoom(name) : await opEditAssetRoom(edit.id, name);
+      const selectedRoom = physicalRooms.find((room) => room.id === form.linkedRoomId);
+      const linkedRoomId = selectedRoom !== undefined
+        ? selectedRoom.id
+        : (edit?.linkedRoomId ?? null) !== null && form.linkedRoomId === ""
+          ? null
+          : undefined;
+      const ok = edit === undefined
+        ? await opAddAssetRoom(name, linkedRoomId)
+        : await opEditAssetRoom(edit.id, name, linkedRoomId);
       if (ok) {
         closeModal();
         showToast(edit === undefined ? "Asset room added" : "Asset room updated");

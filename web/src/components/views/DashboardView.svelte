@@ -254,7 +254,7 @@
         <p class="stat-value">{chemCount}</p>
         <p class="stat-meta">across {contCount} containers</p>
     </a>
-    <a class="card stat-card s-blue" id="stat-containers" href="#rooms" title="Open Chemicals / Rooms">
+    <a class="card stat-card s-blue" id="stat-containers" href="#rooms" title="Open Rooms & equipment">
         <div class="stat-head"><p class="stat-lbl">Containers</p><span class="stat-glyph g-square g-blue"></span></div>
         <p class="stat-value">{contCount}</p>
         <p class="stat-meta">{rooms.length} rooms · {sharedCount} shared in</p>

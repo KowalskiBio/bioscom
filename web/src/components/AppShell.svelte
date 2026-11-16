@@ -3,7 +3,7 @@
   import { session } from "../lib/stores/session.svelte";
   import { groupList } from "../lib/stores/groups.svelte";
   import { currentGroup } from "../lib/stores/currentGroup.svelte";
-  import { inventory } from "../lib/stores/inventory.svelte";
+  import { inventory, inventoryFor } from "../lib/stores/inventory.svelte";
   import { catalog } from "../lib/stores/catalog.svelte";
   import { searchState } from "../lib/stores/search.svelte";
   import { navPrefs } from "../lib/stores/navPrefs.svelte";
@@ -85,13 +85,13 @@
 
   const containersRoomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
   const containersRoom = $derived(
-    containersRoomId === "shared-assets" ? undefined : inventory.tree?.rooms.find((r) => r.id === containersRoomId),
+    containersRoomId === "shared-assets" ? undefined : inventoryFor(currentGroup.groupId)?.rooms.find((r) => r.id === containersRoomId),
   );
   const detailRoom = $derived.by(() => {
     if (route.view !== "detail") return undefined;
-    const roomFromRooms = inventory.tree?.rooms.find((r) => r.id === route.roomId);
+    const roomFromRooms = inventoryFor(currentGroup.groupId)?.rooms.find((r) => r.id === route.roomId);
     if (roomFromRooms !== undefined) return roomFromRooms;
-    const freezer = inventory.tree?.deepFreezers?.find((c) => c.id === route.roomId);
+    const freezer = inventoryFor(currentGroup.groupId)?.deepFreezers?.find((c) => c.id === route.roomId);
     if (freezer === undefined) return undefined;
     return { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] } as Room;
   });
@@ -100,7 +100,7 @@
 
   const TOPBAR_LABELS: Record<string, string> = {
     dashboard: "Dashboard",
-    rooms: "Chemicals",
+    rooms: "Rooms & equipment",
     protocols: "Protocols",
     assets: "Inventory",
     catalog: "Catalog",
@@ -137,16 +137,16 @@
   const topbarCrumbs = $derived.by<TopbarCrumb[]>(() => {
     if (route.view === "containers") {
       return [
-        { label: "Chemicals", href: "#rooms" },
+        { label: "Rooms & equipment", href: "#rooms" },
         { label: containersRoom?.name ?? "—", href: containersHash(route.roomId) },
       ];
     }
     if (route.view === "detail") {
-      const crumbs: TopbarCrumb[] = [{ label: "Chemicals", href: "#rooms" }];
+      const crumbs: TopbarCrumb[] = [{ label: "Rooms & equipment", href: "#rooms" }];
       const roomName = detailRoom?.name ?? containersRoom?.name ?? "—";
       const contName = detailCont?.name ?? "—";
       const currentDetailHash = detailHash(route.roomId, route.containerId, route.rack, route.box);
-      const isRootFreezer = (inventory.tree?.deepFreezers ?? []).some((freezer) => freezer.id === route.roomId);
+      const isRootFreezer = (inventoryFor(currentGroup.groupId)?.deepFreezers ?? []).some((freezer) => freezer.id === route.roomId);
       if (roomName === contName) {
         crumbs.push({ label: roomName, href: currentDetailHash });
       } else {
@@ -507,9 +507,24 @@
                                 Dashboard
                             </a>
                         {/if}
-                        <a class="nav-tab" id="tab-inventory" data-label={design === "bauhaus" ? "Chemicals" : "List of Chemicals"} class:active={activeTab === "tab-inventory"} role="button" tabindex="0" onclick={() => onTabClick("rooms")} onkeydown={(e) => e.key === "Enter" && onTabClick("rooms")}>
+                        {#if design !== "bauhaus" || navPrefs.visible("catalog")}
+                        <a class="nav-tab" id="tab-catalog" data-label="Catalog" class:active={activeTab === "tab-catalog"} role="button" tabindex="0" onclick={() => onTabClick("catalog")} onkeydown={(e) => e.key === "Enter" && onTabClick("catalog")}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>
+                            Catalog
+                        </a>
+                        {/if}
+                        <a
+                            class="nav-tab"
+                            id="tab-inventory"
+                            data-label="Rooms &amp; equipment"
+                            class:active={activeTab === "tab-inventory"}
+                            role="button"
+                            tabindex="0"
+                            onclick={() => onTabClick("rooms")}
+                            onkeydown={(e) => e.key === "Enter" && onTabClick("rooms")}
+                        >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                            {design === "bauhaus" ? "Chemicals" : "List of Chemicals"}
+                            Rooms &amp; equipment
                         </a>
                         {#if design === "bauhaus" && (navPrefs.visible("protocols") || navPrefs.visible("instruments"))}
                             <p class="nav-section nav-section-b">Workflows</p>
@@ -527,12 +542,6 @@
                         <a class="nav-tab" id="tab-assets" data-label="Inventory" class:active={activeTab === "tab-assets"} role="button" tabindex="0" onclick={() => onTabClick("assets")} onkeydown={(e) => e.key === "Enter" && onTabClick("assets")}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 9V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><circle cx="12" cy="13" r="4"/></svg>
                             Inventory
-                        </a>
-                        {/if}
-                        {#if design !== "bauhaus" || navPrefs.visible("catalog")}
-                        <a class="nav-tab" id="tab-catalog" data-label="Catalog" class:active={activeTab === "tab-catalog"} role="button" tabindex="0" onclick={() => onTabClick("catalog")} onkeydown={(e) => e.key === "Enter" && onTabClick("catalog")}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>
-                            Catalog
                         </a>
                         {/if}
                         {#if design !== "bauhaus" || navPrefs.visible("noticeboard")}
@@ -601,7 +610,7 @@
         <!-- Rooms View -->
         <section id="view-rooms" class="view" class:active={route.view === "rooms"}>
             <div class="view-header">
-                <div><h1>Rooms</h1><p class="view-subtitle">Select a room to view its cabinets and fridges</p></div>
+                <div><h1>Rooms &amp; equipment</h1><p class="view-subtitle">Select a room to view its storage, instruments and assigned barcodes</p></div>
                 <div class="view-header-actions">
                     <button id="btn-export-pdf" class="btn-secondary" onclick={onExportPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
                     <button id="btn-add-room" class="btn-primary" onclick={onAddRoom}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
@@ -672,7 +681,7 @@
         <!-- Packages View -->
         <section id="view-catalog" class="view" class:active={route.view === "catalog"}>
             <div class="view-header">
-                <div><h1>Packages</h1><p class="view-subtitle">{catalog.stocksLoaded ? `${catalog.stocksTotal} packages · ${catalogTypeLabel}` : "What's in the lab, and where it sits"}</p></div>
+                <div><h1>Stock &amp; material catalog</h1><p class="view-subtitle">{catalog.stocksLoaded ? `${catalog.stocksTotal} packages · ${catalogTypeLabel}` : "Search stocks and materials, and see where they are stored"}</p></div>
             </div>
             <CatalogView />
         </section>

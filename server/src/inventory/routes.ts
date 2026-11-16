@@ -103,6 +103,23 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
     }
   };
 
+  // An asset room may only link to a real chemical room in tree.rooms. Deep
+  // freezers (including the pseudo room shape returned by findRoomOrThrow),
+  // legacy asset-room ids and unknown ids are never valid targets.
+  const resolveAssetRoomLink = (
+    tree: InventoryTree,
+    linkedRoomId: string | null | undefined,
+  ): string | undefined => {
+    if (linkedRoomId === undefined || linkedRoomId === null) {
+      return undefined;
+    }
+    const room = tree.rooms.find((candidate) => candidate.id === linkedRoomId);
+    if (room === undefined) {
+      throw new OpError(404, "Chemical room not found");
+    }
+    return room.id;
+  };
+
   app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/racks", async (request, reply) => {
     const user = requireUser(db(), request, reply);
     if (user === null) return;
@@ -526,6 +543,16 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         const room = findRoomOrThrow(tree, roomId);
         if (isPseudoRoom(room)) {
           throw new OpError(404, "Room not found");
+        }
+        const linkedInstrument = db()
+          .prepare("SELECT 1 AS linked FROM instruments WHERE room_group_id = ? AND room_id = ? LIMIT 1")
+          .get(groupId, roomId) as { linked: number } | undefined;
+        const linkedAssetRoom = tree.assetRooms.some((candidate) => candidate.linkedRoomId === roomId);
+        if (linkedInstrument !== undefined || linkedAssetRoom) {
+          throw new OpError(
+            409,
+            "Unlink assigned instruments and asset rooms before deleting this room",
+          );
         }
         tree.rooms = tree.rooms.filter((candidate) => candidate.id !== roomId);
         return `Deleted room "${room.name}"`;
@@ -1077,7 +1104,12 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
-        tree.assetRooms.push({ id: genId(), name: body.data.name });
+        const linkedRoomId = resolveAssetRoomLink(tree, body.data.linkedRoomId);
+        tree.assetRooms.push({
+          id: genId(),
+          name: body.data.name,
+          ...(linkedRoomId === undefined ? {} : { linkedRoomId }),
+        });
         return `Added asset room "${body.data.name}"`;
       });
       broadcastResult(groupId, result);
@@ -1104,6 +1136,10 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.name !== undefined) {
           room.name = body.data.name;
+        }
+        if (body.data.linkedRoomId !== undefined) {
+          // Omitted link leaves the existing mapping alone; explicit null clears it.
+          room.linkedRoomId = resolveAssetRoomLink(tree, body.data.linkedRoomId);
         }
         return `Edited asset room "${room.name}"`;
       });

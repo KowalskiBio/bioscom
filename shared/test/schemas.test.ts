@@ -8,7 +8,10 @@ import {
   MAX_RACK_COLUMNS,
   MAX_RACK_ROWS,
   MAX_RACK_SHELVES,
+  AddAssetRoomBodySchema,
   AddDeepFreezerBodySchema,
+  AssetRoomSchema,
+  EditAssetRoomBodySchema,
   MoveDeepFreezerBoxBodySchema,
   ResizeDeepFreezerBodySchema,
   GameChallengeSchema,
@@ -165,6 +168,40 @@ describe("RoomSchema", () => {
   it("tolerates a room without containers", () => {
     const result = RoomSchema.parse(roomWithoutContainersFixture);
     expect(result.containers).toEqual([]);
+  });
+});
+
+describe("AssetRoomSchema linkedRoomId", () => {
+  it("keeps legacy asset rooms without a link", () => {
+    const result = AssetRoomSchema.parse({ id: "ar-2", name: "Main Hall" });
+    expect(result.linkedRoomId).toBeUndefined();
+  });
+
+  it("accepts a stable linked room id and an explicit null", () => {
+    expect(AssetRoomSchema.parse({ id: "ar-2", name: "Main Hall", linkedRoomId: "room-1" }).linkedRoomId).toBe(
+      "room-1",
+    );
+    expect(AssetRoomSchema.parse({ id: "ar-2", name: "Main Hall", linkedRoomId: null }).linkedRoomId).toBeNull();
+  });
+});
+
+describe("asset room body links", () => {
+  it("keeps legacy create and update bodies valid", () => {
+    expect(AddAssetRoomBodySchema.safeParse({ name: "Main Hall" }).success).toBe(true);
+    expect(EditAssetRoomBodySchema.safeParse({ name: "Main Hall" }).success).toBe(true);
+  });
+
+  it("accepts a create link and update set/clear without dropping nulls", () => {
+    expect(AddAssetRoomBodySchema.safeParse({ name: "Main Hall", linkedRoomId: "room-1" }).success).toBe(true);
+    expect(AddAssetRoomBodySchema.safeParse({ name: "Main Hall", linkedRoomId: null }).success).toBe(true);
+    expect(EditAssetRoomBodySchema.parse({ linkedRoomId: "room-1" }).linkedRoomId).toBe("room-1");
+    expect(EditAssetRoomBodySchema.parse({ linkedRoomId: null }).linkedRoomId).toBeNull();
+  });
+
+  it("rejects an empty update and an empty linked id", () => {
+    expect(EditAssetRoomBodySchema.safeParse({}).success).toBe(false);
+    expect(EditAssetRoomBodySchema.safeParse({ linkedRoomId: "" }).success).toBe(false);
+    expect(AddAssetRoomBodySchema.safeParse({ name: "Main Hall", linkedRoomId: "" }).success).toBe(false);
   });
 });
 

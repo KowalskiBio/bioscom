@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Chemical, Container } from "@bioscom/shared";
-  import { inventory } from "../../lib/stores/inventory.svelte";
+  import { inventory, inventoryFor } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
   import { countChems, escapeHtml, stripEmoji } from "../../lib/inventoryUtils";
   import { groupList } from "../../lib/stores/groups.svelte";
@@ -13,6 +13,8 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { theme } from "../../lib/theme.svelte";
   import ChemicalTable from "./ChemicalTable.svelte";
+  import RoomInstrumentsSection from "./RoomInstrumentsSection.svelte";
+  import RoomAssetBarcodesSection from "./RoomAssetBarcodesSection.svelte";
   import {
     catalogColumnPreferences,
     loadCatalogColumnPreferences,
@@ -22,7 +24,7 @@
 
   const route = $derived(router.route);
   const roomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
-  const room = $derived(inventory.tree?.rooms.find((r) => r.id === roomId));
+  const room = $derived(inventoryFor(currentGroup.groupId)?.rooms.find((r) => r.id === roomId));
   const shared = $derived(inventory.sharedContainers);
 
   const containers = $derived.by(() => {
@@ -200,3 +202,8 @@
 <div id="containers-empty" class="empty-state" style={`display: ${showEmpty ? "block" : "none"};`}>
     <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-red" aria-hidden="true"></span>{:else}🗄️{/if}</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
 </div>
+
+{#if route.view === "containers" && room !== undefined && roomId !== "shared-assets" && currentGroup.groupId !== null}
+  <RoomInstrumentsSection roomId={room.id} roomGroupId={currentGroup.groupId} />
+  <RoomAssetBarcodesSection roomId={room.id} />
+{/if}

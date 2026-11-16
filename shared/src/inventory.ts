@@ -285,6 +285,9 @@ export const RoomSchema = z.looseObject({
 export const AssetRoomSchema = z.looseObject({
   id: idSchema,
   name: looseTextSchema,
+  // Optional stable link to a physical chemical room in the same group
+  // document. Omitted or null keeps the asset room unassigned.
+  linkedRoomId: optionalIdSchema,
 });
 
 export const AssetSchema = z.looseObject({

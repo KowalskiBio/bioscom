@@ -27,6 +27,11 @@ export const InstrumentSchema = z.looseObject({
   contactEmail: optionalTextSchema,
   ownerLabId: optionalTextSchema,
   ownerLabName: optionalTextSchema,
+  // Optional stable links to a physical chemical room group/room. Omitted or
+  // null means legacy/unassigned; the free-text `location` stays authoritative
+  // for display until a link is explicitly assigned.
+  roomGroupId: optionalIdSchema,
+  roomId: optionalIdSchema,
   bookings: rtdbArray(InstrumentBookingSchema).catch([]),
 });
 
