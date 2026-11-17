@@ -667,13 +667,13 @@ body::after {
 .chem-pos.fridge { background:rgba(6,182,212,0.12); color:var(--accent-cyan); }
 
 /* Material identity palette; position chips without these classes retain their own colors. */
-.material-type-chemical { --material-type-accent: #1D4FA2; --material-type-rgb: 29, 79, 162; --material-type-ink: #A9C7FF; }
-.material-type-reagent { --material-type-accent: #0F8F8A; --material-type-rgb: 15, 143, 138; --material-type-ink: #8FE3DC; }
-.material-type-antibody { --material-type-accent: #6D28D9; --material-type-rgb: 109, 40, 217; --material-type-ink: #D0B8FA; }
-.material-type-primer { --material-type-accent: #2E7D4F; --material-type-rgb: 46, 125, 79; --material-type-ink: #ABDDB6; }
-.material-type-solution { --material-type-accent: #B27412; --material-type-rgb: 178, 116, 18; --material-type-ink: #EBCB83; }
-.material-type-biological_stock { --material-type-accent: #C65D4B; --material-type-rgb: 198, 93, 75; --material-type-ink: #F0B2A6; }
-.material-type-other { --material-type-accent: #667085; --material-type-rgb: 102, 112, 133; --material-type-ink: #C3CAD4; }
+.material-type-chemical { --material-type-accent: #0072B2; --material-type-rgb: 0, 114, 178; --material-type-ink: #A9C7FF; }
+.material-type-reagent { --material-type-accent: #56B4E9; --material-type-rgb: 86, 180, 233; --material-type-ink: #8FE3DC; }
+.material-type-antibody { --material-type-accent: #CC79A7; --material-type-rgb: 204, 121, 167; --material-type-ink: #D0B8FA; }
+.material-type-primer { --material-type-accent: #009E73; --material-type-rgb: 0, 158, 115; --material-type-ink: #ABDDB6; }
+.material-type-solution { --material-type-accent: #F0E442; --material-type-rgb: 240, 228, 66; --material-type-ink: #EBCB83; }
+.material-type-biological_stock { --material-type-accent: #D55E00; --material-type-rgb: 213, 94, 0; --material-type-ink: #F0B2A6; }
+.material-type-other { --material-type-accent: #999999; --material-type-rgb: 153, 153, 153; --material-type-ink: #C3CAD4; }
 
 /* Highlight search match */
 mark { background:rgba(251,191,36,0.25); color:inherit; border-radius:2px; padding:0 1px; }
@@ -2691,6 +2691,11 @@ body[data-design="bauhaus"] .shelf-count::before { background: #171512; }
 body[data-design="bauhaus"] .chem-pos[class*="material-type-"]::before,
 body[data-design="bauhaus"] .status-badge[class*="material-type-"]::before {
     background: var(--material-type-accent);
+}
+body[data-design="bauhaus"] :is(.chem-pos, .status-badge):is(.material-type-reagent, .material-type-solution)::before,
+body[data-design="bauhaus"] .filter-pill:is(.material-type-reagent, .material-type-solution):not(.active):not([aria-pressed="true"])::before {
+    outline: 1px solid #171512;
+    outline-offset: -1px;
 }
 
 /* Filter pills */

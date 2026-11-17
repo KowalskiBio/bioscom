@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
-import { defaultCatalogColumnSelections } from "@bioscom/shared";
+import { defaultCatalogColumnSelections, MATERIAL_TYPES } from "@bioscom/shared";
 
 let vite: ViteDevServer | null = null;
 let server: http.Server | null = null;
@@ -36,6 +36,16 @@ const allRoomPreferenceColumns = [
 let roomPreferenceColumns = [...allRoomPreferenceColumns];
 const pageErrors: string[] = [];
 const adjustCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+const okabeIto = {
+  chemical: { hex: "#0072B2", rgb: "0, 114, 178", color: "rgb(0, 114, 178)", ink: "#A9C7FF", inkColor: "rgb(169, 199, 255)" },
+  reagent: { hex: "#56B4E9", rgb: "86, 180, 233", color: "rgb(86, 180, 233)", ink: "#8FE3DC", inkColor: "rgb(143, 227, 220)" },
+  antibody: { hex: "#CC79A7", rgb: "204, 121, 167", color: "rgb(204, 121, 167)", ink: "#D0B8FA", inkColor: "rgb(208, 184, 250)" },
+  primer: { hex: "#009E73", rgb: "0, 158, 115", color: "rgb(0, 158, 115)", ink: "#ABDDB6", inkColor: "rgb(171, 221, 182)" },
+  solution: { hex: "#F0E442", rgb: "240, 228, 66", color: "rgb(240, 228, 66)", ink: "#EBCB83", inkColor: "rgb(235, 203, 131)" },
+  biological_stock: { hex: "#D55E00", rgb: "213, 94, 0", color: "rgb(213, 94, 0)", ink: "#F0B2A6", inkColor: "rgb(240, 178, 166)" },
+  other: { hex: "#999999", rgb: "153, 153, 153", color: "rgb(153, 153, 153)", ink: "#C3CAD4", inkColor: "rgb(195, 202, 212)" },
+} as const;
+const materialKeys = MATERIAL_TYPES.map(({ key }) => key);
 
 beforeAll(async () => {
   const webRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -96,6 +106,48 @@ beforeAll(async () => {
       body: JSON.stringify({ columnsByType, updatedAt: navigation }),
     });
   });
+  await page.route("**/api/groups/group-a/stocks*", (route) => {
+    const stocks = materialKeys.map((key, index) => ({
+      id: `palette-stock-${key}`,
+      name: `Palette ${key}`,
+      type: key,
+      quantity: index + 1,
+      unit: "pcs",
+      concentration: null,
+      concentrationUnit: null,
+      note: `Synthetic ${key} catalog stock`,
+      status: "available",
+      position: `P-${index + 1}`,
+      customPosition: null,
+      location: {
+        id: "loc-palette",
+        name: "Palette Shelf",
+        rackName: null,
+        boxName: null,
+        containerId: "cont-main",
+        containerName: "Main Cabinet",
+        roomId: "room-main",
+        roomName: "Main Test Room",
+        path: "Main Test Room / Main Cabinet / Palette Shelf",
+      },
+      batch: {
+        id: `batch-palette-${key}`,
+        lotCode: null,
+        originType: "unknown",
+        expiresAt: null,
+        receivedAt: null,
+        preparedAt: null,
+      },
+      product: null,
+      materialId: `material-palette-${key}`,
+      attributes: {},
+    }));
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ stocks, total: stocks.length, page: 1, limit: 25 }),
+    });
+  });
   await page.route("**/api/groups/group-a/inventory/chemicals/*/adjust-qty", (route) => {
     adjustCalls.push({
       path: new URL(route.request().url()).pathname,
@@ -131,6 +183,55 @@ async function columnIds(tableId: string): Promise<string[]> {
 async function cellText(tableId: string, chemicalId: string, columnId: string): Promise<string> {
   const cell = page!.locator(`#${tableId} tbody tr[data-chemid="${chemicalId}"] td[data-column="${columnId}"]`);
   return (await cell.textContent())?.trim() ?? "";
+}
+
+async function computedTypeStyle(selector: string, pseudo: string | null = null) {
+  const locator = page!.locator(selector);
+  await locator.waitFor();
+  return locator.evaluate((element, pseudoElement) => {
+    const own = getComputedStyle(element);
+    const target = getComputedStyle(element, pseudoElement);
+    return {
+      accent: own.getPropertyValue("--material-type-accent").trim(),
+      rgbToken: own.getPropertyValue("--material-type-rgb").trim(),
+      inkToken: own.getPropertyValue("--material-type-ink").trim(),
+      background: target.backgroundColor,
+      color: target.color,
+      elementBackground: own.backgroundColor,
+      elementColor: own.color,
+      width: target.width,
+      height: target.height,
+      outlineStyle: target.outlineStyle,
+      outlineWidth: target.outlineWidth,
+      outlineColor: target.outlineColor,
+      outlineOffset: target.outlineOffset,
+    };
+  }, pseudo);
+}
+
+async function expectOriginalMaterial(selector: string, key: keyof typeof okabeIto): Promise<void> {
+  const style = await computedTypeStyle(selector);
+  const expected = okabeIto[key];
+  expect(style.accent.toUpperCase()).toBe(expected.hex);
+  expect(style.rgbToken).toBe(expected.rgb);
+  expect(style.background).toBe(`rgba(${expected.rgb}, 0.14)`);
+  expect(style.inkToken.toUpperCase()).toBe(expected.ink);
+  expect(style.color).toBe(expected.inkColor);
+}
+
+async function expectBauhausMark(selector: string, key: keyof typeof okabeIto): Promise<void> {
+  const style = await computedTypeStyle(selector, "::before");
+  const expected = okabeIto[key];
+  const needsKeyline = key === "reagent" || key === "solution";
+  expect(style.background).toBe(expected.color);
+  expect(style.width).toBe("8px");
+  expect(style.height).toBe("8px");
+  expect(style.outlineStyle).toBe(needsKeyline ? "solid" : "none");
+  if (needsKeyline) {
+    expect(style.outlineWidth).toBe("1px");
+    expect(style.outlineColor).toBe("rgb(23, 21, 18)");
+    expect(style.outlineOffset).toBe("-1px");
+  }
 }
 
 interface InlineChipGeometry {
@@ -233,6 +334,63 @@ describe("mounted material type chips", () => {
   afterEach(() => {
     roomPreferenceColumns = [...allRoomPreferenceColumns];
   });
+
+  it("uses exact Okabe–Ito accents and matching RGB tints on all original-theme material consumers", async () => {
+    roomPreferenceColumns = ["name", "type", "note", "actions"];
+    await openView("containers/room-main", "palette=room&design=original");
+    for (const key of materialKeys) {
+      await expectOriginalMaterial(
+        `#room-direct-chemicals-table tr[data-chemid="palette-room-${key}"] td[data-column="type"] .status-badge.material-type-${key}`,
+        key,
+      );
+    }
+
+    await openView("catalog", "design=original");
+    for (const key of materialKeys) {
+      await expectOriginalMaterial(
+        `#stocks-table tr[data-stock-id="palette-stock-${key}"] .chem-pos.material-type-${key}`,
+        key,
+      );
+    }
+    expect(pageErrors).toEqual([]);
+  }, 60_000);
+
+  it("limits Bauhaus keylines to light reagent and solution marks without changing geometry or active filters", async () => {
+    roomPreferenceColumns = ["name", "type", "note", "actions"];
+    await openView("catalog", "design=bauhaus");
+    for (const key of materialKeys) {
+      await expectBauhausMark(`#catalog-type-${key}.filter-pill.material-type-${key}`, key);
+      await expectBauhausMark(
+        `#stocks-table tr[data-stock-id="palette-stock-${key}"] .chem-pos.material-type-${key}`,
+        key,
+      );
+    }
+
+    for (const key of materialKeys) {
+      const activeFilter = page!.locator(`#catalog-type-${key}`);
+      await activeFilter.click();
+      await expect.poll(async () => (await activeFilter.getAttribute("class"))?.split(/\s+/).includes("active")).toBe(true);
+      await expect.poll(async () =>
+        (await computedTypeStyle(`#catalog-type-${key}`, "::before")).elementBackground,
+      ).toBe("rgb(23, 21, 18)");
+      const active = await computedTypeStyle(`#catalog-type-${key}`, "::before");
+      expect(active.elementBackground).toBe("rgb(23, 21, 18)");
+      expect(active.elementColor).toBe("rgb(255, 255, 255)");
+      expect(active.background).toBe("rgb(255, 255, 255)");
+      expect(active.outlineStyle).toBe("none");
+      expect(active.width).toBe("8px");
+      expect(active.height).toBe("8px");
+    }
+
+    await openView("containers/room-main", "palette=room&design=bauhaus");
+    for (const key of materialKeys) {
+      await expectBauhausMark(
+        `#room-direct-chemicals-table tr[data-chemid="palette-room-${key}"] td[data-column="type"] .status-badge.material-type-${key}`,
+        key,
+      );
+    }
+    expect(pageErrors).toEqual([]);
+  }, 90_000);
 
   it("shows Chemical for explicit and legacy detail rows while preserving its material palette", async () => {
     roomPreferenceColumns = ["name", "type", "quantity", "location", "note", "actions"];

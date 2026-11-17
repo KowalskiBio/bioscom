@@ -1,5 +1,5 @@
 import { mount } from "svelte";
-import type { InventoryTree } from "@bioscom/shared";
+import { MATERIAL_TYPES, type InventoryTree } from "@bioscom/shared";
 import "../../src/app.css";
 import { setUser } from "../../src/lib/stores/session.svelte";
 import { setCurrentGroup } from "../../src/lib/stores/currentGroup.svelte";
@@ -186,6 +186,14 @@ const tree = {
         },
       ],
       chemicals: [
+        ...(params.get("palette") === "room" ? MATERIAL_TYPES.map(({ key }) => ({
+          id: `palette-room-${key}`,
+          name: `Palette ${key}`,
+          type: key,
+          quantity: 1,
+          unit: "pcs",
+          note: `Synthetic ${key} type accent`,
+        })) : []),
         {
           id: "room-chem",
           name: "Room primer stock",
@@ -250,7 +258,10 @@ if (target === null) {
   throw new Error("Missing chemical view test target");
 }
 
-if (window.location.hash.startsWith("#detail/")) {
+if (window.location.hash === "#catalog") {
+  const { default: CatalogView } = await import("../../src/components/views/CatalogView.svelte");
+  mount(CatalogView, { target });
+} else if (window.location.hash.startsWith("#detail/")) {
   const { default: DetailView } = await import("../../src/components/views/DetailView.svelte");
   mount(DetailView, { target, props: { searchQuery: params.get("q") ?? "" } });
 } else {
