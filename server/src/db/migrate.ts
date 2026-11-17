@@ -3,10 +3,24 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { ensureBackfilled } from "../inventory/sync.js";
 import { ensureParityChecked } from "../inventory/assemble.js";
+import { runRoomRegistryMigration } from "../inventory/roomRegistryMigration.js";
 import { serverDir } from "../paths.js";
 
 const migrationsDir = join(serverDir, "src", "db", "migrations");
 const migrationPattern = /^migration_(\d+).*\.sql$/;
+const ROOM_REGISTRY_VERSION = 11;
+
+/**
+ * Version 0011 is the only migration with a paired JavaScript step. The step
+ * runs inside the same transaction that records the SQL version, so either
+ * both are registered or neither is. It is therefore replayed exactly once and
+ * never runs again on a normal startup.
+ */
+function runPairedMigrationStep(db: Database.Database, version: number): void {
+  if (version === ROOM_REGISTRY_VERSION) {
+    runRoomRegistryMigration(db);
+  }
+}
 
 export interface AppliedMigration {
   version: number;
@@ -47,6 +61,7 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
   );
   const apply = db.transaction((migration: AppliedMigration) => {
     db.exec(readFileSync(join(migrationsDir, migration.name), "utf8"));
+    runPairedMigrationStep(db, migration.version);
     insert.run(migration.version, migration.name, Date.now());
   });
 

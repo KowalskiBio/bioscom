@@ -75,7 +75,7 @@ import { session } from "./stores/session.svelte";
 import { prefs } from "./stores/prefs.svelte";
 import { catalog } from "./stores/catalog.svelte";
 import { currentGroup } from "./stores/currentGroup.svelte";
-import { inventory, inventoryFor } from "./stores/inventory.svelte";
+import { fetchInventory, inventory, inventoryFor } from "./stores/inventory.svelte";
 
 function isBauhaus(): boolean {
   return document.body.dataset.design === "bauhaus";
@@ -111,7 +111,7 @@ export function openNoticeForm(edit?: { id: string; title: string; content: stri
   });
 }
 
-export function openInstrumentForm(edit?: {
+interface InstrumentEditorRecord {
   id: string;
   name: string;
   description: string;
@@ -120,50 +120,107 @@ export function openInstrumentForm(edit?: {
   contactEmail: string;
   roomGroupId?: string | null;
   roomId?: string | null;
-}): void {
+}
+
+interface InstrumentEditorDraft {
+  name: string;
+  description: string;
+  location: string;
+  contactPerson: string;
+  contactEmail: string;
+  roomId: string;
+}
+
+export function openInstrumentForm(edit?: InstrumentEditorRecord, draft?: InstrumentEditorDraft): void {
   const groupId = currentGroup.groupId;
-  const physicalRooms = inventoryFor(groupId)?.rooms ?? [];
-  const confirmedRoomId = edit !== undefined && edit.roomGroupId === groupId ? (edit.roomId ?? null) : null;
+  const currentTree = inventoryFor(groupId);
+  const physicalRooms = currentTree?.rooms ?? [];
+  const pairedRoomId = edit !== undefined && edit.roomGroupId === groupId ? (edit.roomId ?? "") : "";
+  const confirmedRoomId = physicalRooms.some((room) => room.id === pairedRoomId) ? pairedRoomId : "";
   const form = {
-    name: edit?.name ?? "",
-    description: edit?.description ?? "",
-    location: edit?.location ?? "",
-    contactPerson: edit?.contactPerson ?? "",
-    contactEmail: edit?.contactEmail ?? "",
-    roomId: confirmedRoomId ?? "",
+    name: draft?.name ?? edit?.name ?? "",
+    description: draft?.description ?? edit?.description ?? "",
+    location: draft?.location ?? edit?.location ?? "",
+    contactPerson: draft?.contactPerson ?? edit?.contactPerson ?? "",
+    contactEmail: draft?.contactEmail ?? edit?.contactEmail ?? "",
+    roomId: draft?.roomId ?? confirmedRoomId,
   };
+
+  function createPhysicalRoom(): void {
+    const savedDraft = {
+      name: form.name,
+      description: form.description,
+      location: form.location,
+      contactPerson: form.contactPerson,
+      contactEmail: form.contactEmail,
+      roomId: form.roomId,
+    };
+    openRoomForm("add", undefined, () => {
+      if (groupId === null || currentGroup.groupId !== groupId) return;
+      void fetchInventory(groupId)
+        .catch(() => undefined)
+        .then(() => {
+          if (currentGroup.groupId === groupId) openInstrumentForm(edit, savedDraft);
+        });
+    });
+  }
+
   openModal({
     title: edit === undefined ? "Add Instrument" : "Edit Instrument",
     component: InstrumentFormModal,
-    props: { form, rooms: physicalRooms },
+    props: {
+      form,
+      rooms: physicalRooms,
+      roomStatus: currentTree === null ? (inventory.loadError === "" ? "loading" : "error") : "ready",
+      onCreateRoom: createPhysicalRoom,
+    },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
-      const selectedRoom = physicalRooms.find((room) => room.id === form.roomId);
-      // Only a new record may borrow the selected room's name for the required
-      // legacy location. Editing never silently rewrites existing location text.
-      const location = edit === undefined && form.location.trim() === "" ? (selectedRoom?.name ?? "") : form.location.trim();
-      if (name === "" || location === "") {
-        showToast("Name and location are required", "error");
+      if (name === "") {
+        showToast("Name is required", "error");
+        return;
+      }
+      const selectedRoom = groupId === null ? undefined : physicalRooms.find((room) => room.id === form.roomId);
+      if (selectedRoom === undefined || groupId === null) {
+        showToast("Select a physical room before saving this instrument", "error");
+        document.getElementById("i-room")?.focus();
         return;
       }
 
-      let roomLink: { roomGroupId?: string | null; roomId?: string | null } = {};
-      if (edit === undefined && selectedRoom !== undefined && groupId !== null) {
-        roomLink = { roomGroupId: groupId, roomId: selectedRoom.id };
-      } else if (edit !== undefined && form.roomId !== (confirmedRoomId ?? "")) {
-        roomLink = selectedRoom !== undefined && groupId !== null
-          ? { roomGroupId: groupId, roomId: selectedRoom.id }
-          : { roomGroupId: null, roomId: null };
+      const location = form.location.trim();
+      if (edit === undefined) {
+        const ok = await opCreateInstrument({
+          name,
+          description: form.description.trim() || undefined,
+          location,
+          contactPerson: form.contactPerson.trim() || undefined,
+          contactEmail: form.contactEmail.trim() || undefined,
+          roomGroupId: groupId,
+          roomId: selectedRoom.id,
+        });
+        if (ok) {
+          closeModal();
+          showToast("Instrument added");
+        }
+        return;
       }
 
-      const ok =
-        edit === undefined
-          ? await opCreateInstrument({ name, description: form.description.trim() || undefined, location, contactPerson: form.contactPerson.trim() || undefined, contactEmail: form.contactEmail.trim() || undefined, ...roomLink })
-          : await opUpdateInstrument(edit.id, { name, description: form.description.trim(), location, contactPerson: form.contactPerson.trim(), contactEmail: form.contactEmail.trim(), ...roomLink });
+      const body: Parameters<typeof opUpdateInstrument>[1] = {
+        name,
+        description: form.description.trim(),
+        contactPerson: form.contactPerson.trim(),
+        contactEmail: form.contactEmail.trim(),
+      };
+      if (form.location !== (edit.location ?? "")) body.location = location;
+      if (form.roomId !== confirmedRoomId) {
+        body.roomGroupId = groupId;
+        body.roomId = selectedRoom.id;
+      }
+      const ok = await opUpdateInstrument(edit.id, body);
       if (ok) {
         closeModal();
-        showToast(edit === undefined ? "Instrument added" : "Instrument saved");
+        showToast("Instrument saved");
       }
     },
   });
@@ -1308,15 +1365,12 @@ export function openAssetRoomForm(
   edit?: { id: string; name: string; linkedRoomId?: string | null },
   options?: { preferredRoomId?: string | null },
 ): void {
-  const physicalRooms = inventoryFor(currentGroup.groupId)?.rooms ?? [];
-  const form = {
-    name: edit?.name ?? "",
-    linkedRoomId: edit?.linkedRoomId ?? options?.preferredRoomId ?? "",
-  };
+  void options;
+  const form = { name: edit?.name ?? "" };
   openModal({
-    title: edit === undefined ? "Add Asset Room" : "Edit Asset Room",
+    title: edit === undefined ? "Add Room" : "Edit Asset Room",
     component: AssetRoomFormModal,
-    props: { form, physicalRooms },
+    props: { form },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -1324,35 +1378,32 @@ export function openAssetRoomForm(
         showToast("Enter name", "error");
         return;
       }
-      const selectedRoom = physicalRooms.find((room) => room.id === form.linkedRoomId);
-      const linkedRoomId = selectedRoom !== undefined
-        ? selectedRoom.id
-        : (edit?.linkedRoomId ?? null) !== null && form.linkedRoomId === ""
-          ? null
-          : undefined;
       const ok = edit === undefined
-        ? await opAddAssetRoom(name, linkedRoomId)
-        : await opEditAssetRoom(edit.id, name, linkedRoomId);
+        ? await opAddAssetRoom(name)
+        : await opEditAssetRoom(edit.id, name);
       if (ok) {
         closeModal();
-        showToast(edit === undefined ? "Asset room added" : "Asset room updated");
+        showToast(edit === undefined ? "Room added" : "Asset room updated");
       }
     },
   });
 }
 
-export function openAssetForm(assetRooms: Array<{ id: string; name: string }>, edit?: { id: string; name: string; model?: string | null; barcode?: string | null; description?: string | null; roomId?: string | null }): void {
+export function openAssetForm(edit?: { id: string; name: string; model?: string | null; barcode?: string | null; description?: string | null; roomId?: string | null }): void {
+  const rooms = inventoryFor(currentGroup.groupId)?.rooms ?? [];
+  const originalRoomId = edit?.roomId ?? "";
+  const initialRoomId = rooms.some((room) => room.id === originalRoomId) ? originalRoomId : "";
   const form = {
     name: edit?.name ?? "",
     model: edit?.model ?? "",
     barcode: edit?.barcode ?? "",
     description: edit?.description ?? "",
-    roomId: edit?.roomId ?? "",
+    roomId: initialRoomId,
   };
   openModal({
     title: edit === undefined ? "Add Asset Item" : "Edit Asset Item",
     component: AssetFormModal,
-    props: { form, assetRooms },
+    props: { form, rooms },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -1360,22 +1411,32 @@ export function openAssetForm(assetRooms: Array<{ id: string; name: string }>, e
         showToast("Enter name", "error");
         return;
       }
-      const ok =
-        edit === undefined
-          ? await opAddAsset({
-              name,
-              model: form.model.trim() === "" ? undefined : form.model.trim(),
-              barcode: form.barcode.trim() === "" ? undefined : form.barcode.trim(),
-              description: form.description.trim() === "" ? undefined : form.description.trim(),
-              roomId: form.roomId,
-            })
-          : await opEditAsset(edit.id, {
-              name,
-              model: form.model.trim(),
-              barcode: form.barcode.trim(),
-              description: form.description.trim(),
-              roomId: form.roomId,
-            });
+      if (form.roomId !== "" && !rooms.some((room) => room.id === form.roomId)) {
+        showToast("Select a current physical room", "error");
+        document.getElementById("a-room")?.focus();
+        return;
+      }
+      const fields = {
+        name,
+        model: form.model.trim(),
+        barcode: form.barcode.trim(),
+        description: form.description.trim(),
+      };
+      let ok: boolean;
+      if (edit === undefined) {
+        ok = await opAddAsset({
+          name,
+          model: fields.model === "" ? undefined : fields.model,
+          barcode: fields.barcode === "" ? undefined : fields.barcode,
+          description: fields.description === "" ? undefined : fields.description,
+          ...(form.roomId === "" ? {} : { roomId: form.roomId }),
+        });
+      } else {
+        ok = await opEditAsset(edit.id, {
+          ...fields,
+          ...(form.roomId === initialRoomId ? {} : { roomId: form.roomId }),
+        });
+      }
       if (ok) {
         closeModal();
         showToast(edit === undefined ? "Asset added" : "Asset saved");

@@ -35,6 +35,7 @@ interface TreeResponse {
 }
 
 let app: FastifyInstance;
+let db: ReturnType<typeof getDatabase>;
 let tempDir = "";
 let dbPath = "";
 let ownerCookie = "";
@@ -108,6 +109,50 @@ function findAssetRoomById(tree: TreeResponse["tree"], id: string): AssetRoomVie
   return room;
 }
 
+function readGroupTree(groupId: string): TreeResponse["tree"] {
+  const row = db
+    .prepare("SELECT tree FROM group_inventory_docs WHERE group_id = ?")
+    .get(groupId) as { tree: string } | undefined;
+  if (row === undefined) {
+    throw new Error(`inventory doc ${groupId} missing`);
+  }
+  return JSON.parse(row.tree) as TreeResponse["tree"];
+}
+
+function writeGroupTree(groupId: string, tree: TreeResponse["tree"]): void {
+  db.prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = ?").run(
+    JSON.stringify(tree),
+    groupId,
+  );
+}
+
+/**
+ * Older snapshots can still contain asset-room records. The current create
+ * route no longer writes them, so seed the historical namespace explicitly
+ * instead of pretending the compatibility creator still produces that shape.
+ */
+function seedLegacyAssetRoom(
+  groupId: string,
+  room: AssetRoomView,
+): AssetRoomView {
+  const tree = readGroupTree(groupId);
+  tree.assetRooms.push({ ...room });
+  writeGroupTree(groupId, tree);
+  return room;
+}
+
+/**
+ * Likewise, an un-migrated asset may still reference an old asset-room id. Seed
+ * that legacy relation directly; new asset creation validates against
+ * canonical tree.rooms and must not be used to mimic historical data.
+ */
+function seedLegacyAsset(groupId: string, asset: AssetView): AssetView {
+  const tree = readGroupTree(groupId);
+  tree.assets.push({ ...asset });
+  writeGroupTree(groupId, tree);
+  return asset;
+}
+
 /**
  * Mirrors the future UI aggregation: an Asset.barcode is visible for a physical
  * room only through an asset-room whose explicit linkedRoomId points at it.
@@ -130,7 +175,7 @@ beforeAll(async () => {
   dbPath = join(tempDir, "test.db");
   app = await buildApp({ config: { dbPath, logLevel: "silent", loginRateLimit: 1000 } });
 
-  const db = getDatabase(dbPath);
+  db = getDatabase(dbPath);
   const insertUser = db.prepare(
     "INSERT INTO users (uid, email, password_hash, hash_version, name, role, group_id) VALUES (?, ?, ?, 'argon2id', ?, ?, ?)",
   );
@@ -178,60 +223,73 @@ afterAll(async () => {
 });
 
 describe("asset room -> chemical room links", () => {
-  it("creates a linked asset room and keeps the mapping through a name-only edit and legacy asset relation", async () => {
+  it("creates a canonical physical room through the compatibility route, ignores linkedRoomId and keeps the asset assignment through a room rename", async () => {
     const before = await getTree(ownerCookie, "group-a");
+    const assetRoomsBefore = before.tree.assetRooms.length;
+
+    // Compatibility creator: linkedRoomId is accepted for older callers but no
+    // longer creates a second asset-room namespace.
     const create = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
       name: "Linked Assets",
       linkedRoomId: roomAId,
     });
     expect(create.status).toBe(201);
     expect(create.body.version).toBe(before.version + 1);
-    const assetRoom = findAssetRoom(create.body.tree, "Linked Assets");
-    expect(assetRoom.linkedRoomId).toBe(roomAId);
+    const canonicalRoom = findRoom(create.body.tree, "Linked Assets");
+    expect(canonicalRoom.id).not.toBe(roomAId);
+    expect(create.body.tree.assetRooms).toHaveLength(assetRoomsBefore);
+    expect(create.body.tree.assetRooms.some((candidate) => candidate.name === "Linked Assets")).toBe(false);
 
     const asset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
       name: "Linked microscope",
       barcode: "LINKED-BARCODE",
-      roomId: assetRoom.id,
+      roomId: canonicalRoom.id,
     });
     expect(asset.status).toBe(201);
     expect(asset.body.tree.assets.find((candidate) => candidate.barcode === "LINKED-BARCODE")?.roomId).toBe(
-      assetRoom.id,
+      canonicalRoom.id,
     );
 
-    const rename = await api("PUT", `/api/groups/group-a/inventory/asset-rooms/${assetRoom.id}`, ownerCookie, {
+    const rename = await api("PUT", `/api/groups/group-a/inventory/rooms/${canonicalRoom.id}`, ownerCookie, {
       name: "Renamed Linked Assets",
     });
     expect(rename.status).toBe(200);
     expect(rename.body.version).toBe(asset.body.version + 1);
-    const renamed = findAssetRoom(rename.body.tree, "Renamed Linked Assets");
-    expect(renamed.id).toBe(assetRoom.id);
-    expect(renamed.linkedRoomId).toBe(roomAId);
+    const renamed = findRoom(rename.body.tree, "Renamed Linked Assets");
+    expect(renamed.id).toBe(canonicalRoom.id);
+    expect(rename.body.tree.assetRooms.some((candidate) => candidate.name === "Renamed Linked Assets")).toBe(false);
     expect(rename.body.tree.assets.find((candidate) => candidate.barcode === "LINKED-BARCODE")?.roomId).toBe(
-      assetRoom.id,
+      canonicalRoom.id,
     );
   });
 
-  it("sets a mapping on an existing name-only asset room and clears it with null without touching names, rooms or assets", async () => {
-    const created = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+  it("sets a mapping on an existing legacy name-only asset room and clears it with null without touching names, rooms or assets", async () => {
+    // Historical snapshot: the asset and its room reference predate the
+    // canonical-only create validation, so seed both records explicitly.
+    const assetRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-name-only-assets",
       name: "Name Only Assets",
     });
-    expect(created.status).toBe(201);
-    const assetRoom = findAssetRoom(created.body.tree, "Name Only Assets");
-    expect(assetRoom.linkedRoomId).toBeUndefined();
-
-    const asset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+    seedLegacyAsset("group-a", {
+      id: "legacy-room-reference",
       name: "Legacy room reference",
       barcode: "LEGACY-ROOM-REF",
       roomId: assetRoom.id,
     });
-    expect(asset.status).toBe(201);
+
+    const before = await getTree(ownerCookie, "group-a");
+    const seeded = findAssetRoomById(before.tree, assetRoom.id);
+    expect(seeded.name).toBe("Name Only Assets");
+    expect(seeded.linkedRoomId).toBeUndefined();
+    expect(
+      before.tree.assets.find((candidate) => candidate.barcode === "LEGACY-ROOM-REF")?.roomId,
+    ).toBe(assetRoom.id);
 
     const setLink = await api("PUT", `/api/groups/group-a/inventory/asset-rooms/${assetRoom.id}`, ownerCookie, {
       linkedRoomId: roomAId,
     });
     expect(setLink.status).toBe(200);
-    expect(setLink.body.version).toBe(asset.body.version + 1);
+    expect(setLink.body.version).toBe(before.version + 1);
     const linked = findAssetRoomById(setLink.body.tree, assetRoom.id);
     expect(linked.name).toBe("Name Only Assets");
     expect(linked.linkedRoomId).toBe(roomAId);
@@ -254,24 +312,21 @@ describe("asset room -> chemical room links", () => {
     ).toBe(assetRoom.id);
   });
 
-  it("rejects unknown ids, legacy asset-room ids and freezer ids without mutating the document", async () => {
-    const target = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+  it("rejects unknown ids, legacy asset-room ids and freezer ids for legacy mapping edits and canonical asset creation without mutating the document", async () => {
+    // An old asset room remains the edit target; the create route is no longer
+    // expected to reject linkedRoomId because it does not create asset rooms.
+    const target = seedLegacyAssetRoom("group-a", {
+      id: "legacy-reject-target",
       name: "Reject Target Assets",
     });
-    expect(target.status).toBe(201);
-    const targetId = findAssetRoom(target.body.tree, "Reject Target Assets").id;
+    const otherLegacy = seedLegacyAssetRoom("group-a", {
+      id: "legacy-other-target",
+      name: "Other Legacy Asset Room",
+    });
+    const targetId = target.id;
     const before = await getTree(ownerCookie, "group-a");
 
-    for (const linkedRoomId of ["no-such-chemical-room", targetId, freezerId]) {
-      const create = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
-        name: `Rejected ${linkedRoomId}`,
-        linkedRoomId,
-      });
-      expect(create.status).toBe(404);
-      expect(create.body).toMatchObject({ error: "Chemical room not found" });
-    }
-
-    for (const linkedRoomId of ["no-such-chemical-room", targetId, freezerId]) {
+    for (const linkedRoomId of ["no-such-chemical-room", otherLegacy.id, freezerId]) {
       const edit = await api(
         "PUT",
         `/api/groups/group-a/inventory/asset-rooms/${targetId}`,
@@ -282,6 +337,16 @@ describe("asset room -> chemical room links", () => {
       expect(edit.body).toMatchObject({ error: "Chemical room not found" });
     }
 
+    // The canonical asset creator rejects the same non-canonical id spaces.
+    for (const roomId of ["no-such-chemical-room", otherLegacy.id, freezerId]) {
+      const createAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+        name: `Rejected asset ${roomId}`,
+        roomId,
+      });
+      expect(createAsset.status).toBe(404);
+      expect(createAsset.body).toMatchObject({ error: "Room not found" });
+    }
+
     const after = await getTree(ownerCookie, "group-a");
     expect(after.version).toBe(before.version);
     expect(after.tree.assetRooms).toHaveLength(before.tree.assetRooms.length);
@@ -290,6 +355,9 @@ describe("asset room -> chemical room links", () => {
     expect(unchanged.linkedRoomId ?? null).toBeNull();
     expect(after.tree.rooms.some((candidate) => candidate.id === freezerId)).toBe(false);
     expect(after.tree.assetRooms.some((candidate) => candidate.id === targetId)).toBe(true);
+    // Legacy asset-room ids are namespace-only; they must not become rooms.
+    expect(after.tree.rooms.some((candidate) => candidate.id === otherLegacy.id)).toBe(false);
+    expect(after.tree.assets.some((candidate) => candidate.name.startsWith("Rejected asset "))).toBe(false);
   });
 
   it("keeps group membership and reader restrictions for map/edit and the room-delete guard", async () => {
@@ -344,39 +412,45 @@ describe("asset room -> chemical room links", () => {
     expect(afterA.version).toBe(beforeA.version);
     expect(afterA.tree.assetRooms.some((candidate) => candidate.name === "Outsider Assets")).toBe(false);
     expect(afterA.tree.assetRooms.some((candidate) => candidate.name === "Reader Assets")).toBe(false);
+    expect(afterA.tree.rooms.some((candidate) => candidate.name === "Outsider Assets")).toBe(false);
+    expect(afterA.tree.rooms.some((candidate) => candidate.name === "Reader Assets")).toBe(false);
     expect(findAssetRoomById(afterA.tree, existing.id).linkedRoomId ?? null).toBeNull();
     expect(afterA.tree.rooms.some((candidate) => candidate.id === roomAId)).toBe(true);
   });
 });
 
 describe("chemical room deletion guard", () => {
-  it("blocks deletion while an asset-room or instrument links the room and succeeds after both links clear", async () => {
+  it("blocks deletion while a legacy asset-room or instrument links the room and succeeds after clearing and canonical reassignment", async () => {
     const createdRoom = await api("POST", "/api/groups/group-a/inventory/rooms", ownerCookie, {
       name: "Guarded Physical Room",
     });
     expect(createdRoom.status).toBe(201);
     const guardedRoomId = findRoom(createdRoom.body.tree, "Guarded Physical Room").id;
 
-    const createdAssetRoom = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+    // No barcode on this asset: the guard must not depend on barcode contents.
+    const guardedAssetRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-guarded-assets",
       name: "Guarded Assets",
       linkedRoomId: guardedRoomId,
     });
-    expect(createdAssetRoom.status).toBe(201);
-    const guardedAssetRoom = findAssetRoom(createdAssetRoom.body.tree, "Guarded Assets");
-
-    // No barcode on this asset: the guard must not depend on barcode contents.
-    const createdAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+    const guardedAsset = seedLegacyAsset("group-a", {
+      id: "legacy-barcode-less-asset",
       name: "Barcode-less asset",
       roomId: guardedAssetRoom.id,
     });
-    expect(createdAsset.status).toBe(201);
-    const guardedAsset = createdAsset.body.tree.assets.find((candidate) => candidate.name === "Barcode-less asset");
-    expect(guardedAsset?.barcode ?? null).toBeNull();
+    expect(guardedAsset.barcode ?? null).toBeNull();
 
-    const db = getDatabase(dbPath);
     db.prepare(
-      "INSERT INTO instruments (id, source, group_id, name, room_group_id, room_id) VALUES (?, 'shared', NULL, ?, ?, ?)",
-    ).run("inst-guarded-room", "Guarded instrument", "group-a", guardedRoomId);
+      "INSERT INTO instruments (id, source, group_id, name, location, owner_lab_id, owner_lab_name, room_group_id, room_id) VALUES (?, 'shared', NULL, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "inst-guarded-room",
+      "Guarded instrument",
+      "Guarded bench",
+      "group-a",
+      "Link Lab A",
+      "group-a",
+      guardedRoomId,
+    );
 
     const beforeBlock = await getTree(ownerCookie, "group-a");
     const blocked = await api("DELETE", `/api/groups/group-a/inventory/rooms/${guardedRoomId}`, ownerCookie);
@@ -403,6 +477,21 @@ describe("chemical room deletion guard", () => {
         .get(`Deleted room "Guarded Physical Room"`),
     ).toEqual({ n: 0 });
 
+    // A canonical instrument pair cannot be cleared directly.
+    const clearInstrument = await api("PUT", "/api/instruments/inst-guarded-room", ownerCookie, {
+      roomGroupId: null,
+      roomId: null,
+    });
+    expect(clearInstrument.status).toBe(400);
+    expect(clearInstrument.body).toMatchObject({
+      error: "A physical room is required; clearing the room assignment is not allowed",
+    });
+    expect(
+      db
+        .prepare("SELECT room_group_id AS roomGroupId, room_id AS roomId FROM instruments WHERE id = ?")
+        .get("inst-guarded-room"),
+    ).toEqual({ roomGroupId: "group-a", roomId: guardedRoomId });
+
     // Clearing only the asset-room link still leaves the instrument link behind.
     const clearAssetLink = await api(
       "PUT",
@@ -419,10 +508,21 @@ describe("chemical room deletion guard", () => {
     expect(blockedByInstrument.status).toBe(409);
     expect((await getTree(ownerCookie, "group-a")).version).toBe(clearAssetLink.body.version);
 
-    // Unlink the SQL instrument, then the physical room may be deleted.
-    db.prepare("UPDATE instruments SET room_group_id = NULL, room_id = NULL WHERE id = ?").run(
-      "inst-guarded-room",
-    );
+    // Reassign the instrument to another real canonical room; only then may the
+    // physical room be deleted. Directly nulling the pair is rejected above.
+    const reassigned = await api("PUT", "/api/instruments/inst-guarded-room", ownerCookie, {
+      roomGroupId: "group-a",
+      roomId: roomAId,
+    });
+    expect(reassigned.status).toBe(200);
+    expect(
+      db
+        .prepare(
+          "SELECT room_group_id AS roomGroupId, room_id AS roomId, location FROM instruments WHERE id = ?",
+        )
+        .get("inst-guarded-room"),
+    ).toEqual({ roomGroupId: "group-a", roomId: roomAId, location: "Guarded bench" });
+
     const deleted = await api("DELETE", `/api/groups/group-a/inventory/rooms/${guardedRoomId}`, ownerCookie);
     expect(deleted.status).toBe(200);
     expect(deleted.body.version).toBe(clearAssetLink.body.version + 1);
@@ -459,26 +559,32 @@ describe("chemical room deletion guard", () => {
 });
 
 describe("asset room deletion and aggregation", () => {
-  it("removes only the standard asset references and never deletes the chemical room or asset", async () => {
+  it("removes only the standard legacy asset references and never deletes the chemical room or asset", async () => {
     const createdRoom = await api("POST", "/api/groups/group-a/inventory/rooms", ownerCookie, {
       name: "Keep Chemical Room",
     });
     expect(createdRoom.status).toBe(201);
     const chemicalRoomId = findRoom(createdRoom.body.tree, "Keep Chemical Room").id;
 
-    const createdAssetRoom = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+    // Old snapshot records: an asset room linked to the canonical room plus an
+    // asset whose roomId is the legacy asset-room id.
+    const assetRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-disposable-assets",
       name: "Disposable Assets",
       linkedRoomId: chemicalRoomId,
     });
-    expect(createdAssetRoom.status).toBe(201);
-    const assetRoom = findAssetRoom(createdAssetRoom.body.tree, "Disposable Assets");
-
-    const createdAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+    seedLegacyAsset("group-a", {
+      id: "legacy-surviving-asset",
       name: "Surviving asset",
       barcode: "SURVIVES-ASSET-ROOM-DELETE",
       roomId: assetRoom.id,
     });
-    expect(createdAsset.status).toBe(201);
+
+    const beforeDelete = await getTree(ownerCookie, "group-a");
+    expect(findAssetRoomById(beforeDelete.tree, assetRoom.id).linkedRoomId).toBe(chemicalRoomId);
+    expect(
+      beforeDelete.tree.assets.find((candidate) => candidate.barcode === "SURVIVES-ASSET-ROOM-DELETE")?.roomId,
+    ).toBe(assetRoom.id);
 
     const deleted = await api(
       "DELETE",
@@ -486,7 +592,7 @@ describe("asset room deletion and aggregation", () => {
       ownerCookie,
     );
     expect(deleted.status).toBe(200);
-    expect(deleted.body.version).toBe(createdAsset.body.version + 1);
+    expect(deleted.body.version).toBe(beforeDelete.version + 1);
     expect(deleted.body.tree.assetRooms.some((candidate) => candidate.id === assetRoom.id)).toBe(false);
     expect(deleted.body.tree.rooms.some((candidate) => candidate.id === chemicalRoomId)).toBe(true);
     const survivingAsset = deleted.body.tree.assets.find(
@@ -497,45 +603,54 @@ describe("asset room deletion and aggregation", () => {
     expect(barcodesForPhysicalRoom(deleted.body.tree, chemicalRoomId)).toEqual([]);
   });
 
-  it("does not match names across groups or infer Asset.roomId only; barcode follows explicit linkedRoomId", async () => {
-    // Group B has an identically named physical room and its own asset data.
-    const createdBRoom = await api("POST", "/api/groups/group-b/inventory/asset-rooms", outsiderCookie, {
+  it("does not match names across groups or infer Asset.roomId only; barcode follows explicit legacy linkedRoomId", async () => {
+    // Group B has an identically named physical room and its own legacy asset
+    // records; seed the historical namespace rather than the canonical creator.
+    const bAssetRoom = seedLegacyAssetRoom("group-b", {
+      id: "legacy-b-alpha-assets",
       name: "Shared Alpha Asset Room",
       linkedRoomId: roomBId,
     });
-    expect(createdBRoom.status).toBe(201);
-    const bAssetRoom = findAssetRoom(createdBRoom.body.tree, "Shared Alpha Asset Room");
-    const bAsset = await api("POST", "/api/groups/group-b/inventory/assets", outsiderCookie, {
+    seedLegacyAsset("group-b", {
+      id: "legacy-b-asset",
       name: "Group B asset",
       barcode: "B-ONLY-BARCODE",
       roomId: bAssetRoom.id,
     });
-    expect(bAsset.status).toBe(201);
+    const seededB = await getTree(outsiderCookie, "group-b");
+    expect(findAssetRoomById(seededB.tree, bAssetRoom.id).linkedRoomId).toBe(roomBId);
 
-    // An asset room in group A cannot target group B's room id, even though the
-    // room name is identical.
-    const crossGroupBefore = await getTree(ownerCookie, "group-a");
-    const crossGroup = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+    // A legacy asset-room mapping edit in group A cannot target group B's room
+    // id, even though the room name is identical. The compatibility creator
+    // ignores linkedRoomId, so the negative check belongs on the edit route.
+    const crossGroupAssetRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-cross-group-attempt",
       name: "Cross Group Attempt",
-      linkedRoomId: roomBId,
     });
+    const crossGroupBefore = await getTree(ownerCookie, "group-a");
+    const crossGroup = await api(
+      "PUT",
+      `/api/groups/group-a/inventory/asset-rooms/${crossGroupAssetRoom.id}`,
+      ownerCookie,
+      { linkedRoomId: roomBId },
+    );
     expect(crossGroup.status).toBe(404);
     expect(crossGroup.body).toMatchObject({ error: "Chemical room not found" });
     const crossGroupAfter = await getTree(ownerCookie, "group-a");
     expect(crossGroupAfter.version).toBe(crossGroupBefore.version);
+    expect(findAssetRoomById(crossGroupAfter.tree, crossGroupAssetRoom.id).linkedRoomId ?? null).toBeNull();
 
-    // Name-only asset room with the same name as the physical room.
-    const nameOnly = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+    // Name-only legacy asset room with the same name as the physical room.
+    const nameOnlyRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-name-only-alpha",
       name: "Shared Alpha Room",
     });
-    expect(nameOnly.status).toBe(201);
-    const nameOnlyRoom = findAssetRoom(nameOnly.body.tree, "Shared Alpha Room");
-    const nameOnlyAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+    seedLegacyAsset("group-a", {
+      id: "legacy-name-only-asset",
       name: "Name only asset",
       barcode: "A-NAME-ONLY-BARCODE",
       roomId: nameOnlyRoom.id,
     });
-    expect(nameOnlyAsset.status).toBe(201);
 
     // Asset.roomId pointing directly at a physical room is not an asset-room link.
     const directRoomAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
@@ -545,28 +660,29 @@ describe("asset room deletion and aggregation", () => {
     });
     expect(directRoomAsset.status).toBe(201);
 
-    // Only an explicitly linked asset-room contributes a barcode.
-    const linked = await api("POST", "/api/groups/group-a/inventory/asset-rooms", ownerCookie, {
+    // Only an explicitly linked legacy asset-room contributes a barcode.
+    const linkedRoom = seedLegacyAssetRoom("group-a", {
+      id: "legacy-explicitly-linked-assets",
       name: "Explicitly Linked Assets",
       linkedRoomId: roomAId,
     });
-    expect(linked.status).toBe(201);
-    const linkedRoom = findAssetRoom(linked.body.tree, "Explicitly Linked Assets");
-    const linkedAsset = await api("POST", "/api/groups/group-a/inventory/assets", ownerCookie, {
+    seedLegacyAsset("group-a", {
+      id: "legacy-visible-asset",
       name: "Visible asset",
       barcode: "A-LINKED-BARCODE",
       roomId: linkedRoom.id,
     });
-    expect(linkedAsset.status).toBe(201);
 
     const treeA = (await getTree(ownerCookie, "group-a")).tree;
-    expect(barcodesForPhysicalRoom(treeA, roomAId)).toEqual([
-      "A-LINKED-BARCODE",
-      "LINKED-BARCODE",
-    ]);
+    expect(barcodesForPhysicalRoom(treeA, roomAId)).toEqual(["A-LINKED-BARCODE"]);
     expect(treeA.assets.some((candidate) => candidate.barcode === "B-ONLY-BARCODE")).toBe(false);
+    // Legacy asset-room metadata remains namespace-only: no silent migration.
+    expect(treeA.rooms.some((candidate) => candidate.id === linkedRoom.id)).toBe(false);
+    expect(treeA.assetRooms.some((candidate) => candidate.id === "legacy-name-only-alpha")).toBe(true);
 
     const treeB = (await getTree(outsiderCookie, "group-b")).tree;
     expect(barcodesForPhysicalRoom(treeB, roomBId)).toEqual(["B-ONLY-BARCODE"]);
+    expect(treeB.rooms.some((candidate) => candidate.id === bAssetRoom.id)).toBe(false);
+    expect(treeB.assetRooms.some((candidate) => candidate.id === bAssetRoom.id)).toBe(true);
   });
 });

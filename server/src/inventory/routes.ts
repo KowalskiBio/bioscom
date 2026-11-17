@@ -22,7 +22,6 @@ import {
   MoveChemicalBodySchema,
   AddProtocolBodySchema,
   EditProtocolBodySchema,
-  AddAssetRoomBodySchema,
   EditAssetRoomBodySchema,
   AddAssetBodySchema,
   EditAssetBodySchema,
@@ -116,6 +115,20 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
     const room = tree.rooms.find((candidate) => candidate.id === linkedRoomId);
     if (room === undefined) {
       throw new OpError(404, "Chemical room not found");
+    }
+    return room.id;
+  };
+
+  // An asset may only reference a canonical physical room from tree.rooms.
+  // Omitted/blank room ids preserve the legacy no-room state; root/deep
+  // freezers, legacy asset-room ids and unknown ids are rejected.
+  const resolveCanonicalAssetRoomId = (tree: InventoryTree, roomId: string | undefined): string => {
+    if (roomId === undefined || roomId.trim() === "") {
+      return "";
+    }
+    const room = tree.rooms.find((candidate) => candidate.id === roomId);
+    if (room === undefined) {
+      throw new OpError(404, "Room not found");
     }
     return room.id;
   };
@@ -548,7 +561,10 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           .prepare("SELECT 1 AS linked FROM instruments WHERE room_group_id = ? AND room_id = ? LIMIT 1")
           .get(groupId, roomId) as { linked: number } | undefined;
         const linkedAssetRoom = tree.assetRooms.some((candidate) => candidate.linkedRoomId === roomId);
-        if (linkedInstrument !== undefined || linkedAssetRoom) {
+        // Assets may point directly at a canonical tree.rooms id; those
+        // references must block deletion just like legacy asset-room links.
+        const linkedAsset = tree.assets.some((candidate) => candidate.roomId === roomId);
+        if (linkedInstrument !== undefined || linkedAssetRoom || linkedAsset) {
           throw new OpError(
             409,
             "Unlink assigned instruments and asset rooms before deleting this room",
@@ -1099,18 +1115,16 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
     return wrap(request, reply, () => {
       guard(user, groupId);
       if (!requireWriter(user, reply)) return;
-      const body = AddAssetRoomBodySchema.safeParse(request.body);
+      // Compatibility creator: new physical rooms use the canonical tree.rooms
+      // namespace. `linkedRoomId` from legacy callers is accepted and ignored;
+      // this route no longer creates a second asset-room namespace.
+      const body = AddRoomBodySchema.safeParse(request.body);
       if (!body.success) {
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
-        const linkedRoomId = resolveAssetRoomLink(tree, body.data.linkedRoomId);
-        tree.assetRooms.push({
-          id: genId(),
-          name: body.data.name,
-          ...(linkedRoomId === undefined ? {} : { linkedRoomId }),
-        });
-        return `Added asset room "${body.data.name}"`;
+        tree.rooms.push({ id: genId(), name: body.data.name, description: body.data.description, containers: [] });
+        return `Added room "${body.data.name}"`;
       });
       broadcastResult(groupId, result);
       return reply.status(201).send(result);
@@ -1186,13 +1200,14 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
+        const roomId = resolveCanonicalAssetRoomId(tree, body.data.roomId);
         tree.assets.push({
           id: genId(),
           name: body.data.name,
           model: body.data.model,
           barcode: body.data.barcode,
           description: body.data.description,
-          roomId: body.data.roomId ?? "",
+          roomId,
         });
         return `Added asset "${body.data.name}"`;
       });
@@ -1231,7 +1246,10 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           asset.description = body.data.description;
         }
         if (body.data.roomId !== undefined) {
-          asset.roomId = body.data.roomId;
+          // Validate before mutating so an invalid legacy/freezer/unknown id
+          // leaves the document and version untouched. Omitted ids preserve
+          // the existing room; an explicit empty string clears it.
+          asset.roomId = resolveCanonicalAssetRoomId(tree, body.data.roomId);
         }
         return `Edited asset "${asset.name}"`;
       });

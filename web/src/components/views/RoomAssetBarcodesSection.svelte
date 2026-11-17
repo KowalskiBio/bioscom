@@ -1,11 +1,8 @@
 <script lang="ts">
   import JsBarcode from "jsbarcode";
-  import type { AssetRoom } from "@bioscom/shared";
   import { fetchInventory, inventory, inventoryFor } from "../../lib/stores/inventory.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
-  import { roleCanWrite } from "../../lib/ops";
-  import { openAssetRoomForm } from "../../lib/forms";
   import { stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
@@ -17,30 +14,11 @@
 
   const design = $derived(theme.design);
   const tree = $derived(inventoryFor(currentGroup.groupId));
-  const mappedAssetRoomIds = $derived(
-    new Set(
-      (tree?.assetRooms ?? [])
-        .filter((assetRoom) => assetRoom.linkedRoomId === roomId)
-        .map((assetRoom) => assetRoom.id),
-    ),
-  );
-  // Asset.roomId continues to reference AssetRoom.id. Only the explicit
-  // AssetRoom.linkedRoomId connects those legacy assignments to this Room.
   const barcodedAssets = $derived(
     (tree?.assets ?? []).filter(
-      (asset) =>
-        asset.roomId !== undefined &&
-        asset.roomId !== null &&
-        mappedAssetRoomIds.has(asset.roomId) &&
-        (asset.barcode ?? "").trim() !== "",
+      (asset) => asset.roomId === roomId && (asset.barcode ?? "").trim() !== "",
     ),
   );
-  const mappingRooms = $derived(
-    (tree?.assetRooms ?? []).filter(
-      (assetRoom) => (assetRoom.linkedRoomId ?? "") === "" || assetRoom.linkedRoomId === roomId,
-    ),
-  );
-  const canWrite = $derived(roleCanWrite());
   const isReader = $derived(session.user?.role === "reader");
 
   let expanded = $state(false);
@@ -79,14 +57,6 @@
     }
   });
 
-  function editMapping(assetRoom: AssetRoom): void {
-    const linked = assetRoom.linkedRoomId === roomId;
-    openAssetRoomForm(
-      { id: assetRoom.id, name: assetRoom.name, linkedRoomId: assetRoom.linkedRoomId },
-      { preferredRoomId: linked ? null : roomId },
-    );
-  }
-
   function retryInventory(): void {
     const groupId = currentGroup.groupId;
     if (groupId !== null) {
@@ -99,7 +69,7 @@
   <div class="room-equipment-heading">
     <div>
       <h2 id="room-barcodes-title">Asset barcodes</h2>
-      <p class="room-equipment-subtitle">Inventory barcodes from asset rooms explicitly linked to this room.</p>
+      <p class="room-equipment-subtitle">Barcoded Inventory assets assigned directly to this physical room.</p>
     </div>
     <div class="room-equipment-actions">
       {#if tree !== null}<span class="room-equipment-count">{barcodedAssets.length} {barcodedAssets.length === 1 ? "barcoded asset" : "barcoded assets"}</span>{/if}
@@ -151,27 +121,5 @@
       </div>
     {/if}
 
-    {#if canWrite && tree !== null && mappingRooms.length > 0}
-      <div class="room-mapping" id="room-mapping">
-        <h3>Inventory room links</h3>
-        <p>Link an existing Inventory room to show its barcoded assets here, or clear its current link. Asset assignments do not change.</p>
-        <div class="room-mapping-list">
-          {#each mappingRooms as assetRoom (assetRoom.id)}
-            <div class="room-mapping-row">
-              <div>
-                <strong>{design === "bauhaus" ? stripEmoji(assetRoom.name) : assetRoom.name}</strong>
-                <span>{assetRoom.linkedRoomId === roomId ? "Linked to this room" : "No chemical room linked"}</span>
-              </div>
-              <button
-                type="button"
-                class="btn-inline"
-                id={`room-map-${assetRoom.id}`}
-                onclick={() => editMapping(assetRoom)}
-              >{assetRoom.linkedRoomId === roomId ? "Edit link" : "Link to this room"}</button>
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
   </div>
 </section>

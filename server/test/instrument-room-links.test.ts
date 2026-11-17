@@ -158,26 +158,16 @@ afterAll(async () => {
 });
 
 describe("instrument room links", () => {
-  let legacyId = "";
   let linkedId = "";
 
-  it("creates and lists a legacy unlinked instrument with location and owner preserved", async () => {
-    const versionBefore = inventoryVersion("group-a");
+  it("rejects creation without a canonical room pair", async () => {
+    const countBefore = (await listInstruments()).length;
     const create = await createInstrument(adminCookie, { name: "Legacy Scope", location: "B302 bench" });
-    expect(create.statusCode).toBe(201);
-    legacyId = (create.json() as { id: string }).id;
-
-    const listed = await instrument(legacyId);
-    expect(listed.location).toBe("B302 bench");
-    expect(listed.roomGroupId).toBeNull();
-    expect(listed.roomId).toBeNull();
-    expect(listed.ownerLabId).toBe("group-a");
-    expect(listed.ownerLabName).toBe("Lab A");
-    expect(listed.bookings).toEqual([]);
-    expect(inventoryVersion("group-a")).toBe(versionBefore);
+    expect(create.statusCode).toBe(400);
+    expect((await listInstruments()).length).toBe(countBefore);
   });
 
-  it("creates a linked instrument and exposes the link, owner and bookings globally", async () => {
+  it("creates a linked instrument with a canonical room and exposes owner and bookings globally", async () => {
     const versionBefore = inventoryVersion("group-a");
     const create = await createInstrument(adminCookie, {
       name: "Linked HPLC",
@@ -216,6 +206,19 @@ describe("instrument room links", () => {
     expect(asOutsider.find((candidate) => candidate.id === linkedId)?.roomGroupId).toBe("group-a");
   });
 
+  it("falls back a missing placement note to the target canonical room name", async () => {
+    const create = await createInstrument(adminCookie, {
+      name: "Location Fallback",
+      roomGroupId: "group-a",
+      roomId: "room-a-2",
+    });
+    expect(create.statusCode).toBe(201);
+    const created = await instrument((create.json() as { id: string }).id);
+    expect(created.location).toBe("Chem A Annex");
+    expect(created.roomGroupId).toBe("group-a");
+    expect(created.roomId).toBe("room-a-2");
+  });
+
   it("keeps the link on a name-only owner update", async () => {
     const update = await putInstrument(adminCookie, linkedId, { name: "Linked HPLC Renamed" });
     expect(update.statusCode).toBe(200);
@@ -238,13 +241,16 @@ describe("instrument room links", () => {
     expect(listed.location).toBe("Chem A bench");
   });
 
-  it("clears both link columns explicitly without touching the literal location", async () => {
+  it("refuses to clear the mandatory room pair and preserves the assignment", async () => {
+    const before = await instrument(linkedId);
     const update = await putInstrument(adminCookie, linkedId, { roomGroupId: null, roomId: null });
-    expect(update.statusCode).toBe(200);
+    expect(update.statusCode).toBe(400);
+    expect((update.json() as { error: string }).error).toContain("clearing the room assignment is not allowed");
 
     const listed = await instrument(linkedId);
-    expect(listed.roomGroupId).toBeNull();
-    expect(listed.roomId).toBeNull();
+    expect(listed).toEqual(before);
+    expect(listed.roomGroupId).toBe("group-a");
+    expect(listed.roomId).toBe("room-a-2");
     expect(listed.location).toBe("Chem A bench");
     expect(listed.ownerLabId).toBe("group-a");
   });
@@ -362,12 +368,21 @@ describe("instrument room links", () => {
   });
 
   it("allows only a superadmin to assign a room to a legacy owner-null record", async () => {
-    const create = await createInstrument(superCookie, { name: "Legacy No Owner", location: "Unassigned" });
-    expect(create.statusCode).toBe(201);
-    const legacyIdWithoutOwner = (create.json() as { id: string }).id;
+    const legacyIdWithoutOwner = "inst-legacy-no-owner";
+    db.prepare(
+      "INSERT INTO instruments (id, source, group_id, name, location) VALUES (?, 'shared', NULL, 'Legacy No Owner', 'Unassigned')",
+    ).run(legacyIdWithoutOwner);
+
     const created = await instrument(legacyIdWithoutOwner);
     expect(created.ownerLabId).toBeNull();
     expect(created.roomGroupId).toBeNull();
+    expect(created.roomId).toBeNull();
+
+    // A legacy record can still be read, but editing it must finish with a
+    // valid canonical pair.
+    const legacyEdit = await putInstrument(superCookie, legacyIdWithoutOwner, { name: "Still Legacy" });
+    expect(legacyEdit.statusCode).toBe(409);
+    expect((await instrument(legacyIdWithoutOwner)).name).toBe("Legacy No Owner");
 
     // A non-superadmin with no group can manage the null-owner row under the
     // legacy ownership rule, but must not be allowed to attach a room.

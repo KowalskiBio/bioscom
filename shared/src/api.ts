@@ -16,10 +16,12 @@ interface InstrumentRoomLinkValues {
 }
 
 /**
- * Instrument room links are all-or-nothing. Both fields omitted means legacy /
- * unassigned (no change on update); both null clears the link; both nonempty
- * ids assign it. Anything else, including a present-but-undefined half, is a
- * broken pair and must not be silently treated as "no change".
+ * Instrument room update links are all-or-nothing. Both fields omitted means
+ * "keep the current assignment"; both nonempty ids assign a new room. Both null
+ * parses here so the API can reject clearing the now-mandatory room with an
+ * explicit 4xx instead of a generic schema error. Anything else, including a
+ * present-but-undefined half, is a broken pair and must not be silently
+ * treated as "no change".
  */
 function refineInstrumentRoomLink(value: InstrumentRoomLinkValues, ctx: z.RefinementCtx): void {
   const hasGroupId = Object.prototype.hasOwnProperty.call(value, "roomGroupId");
@@ -55,6 +57,16 @@ function refineInstrumentRoomLink(value: InstrumentRoomLinkValues, ctx: z.Refine
 const instrumentRoomLinkFields = {
   roomGroupId: nullableBodyIdSchema.optional(),
   roomId: nullableBodyIdSchema.optional(),
+};
+
+/**
+ * New instruments must be created with a canonical physical-room pair. Unlike
+ * the update fields, neither half is optional or nullable: an explicit room in
+ * the caller's owning lab is part of the create contract.
+ */
+const requiredInstrumentRoomFields = {
+  roomGroupId: z.string().trim().min(1),
+  roomId: z.string().trim().min(1),
 };
 
 export const RegisterBodySchema = z.object({
@@ -409,22 +421,24 @@ export const ReactionBodySchema = z.object({
   text: z.string().trim().min(1).max(16),
 });
 
-export const CreateInstrumentBodySchema = z
-  .object({
-    name: z.string().trim().min(1).max(200),
-    description: z.string().trim().max(4000).optional(),
-    location: z.string().trim().min(1).max(200),
-    contactPerson: z.string().trim().max(200).optional(),
-    contactEmail: z.string().trim().max(254).optional(),
-    ...instrumentRoomLinkFields,
-  })
-  .superRefine(refineInstrumentRoomLink);
+export const CreateInstrumentBodySchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(4000).optional(),
+  // Optional placement detail only. The canonical room link is authoritative;
+  // when this is missing or blank the server falls back to the room name.
+  location: z.string().trim().max(200).optional(),
+  contactPerson: z.string().trim().max(200).optional(),
+  contactEmail: z.string().trim().max(254).optional(),
+  ...requiredInstrumentRoomFields,
+});
 
 export const UpdateInstrumentBodySchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(4000).optional(),
-    location: z.string().trim().min(1).max(200).optional(),
+    // Optional placement detail: omitted preserves the stored note, an empty
+    // string clears it, and the room assignment is validated separately.
+    location: z.string().trim().max(200).optional(),
     contactPerson: z.string().trim().max(200).optional(),
     contactEmail: z.string().trim().max(254).optional(),
     ...instrumentRoomLinkFields,

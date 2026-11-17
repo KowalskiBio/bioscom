@@ -57,6 +57,44 @@ function normalInstruments(): unknown[] {
       ownerLabName: "Synthetic Lab B",
       bookings: [],
     },
+    {
+      id: "inst-foreign-bookable",
+      name: "Foreign validated instrument",
+      location: "Foreign bench 4",
+      roomGroupId: "group-b",
+      roomId: "room-foreign-not-local",
+      ownerLabId: "group-b",
+      ownerLabName: "Synthetic Lab B",
+      bookings: [],
+    },
+    {
+      id: "inst-foreign-unassigned",
+      name: "Foreign unassigned instrument",
+      location: "Legacy foreign note",
+      roomGroupId: null,
+      roomId: null,
+      ownerLabId: "group-b",
+      ownerLabName: "Synthetic Lab B",
+      bookings: [],
+    },
+    {
+      id: "inst-stale-room",
+      name: "Stale room instrument",
+      roomGroupId: "group-a",
+      roomId: "room-stale-not-local",
+      ownerLabId: "group-a",
+      ownerLabName: "Synthetic Lab A",
+      bookings: [],
+    },
+    {
+      id: "inst-freezer-room",
+      name: "Freezer pointer instrument",
+      roomGroupId: "group-a",
+      roomId: "freezer-root",
+      ownerLabId: "group-a",
+      ownerLabName: "Synthetic Lab A",
+      bookings: [],
+    },
   ];
 }
 
@@ -196,10 +234,27 @@ beforeAll(async () => {
     return json(route, { version: docVersion, tree });
   });
 
+  await page.route("**/api/groups/group-a/inventory/assets", (route) => {
+    record(route.request());
+    return json(route, { id: "synthetic-new-asset" }, 201);
+  });
+  await page.route(/\/api\/groups\/group-a\/inventory\/assets\/[^/]+$/, (route) => {
+    record(route.request());
+    return json(route, { ok: true });
+  });
+  await page.route("**/api/groups/group-a/inventory/asset-rooms", (route) => {
+    record(route.request());
+    return json(route, { id: "synthetic-canonical-room" }, 201);
+  });
   await page.route(/\/api\/groups\/group-a\/inventory\/asset-rooms\/[^/]+$/, (route) => {
     const request = route.request();
     record(request);
     return json(route, { ok: true });
+  });
+
+  await page.route(/\/api\/instruments\/[^/]+\/bookings$/, (route) => {
+    record(route.request());
+    return json(route, { id: "synthetic-foreign-booking" }, 201);
   });
 
   await page.route("**/api/instruments", async (route) => {
@@ -278,15 +333,15 @@ async function settleModalAnimation(): Promise<void> {
   });
 }
 
-async function legacyAssetRoomId(): Promise<string | null> {
+async function confirmedAssetRoomId(): Promise<string | null> {
   return page!.evaluate(() =>
-    (window as unknown as { __roomEquipmentLegacyAssetRoomId(id: string): string | null })
-      .__roomEquipmentLegacyAssetRoomId("asset-newly-linked"),
+    (window as unknown as { __roomEquipmentConfirmedAssetRoomId(id: string): string | null })
+      .__roomEquipmentConfirmedAssetRoomId("asset-newly-linked"),
   );
 }
 
 for (const design of ["original", "bauhaus"] as const) {
-  it(`shows exact-room instruments and only mapped asset barcodes in ${design} at 390px`, async () => {
+  it(`shows exact-room instruments and only directly assigned asset barcodes in ${design} at 390px`, async () => {
     await gotoRoom(`design=${design}`);
     await page!.setViewportSize({ width: 390, height: 844 });
     await page!.waitForSelector('[data-instrument-id="inst-main"]');
@@ -308,6 +363,9 @@ for (const design of ["original", "bauhaus"] as const) {
     expect(await page!.locator('[data-room-barcode-asset="asset-orphan"]').count()).toBe(0);
     expect(await page!.locator('[data-room-barcode-asset="asset-blank"]').count()).toBe(0);
     expect(await page!.locator('[data-room-barcode-asset="asset-newly-linked"]').count()).toBe(0);
+    expect(await page!.locator('[data-room-barcode-asset="asset-freezer"]').count()).toBe(0);
+    expect(await page!.locator('[data-room-barcode-asset="asset-name-only"]').count()).toBe(0);
+    expect(await page!.locator("#room-mapping").count()).toBe(0);
     expect(await page!.textContent("#room-barcodes-panel")).not.toContain("CHEMICAL-ONLY-999");
     await page!.waitForFunction(() =>
       Array.from(document.querySelectorAll("#room-barcode-grid svg"))
@@ -342,7 +400,7 @@ it("sends correct instrument assignment payloads without changing legacy locatio
     requestedWith: "XMLHttpRequest",
     body: {
       name: "New centrifuge",
-      location: "Main Test Room",
+      location: "",
       roomGroupId: "group-a",
       roomId: "room-main",
     },
@@ -361,7 +419,7 @@ it("sends correct instrument assignment payloads without changing legacy locatio
   expect(writes[1]?.path).toBe("/api/instruments/inst-main");
   expect(writes[1]?.body).not.toHaveProperty("roomGroupId");
   expect(writes[1]?.body).not.toHaveProperty("roomId");
-  expect(writes[1]?.body).toMatchObject({ location: "Legacy bench / keep me" });
+  expect(writes[1]?.body).not.toHaveProperty("location");
 
   await page!.reload({ waitUntil: "networkidle" });
   await page!.evaluate(() => {
@@ -369,52 +427,187 @@ it("sends correct instrument assignment payloads without changing legacy locatio
   });
   await page!.waitForSelector("#i-room");
   await settleModalAnimation();
-  await page!.selectOption("#i-room", "");
-  await page!.click("#modal-confirm");
-  await expect.poll(() => writes.length).toBe(3);
-  expect(writes[2]?.body).toMatchObject({ roomGroupId: null, roomId: null, location: "Legacy bench / keep me" });
-  expect(writes[2]?.requestedWith).toBe("XMLHttpRequest");
+  expect(await page!.inputValue("#i-room")).toBe("room-main");
+  expect(await page!.locator('#i-room option[value=""]').count()).toBe(0);
+  expect(await page!.inputValue("#i-location")).toBe("Legacy bench / keep me");
+  expect(writes).toHaveLength(2);
+  expect(writes[1]?.body).not.toHaveProperty("roomGroupId");
+  expect(writes[1]?.body).not.toHaveProperty("roomId");
   expect(pageErrors).toEqual([]);
 }, 40_000);
 
-it("applies asset-room link and clear only after confirmed inventory updates", async () => {
+it("requires a room for legacy instruments and offers an accessible create-room path", async () => {
   await gotoRoom();
-  await expandBarcodes();
-  expect(await page!.locator('[data-room-barcode-asset="asset-newly-linked"]').count()).toBe(0);
-  await page!.click("#room-map-asset-room-unmapped");
-  expect(await page!.inputValue("#ar-linked-room")).toBe("room-main");
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenLegacyInstrument(): void }).__roomEquipmentOpenLegacyInstrument();
+  });
+  await page!.waitForSelector("#i-room");
+  await settleModalAnimation();
+  expect(await page!.inputValue("#i-location")).toBe("Main Test Room");
+  expect(await page!.locator("#i-room").getAttribute("required")).not.toBeNull();
+  expect(await page!.textContent("#i-room")).not.toContain("No physical room assigned");
+  expect(await page!.locator('#i-room option[value="asset-room-main"]').count()).toBe(0);
+  expect(await page!.locator('#i-room option[value="freezer-root"]').count()).toBe(0);
+  await page!.click("#modal-confirm");
+  await page!.waitForSelector("#i-room-error", { state: "visible" });
+  expect(writes).toEqual([]);
+
+  await page!.selectOption("#i-room", "room-other");
+  await page!.fill("#i-location", "Bench 7, beside the Balanced Instruments With A Very Long Placement Note");
+  await page!.setViewportSize({ width: 390, height: 844 });
+  expect(await page!.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page!.click("#modal-confirm");
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({
     method: "PUT",
-    path: "/api/groups/group-a/inventory/asset-rooms/asset-room-unmapped",
+    path: "/api/instruments/inst-name-only",
     requestedWith: "XMLHttpRequest",
-    body: { name: "Main Test Room", linkedRoomId: "room-main" },
+    body: {
+      roomGroupId: "group-a",
+      roomId: "room-other",
+      location: "Bench 7, beside the Balanced Instruments With A Very Long Placement Note",
+    },
   });
-  await page!.waitForSelector("#ar-linked-room", { state: "detached" });
-  expect(await page!.locator('[data-room-barcode-asset="asset-newly-linked"]').count()).toBe(0);
 
+  await page!.goto(`${fixtureUrl}?inventory=no-rooms`, { waitUntil: "networkidle" });
   await page!.evaluate(() => {
-    (window as unknown as { __roomEquipmentConfirmAssetRoomMapping(id: string, room: string | null): void })
-      .__roomEquipmentConfirmAssetRoomMapping("asset-room-unmapped", "room-main");
+    (window as unknown as { __roomEquipmentOpenNewInstrument(): void }).__roomEquipmentOpenNewInstrument();
   });
-  await page!.waitForSelector('[data-room-barcode-asset="asset-newly-linked"]');
-  expect(await legacyAssetRoomId()).toBe("asset-room-unmapped");
+  await page!.waitForSelector("#i-room-empty");
+  expect(await page!.locator("#i-room").isDisabled()).toBe(true);
+  expect(await page!.locator("#i-room").getAttribute("aria-describedby")).toContain("i-room-help");
+  await page!.focus("#i-create-room");
+  await page!.keyboard.press("Enter");
+  await page!.waitForSelector("#f-rn");
+  expect(await page!.textContent("#modal-title")).toBe("Add Room");
+  expect(writes).toHaveLength(1);
+  expect(pageErrors).toEqual([]);
+}, 45_000);
 
-  await page!.click("#room-map-asset-room-unmapped");
-  await page!.selectOption("#ar-linked-room", "");
+it("uses canonical room IDs in asset forms without carrying legacy pointers on unrelated edits", async () => {
+  await page!.goto(`${fixtureUrl}?view=assets`, { waitUntil: "networkidle" });
+  await page!.waitForSelector("#assets-grid");
+  const roomHeadings = await page!.$$eval("#assets-grid h3", (headings) => headings.map((heading) => (heading.textContent ?? "").replace("🚪", "").trim()));
+  expect(roomHeadings).toContain("Main Test Room");
+  expect(roomHeadings).toContain("Other Test Room");
+  expect(roomHeadings).not.toContain("Main Inventory Room");
+  expect(roomHeadings).not.toContain("Other Inventory Room");
+  await page!.getByRole("button", { name: "Edit Room", exact: true }).first().click();
+  await page!.waitForSelector("#f-rn");
+  expect(await page!.inputValue("#f-rn")).toBe("Main Test Room");
+  expect(await page!.locator("#ar-linked-room").count()).toBe(0);
+  await page!.click("#modal-cancel");
+  await page!.waitForSelector("#f-rn", { state: "detached" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenNewAsset(): void }).__roomEquipmentOpenNewAsset();
+  });
+  await page!.waitForSelector("#a-room");
+  await settleModalAnimation();
+  expect(await page!.$$eval("#a-room option", (options) => options.map((option) => (option as HTMLOptionElement).value)))
+    .toEqual(["", "room-main", "room-other"]);
+  await page!.fill("#a-name", "New canonical reader");
+  await page!.fill("#a-model", "Reader Model Z");
+  await page!.fill("#a-barcode", "DUP-001");
+  await page!.fill("#a-desc", "Descriptive product details stay intact");
+  await page!.selectOption("#a-room", "room-main");
+  await page!.click("#modal-confirm");
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0]).toMatchObject({
+    method: "POST",
+    path: "/api/groups/group-a/inventory/assets",
+    requestedWith: "XMLHttpRequest",
+    body: {
+      name: "New canonical reader",
+      model: "Reader Model Z",
+      barcode: "DUP-001",
+      description: "Descriptive product details stay intact",
+      roomId: "room-main",
+    },
+  });
+
+  await page!.reload({ waitUntil: "networkidle" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenLegacyAsset(): void }).__roomEquipmentOpenLegacyAsset();
+  });
+  await page!.waitForSelector("#a-room");
+  expect(await page!.inputValue("#a-room")).toBe("");
+  expect(await page!.locator('#a-room option[value="missing-asset-room"]').count()).toBe(0);
+  await page!.fill("#a-name", "Renamed legacy orphan centrifuge");
   await page!.click("#modal-confirm");
   await expect.poll(() => writes.length).toBe(2);
-  expect(writes[1]?.body).toMatchObject({ name: "Main Test Room", linkedRoomId: null });
-  await page!.waitForSelector('[data-room-barcode-asset="asset-newly-linked"]');
-  await page!.evaluate(() => {
-    (window as unknown as { __roomEquipmentConfirmAssetRoomMapping(id: string, room: string | null): void })
-      .__roomEquipmentConfirmAssetRoomMapping("asset-room-unmapped", null);
+  expect(writes[1]).toMatchObject({
+    method: "PUT",
+    path: "/api/groups/group-a/inventory/assets/asset-orphan",
+    requestedWith: "XMLHttpRequest",
+    body: {
+      name: "Renamed legacy orphan centrifuge",
+      model: "Legacy Model L-1",
+      barcode: "LEGACY-DUPLICATE-001",
+      description: "Keep every descriptive field",
+    },
   });
-  await page!.waitForSelector('[data-room-barcode-asset="asset-newly-linked"]', { state: "detached" });
-  expect(await legacyAssetRoomId()).toBe("asset-room-unmapped");
+  expect(writes[1]?.body).not.toHaveProperty("roomId");
+
+  await page!.reload({ waitUntil: "networkidle" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenLegacyAsset(): void }).__roomEquipmentOpenLegacyAsset();
+  });
+  await page!.waitForSelector("#a-room");
+  await page!.evaluate(() => {
+    const select = document.querySelector<HTMLSelectElement>("#a-room")!;
+    select.add(new Option("Injected invalid root freezer", "freezer-root"));
+    select.value = "freezer-root";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await page!.click("#modal-confirm");
+  await page!.waitForFunction(() => document.body.textContent?.includes("Select a current physical room"));
+  expect(writes).toHaveLength(2);
+
+  await page!.reload({ waitUntil: "networkidle" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenCanonicalAsset(): void }).__roomEquipmentOpenCanonicalAsset();
+  });
+  await page!.waitForSelector("#a-room");
+  expect(await page!.inputValue("#a-room")).toBe("room-main");
+  await page!.fill("#a-name", "Renamed canonical microscope");
+  await page!.click("#modal-confirm");
+  await expect.poll(() => writes.length).toBe(3);
+  expect(writes[2]?.body).toMatchObject({
+    name: "Renamed canonical microscope",
+    model: "Model M-1",
+    barcode: "DUP-001",
+    description: "Canonical descriptive note",
+  });
+  expect(writes[2]?.body).not.toHaveProperty("roomId");
+
+  await page!.reload({ waitUntil: "networkidle" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenCanonicalAsset(): void }).__roomEquipmentOpenCanonicalAsset();
+  });
+  await page!.waitForSelector("#a-room");
+  await page!.selectOption("#a-room", "room-other");
+  await page!.click("#modal-confirm");
+  await expect.poll(() => writes.length).toBe(4);
+  expect(writes[3]?.body).toMatchObject({ roomId: "room-other", barcode: "DUP-001" });
+
+  await page!.reload({ waitUntil: "networkidle" });
+  await page!.evaluate(() => {
+    (window as unknown as { __roomEquipmentOpenAddAssetRoom(): void }).__roomEquipmentOpenAddAssetRoom();
+  });
+  await page!.waitForSelector("#ar-name");
+  expect(await page!.locator("#ar-linked-room").count()).toBe(0);
+  await page!.fill("#ar-name", "New Physical Room");
+  await page!.click("#modal-confirm");
+  await expect.poll(() => writes.length).toBe(5);
+  expect(writes[4]).toMatchObject({
+    method: "POST",
+    path: "/api/groups/group-a/inventory/asset-rooms",
+    requestedWith: "XMLHttpRequest",
+    body: { name: "New Physical Room" },
+  });
+  expect(writes[4]?.body).not.toHaveProperty("linkedRoomId");
   expect(pageErrors).toEqual([]);
-}, 40_000);
+}, 60_000);
 
 it("honors load failures, explicit retry and late instrument responses", async () => {
   instrumentsMode = "error";
@@ -470,17 +663,66 @@ it("keeps reader controls non-mutating and hidden content inaccessible when coll
   expect(await page!.$eval("#room-barcodes-panel", (element) => element.hidden)).toBe(true);
   expect(await page!.evaluate(() => document.activeElement?.closest("#room-barcodes-panel") === null)).toBe(true);
   expect(writes).toEqual([]);
+
+  await page!.goto(`${fixtureUrl}?instruments=view&role=reader`, { waitUntil: "networkidle" });
+  await page!.waitForSelector('[data-instrument-id="inst-main"]');
+  expect(await page!.locator('[data-instrument-id="inst-main"] .asset-actions button').allTextContents()).not.toContain("Edit");
+  expect(await page!.locator('[data-instrument-id="inst-main"] .asset-actions button').isEnabled()).toBe(true);
+  expect(await page!.locator('[data-instrument-id="inst-name-only"] .asset-actions button').isDisabled()).toBe(true);
+  await page!.locator('[data-instrument-id="inst-main"] .asset-actions button').click();
+  await page!.waitForSelector("#b-date");
+  expect(await page!.textContent("#modal-title")).toContain("Book");
+  await page!.click("#modal-cancel");
+  expect(writes).toEqual([]);
   expect(pageErrors).toEqual([]);
 }, 40_000);
 
-it("puts Catalog before Rooms & equipment and preserves navigation preferences", async () => {
+it("lets a reader book a structured foreign-lab room without a local inventory document", async () => {
+  await page!.goto(`${fixtureUrl}?instruments=view&role=reader`, { waitUntil: "networkidle" });
+  await page!.waitForSelector('[data-instrument-id="inst-foreign-bookable"]');
+  const foreignRoomIsLocal = await page!.evaluate(() => {
+    const tree = (window as unknown as { __roomEquipmentTree(): { rooms: Array<{ id: string }> } }).__roomEquipmentTree();
+    return tree.rooms.some((room) => room.id === "room-foreign-not-local");
+  });
+  expect(foreignRoomIsLocal).toBe(false);
+
+  const foreignBookButton = page!.locator('[data-instrument-id="inst-foreign-bookable"] .asset-actions button');
+  expect(await foreignBookButton.isEnabled()).toBe(true);
+  expect(await page!.locator('[data-instrument-id="inst-foreign-unassigned"] .asset-actions button').isDisabled()).toBe(true);
+  expect(await page!.locator('[data-instrument-id="inst-stale-room"] .asset-actions button').isDisabled()).toBe(true);
+  expect(await page!.locator('[data-instrument-id="inst-freezer-room"] .asset-actions button').isDisabled()).toBe(true);
+  await foreignBookButton.click();
+  await page!.waitForSelector("#b-date");
+  expect(await page!.textContent("#modal-title")).toContain("Book");
+  await page!.fill("#b-date", "2099-03-02");
+  await page!.fill("#b-start", "09:15");
+  await page!.fill("#b-end", "10:45");
+  await page!.fill("#b-note", "Foreign reader booking");
+  await page!.click("#modal-confirm");
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0]).toEqual({
+    method: "POST",
+    path: "/api/instruments/inst-foreign-bookable/bookings",
+    requestedWith: "XMLHttpRequest",
+    body: {
+      date: "2099-03-02",
+      startTime: "09:15",
+      endTime: "10:45",
+      note: "Foreign reader booking",
+    },
+  });
+  await page!.waitForSelector("#b-date", { state: "detached" });
+  expect(pageErrors).toEqual([]);
+}, 40_000);
+
+it("puts Rooms & equipment before Catalog and preserves navigation preferences", async () => {
   await page!.goto(`${fixtureUrl}?shell=1&design=bauhaus`, { waitUntil: "networkidle" });
   await page!.waitForSelector("#tab-catalog");
   await page!.waitForSelector("#tab-inventory");
   expect(await page!.textContent("#tab-catalog")).toContain("Catalog");
   expect(await page!.textContent("#tab-inventory")).toContain("Rooms & equipment");
-  expect(await page!.$eval("#tab-catalog", (element) => element.compareDocumentPosition(
-    document.querySelector("#tab-inventory")!,
+  expect(await page!.$eval("#tab-inventory", (element) => element.compareDocumentPosition(
+    document.querySelector("#tab-catalog")!,
   ) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
 
   await page!.focus("#tab-catalog");
@@ -526,7 +768,7 @@ async function inventoryVersion(): Promise<number> {
   );
 }
 
-it("does not let a late inventory fetch replace a newer mapping broadcast", async () => {
+it("does not let a late inventory fetch replace a newer canonical assignment broadcast", async () => {
   inventoryDelayMs = 220;
   await gotoRoom();
   const olderResponse = page!.evaluate(() =>
@@ -541,6 +783,7 @@ it("does not let a late inventory fetch replace a newer mapping broadcast", asyn
   await page!.waitForSelector('[data-room-barcode-asset="asset-newly-linked"]');
   await olderResponse;
   expect(await inventoryVersion()).toBe(2);
+  expect(await confirmedAssetRoomId()).toBe("room-main");
   expect(await page!.locator('[data-room-barcode-asset="asset-newly-linked"]').count()).toBe(1);
   expect(pageErrors).toEqual([]);
 }, 40_000);

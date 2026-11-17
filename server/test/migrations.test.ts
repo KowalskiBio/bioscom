@@ -102,6 +102,7 @@ describe("migration runner", () => {
       { version: 8, name: "migration_0008_user_settings.sql" },
       { version: 9, name: "migration_0009_primer_target_species.sql" },
       { version: 10, name: "migration_0010_instrument_room_links.sql" },
+      { version: 11, name: "migration_0011_room_registry.sql" },
     ]);
 
     const chemFields = JSON.parse(types.find((t) => t.key === "chemical")!.fields) as Array<Record<string, unknown>>;
@@ -174,7 +175,7 @@ describe("migration runner", () => {
     expect(tableNames(raw).has("materials")).toBe(false);
 
     const applied = runMigrations(raw);
-    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(applied.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
     const tables = tableNames(raw);
     expect(tables.has("groups")).toBe(true);
@@ -194,7 +195,7 @@ describe("migration runner", () => {
       "INSERT INTO instruments (id, source, group_id, name, location) VALUES (?, 'shared', NULL, ?, ?)",
     ).run("inst-legacy-1", "Legacy HPLC", "Room B302, Desk 4");
 
-    expect(runMigrations(raw).map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(runMigrations(raw).map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
     const row = raw
       .prepare(

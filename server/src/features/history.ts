@@ -27,6 +27,15 @@ class RoomLinkRestoreConflictError extends Error {
   }
 }
 
+/** Raw payload collections may be arrays or RTDB-style maps. */
+function rawCollectionEntries(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value !== null && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>);
+  }
+  return [];
+}
+
 export function registerHistoryAndBackupRoutes(app: FastifyInstance, config: ServerConfig, hub: InventoryHub): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
 
@@ -135,6 +144,7 @@ export function registerHistoryAndBackupRoutes(app: FastifyInstance, config: Ser
       // Only physical chemical rooms count as restore targets. Deep freezers,
       // shared/pseudo rooms and asset rooms are separate id spaces.
       const restoredRoomIds = new Set(parsed.data.rooms.map((room) => room.id));
+      const restoredAssetRoomIds = new Set(parsed.data.assetRooms.map((room) => room.id));
       const linkedInstruments = db()
         .prepare("SELECT room_id AS roomId FROM instruments WHERE room_group_id = ? AND room_id IS NOT NULL")
         .all(groupId) as Array<{ roomId: string }>;
@@ -144,22 +154,35 @@ export function registerHistoryAndBackupRoutes(app: FastifyInstance, config: Ser
 
       // Inspect the raw payload so empty or malformed assigned values fail
       // closed instead of being silently cleared by schema coercion.
-      const rawAssetRooms =
+      const rawTree =
         rawBackup !== null && typeof rawBackup === "object" && !Array.isArray(rawBackup)
-          ? (rawBackup as { assetRooms?: unknown }).assetRooms
-          : undefined;
-      const rawAssetRoomEntries = Array.isArray(rawAssetRooms)
-        ? rawAssetRooms
-        : rawAssetRooms !== null && typeof rawAssetRooms === "object"
-          ? Object.values(rawAssetRooms as Record<string, unknown>)
-          : [];
-      for (const rawAssetRoom of rawAssetRoomEntries) {
+          ? (rawBackup as { assetRooms?: unknown; assets?: unknown })
+          : {};
+      for (const rawAssetRoom of rawCollectionEntries(rawTree.assetRooms)) {
         if (rawAssetRoom === null || typeof rawAssetRoom !== "object") continue;
         const entry = rawAssetRoom as { linkedRoomId?: unknown };
         if (!Object.prototype.hasOwnProperty.call(entry, "linkedRoomId")) continue;
         const linkedRoomId = entry.linkedRoomId;
         if (linkedRoomId === null || linkedRoomId === undefined) continue;
         if (typeof linkedRoomId !== "string" || !restoredRoomIds.has(linkedRoomId)) {
+          throw new RoomLinkRestoreConflictError();
+        }
+      }
+
+      // Assets store canonical physical room ids, but historical records may
+      // still point at an old asset-room id that is preserved in this document.
+      // Missing/null/empty means the legacy unassigned state and is allowed.
+      for (const rawAsset of rawCollectionEntries(rawTree.assets)) {
+        if (rawAsset === null || typeof rawAsset !== "object") continue;
+        const entry = rawAsset as { roomId?: unknown };
+        if (!Object.prototype.hasOwnProperty.call(entry, "roomId")) continue;
+        const roomId = entry.roomId;
+        if (roomId === null || roomId === undefined) continue;
+        if (typeof roomId !== "string") {
+          throw new RoomLinkRestoreConflictError();
+        }
+        if (roomId.trim() === "") continue;
+        if (!restoredRoomIds.has(roomId) && !restoredAssetRoomIds.has(roomId)) {
           throw new RoomLinkRestoreConflictError();
         }
       }

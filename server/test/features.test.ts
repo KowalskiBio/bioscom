@@ -174,7 +174,7 @@ describe("instruments and bookings", () => {
       .post("/api/instruments")
       .set(XRW)
       .set("Cookie", adminCookie)
-      .send({ name: "HPLC", location: "B302" });
+      .send({ name: "HPLC", location: "B302", roomGroupId: "group-a", roomId });
     expect(create.status).toBe(201);
     instrumentId = create.body.id;
     const list = await request(baseUrl).get("/api/instruments").set("Cookie", readerCookie);

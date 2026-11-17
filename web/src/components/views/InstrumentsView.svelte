@@ -1,5 +1,8 @@
 <script lang="ts">
+  import type { Instrument } from "@bioscom/shared";
   import { instrumentList } from "../../lib/stores/instruments.svelte";
+  import { inventoryFor } from "../../lib/stores/inventory.svelte";
+  import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
   import { openModal, closeModal } from "../../lib/modal.svelte";
   import { openInstrumentForm as openInstrumentFormShared, openBookingModal } from "../../lib/forms";
@@ -31,6 +34,15 @@
         ),
   );
   const isReader = $derived(session.user?.role === "reader");
+  const currentTree = $derived(inventoryFor(currentGroup.groupId));
+
+  function hasBookableRoom(instrument: Instrument): boolean {
+    const roomGroupId = typeof instrument.roomGroupId === "string" ? instrument.roomGroupId.trim() : "";
+    const roomId = typeof instrument.roomId === "string" ? instrument.roomId.trim() : "";
+    if (roomGroupId === "" || roomId === "") return false;
+    if (roomGroupId !== currentGroup.groupId) return true;
+    return currentTree !== null && currentTree.rooms.some((room) => room.id === roomId);
+  }
 
   function deleteInstrument(id: string, name: string): void {
     openModal({
@@ -55,7 +67,8 @@
 
 <div id="instruments-grid" class="assets-grid" style={`display: ${list.length === 0 ? "none" : "grid"};`}>
     {#each list as inst (inst.id)}
-        <div class="asset-card">
+        {@const bookable = hasBookableRoom(inst)}
+        <div class="asset-card" data-instrument-id={inst.id}>
             <div class="asset-header">
                 <div class="asset-title">{design === "bauhaus" ? stripEmoji(inst.name) : inst.name}</div>
                 {#if inst.ownerLabName}<div class="asset-meta">{design === "bauhaus" ? stripEmoji(inst.ownerLabName) : inst.ownerLabName}</div>{/if}
@@ -78,8 +91,16 @@
                     {/each}
                 </div>
             {/if}
+            {#if !bookable}
+                <p class="form-hint">{currentTree === null ? "Booking is unavailable until physical rooms finish loading." : "Booking requires a valid physical-room assignment."}</p>
+            {/if}
             <div class="asset-actions">
-                <button class="btn-inline" onclick={() => openBookingModal(inst.id, inst.name ?? "")}>{design === "bauhaus" ? "Book" : "📅 Book"}</button>
+                <button
+                  class="btn-inline"
+                  disabled={!bookable}
+                  title={bookable ? "Book this instrument" : currentTree === null ? "Physical rooms are still loading" : "A valid physical-room assignment is required before booking"}
+                  onclick={() => { if (bookable) openBookingModal(inst.id, inst.name ?? ""); }}
+                >{design === "bauhaus" ? "Book" : "📅 Book"}</button>
                 {#if !isReader}
                     <button class="btn-inline" onclick={() => openInstrumentFormShared({ id: inst.id, name: inst.name ?? "", description: inst.description ?? "", location: inst.location ?? "", contactPerson: inst.contactPerson ?? "", contactEmail: inst.contactEmail ?? "", roomGroupId: inst.roomGroupId, roomId: inst.roomId })}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> <span>Edit</span></button>
                     <button class="btn-inline danger" onclick={() => deleteInstrument(inst.id, inst.name ?? "")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> <span>Delete</span></button>

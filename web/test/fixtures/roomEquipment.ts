@@ -11,7 +11,7 @@ import { fetchInstruments } from "../../src/lib/stores/instruments.svelte";
 import { loadSession } from "../../src/lib/stores/session.svelte";
 import { navPrefs } from "../../src/lib/stores/navPrefs.svelte";
 import { setDesign } from "../../src/lib/theme.svelte";
-import { openInstrumentForm } from "../../src/lib/forms";
+import { openAssetForm, openAssetRoomForm, openInstrumentForm } from "../../src/lib/forms";
 import "../../src/app.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -90,30 +90,30 @@ function fixtureTree(): InventoryTree {
     assets: [
       {
         id: "asset-main",
-        name: "Mapped microscope",
+        name: "Canonical microscope",
         model: "Model M-1",
         barcode: "ASSET-001",
-        roomId: "asset-room-main",
+        roomId: "room-main",
       },
       {
         id: "asset-duplicate-a",
         name: "Duplicate reader A",
         model: "Reader A",
         barcode: "DUP-001",
-        roomId: "asset-room-main",
+        roomId: "room-main",
       },
       {
         id: "asset-duplicate-b",
         name: "Duplicate reader B",
         model: "Reader B",
         barcode: "DUP-001",
-        roomId: "asset-room-main",
+        roomId: "room-main",
       },
       {
         id: "asset-blank",
         name: "Blank barcode asset",
         barcode: "   ",
-        roomId: "asset-room-main",
+        roomId: "room-main",
       },
       {
         id: "asset-newly-linked",
@@ -126,13 +126,25 @@ function fixtureTree(): InventoryTree {
         id: "asset-other-room",
         name: "Other room centrifuge",
         barcode: "OTHER-ROOM-003",
-        roomId: "asset-room-other",
+        roomId: "room-other",
       },
       {
         id: "asset-orphan",
         name: "Orphan asset",
         barcode: "ORPHAN-004",
         roomId: "missing-asset-room",
+      },
+      {
+        id: "asset-freezer",
+        name: "Root freezer substitute",
+        barcode: "FREEZER-005",
+        roomId: "freezer-root",
+      },
+      {
+        id: "asset-name-only",
+        name: "Main Test Room",
+        barcode: "NAME-ONLY-006",
+        roomId: null,
       },
     ],
     protocols: [],
@@ -141,6 +153,7 @@ function fixtureTree(): InventoryTree {
 
 let currentTree = fixtureTree();
 let version = 1;
+if (inventoryMode === "no-rooms") currentTree.rooms = [];
 if (inventoryMode === "error") {
   void fetchInventory("group-a").catch(() => undefined);
 } else if (inventoryMode !== "empty") {
@@ -162,6 +175,9 @@ if (mountShell) {
   window.location.hash = "#rooms";
   const { default: AppShell } = await import("../../src/components/AppShell.svelte");
   mount(AppShell, { target: app });
+} else if (params.get("view") === "assets") {
+  const { default: AssetsView } = await import("../../src/components/views/AssetsView.svelte");
+  mount(AssetsView, { target: app });
 } else if (instrumentMode === "empty-view" || instrumentMode === "view") {
   const { default: InstrumentsView } = await import("../../src/components/views/InstrumentsView.svelte");
   mount(InstrumentsView, { target: app });
@@ -205,15 +221,44 @@ Object.assign(window, {
       contactEmail: "legacy@example.test",
     });
   },
+  __roomEquipmentOpenNewAsset(): void {
+    openAssetForm();
+  },
+  __roomEquipmentOpenLegacyAsset(): void {
+    openAssetForm({
+      id: "asset-orphan",
+      name: "Legacy orphan centrifuge",
+      model: "Legacy Model L-1",
+      barcode: "LEGACY-DUPLICATE-001",
+      description: "Keep every descriptive field",
+      roomId: "missing-asset-room",
+    });
+  },
+  __roomEquipmentOpenCanonicalAsset(): void {
+    openAssetForm({
+      id: "asset-main",
+      name: "Canonical microscope",
+      model: "Model M-1",
+      barcode: "DUP-001",
+      description: "Canonical descriptive note",
+      roomId: "room-main",
+    });
+  },
+  __roomEquipmentOpenAddAssetRoom(): void {
+    openAssetRoomForm();
+  },
   __roomEquipmentConfirmAssetRoomMapping(assetRoomId: string, linkedRoomId: string | null): void {
     currentTree = structuredClone(currentTree);
     const assetRoom = currentTree.assetRooms.find((candidate) => candidate.id === assetRoomId);
     if (assetRoom === undefined) throw new Error("Unknown synthetic asset room");
     assetRoom.linkedRoomId = linkedRoomId;
+    for (const asset of currentTree.assets) {
+      if (asset.roomId === assetRoomId) asset.roomId = linkedRoomId ?? "";
+    }
     version += 1;
     applyBroadcast({ groupId: "group-a", version, tree: currentTree }, "group-a");
   },
-  __roomEquipmentLegacyAssetRoomId(assetId: string): string | null {
+  __roomEquipmentConfirmedAssetRoomId(assetId: string): string | null {
     return currentTree.assets.find((asset) => asset.id === assetId)?.roomId ?? null;
   },
   __roomEquipmentTree(): InventoryTree {

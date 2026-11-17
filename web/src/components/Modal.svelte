@@ -13,7 +13,7 @@
       modal.state.open &&
       modal.state.onConfirm !== null &&
       document.activeElement !== null &&
-      document.activeElement.tagName !== "TEXTAREA"
+      !["TEXTAREA", "SELECT", "BUTTON"].includes(document.activeElement.tagName)
     ) {
       event.preventDefault();
       onConfirm();

@@ -313,7 +313,7 @@
       showToast("Access Denied", "error");
       return;
     }
-    openAssetForm(inventory.tree?.assetRooms ?? []);
+    openAssetForm();
   }
 
   function escapeHtmlText(text: string): string {
@@ -507,12 +507,6 @@
                                 Dashboard
                             </a>
                         {/if}
-                        {#if design !== "bauhaus" || navPrefs.visible("catalog")}
-                        <a class="nav-tab" id="tab-catalog" data-label="Catalog" class:active={activeTab === "tab-catalog"} role="button" tabindex="0" onclick={() => onTabClick("catalog")} onkeydown={(e) => e.key === "Enter" && onTabClick("catalog")}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>
-                            Catalog
-                        </a>
-                        {/if}
                         <a
                             class="nav-tab"
                             id="tab-inventory"
@@ -526,6 +520,12 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                             Rooms &amp; equipment
                         </a>
+                        {#if design !== "bauhaus" || navPrefs.visible("catalog")}
+                        <a class="nav-tab" id="tab-catalog" data-label="Catalog" class:active={activeTab === "tab-catalog"} role="button" tabindex="0" onclick={() => onTabClick("catalog")} onkeydown={(e) => e.key === "Enter" && onTabClick("catalog")}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>
+                            Catalog
+                        </a>
+                        {/if}
                         {#if design === "bauhaus" && (navPrefs.visible("protocols") || navPrefs.visible("instruments"))}
                             <p class="nav-section nav-section-b">Workflows</p>
                         {/if}

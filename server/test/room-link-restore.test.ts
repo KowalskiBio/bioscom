@@ -23,6 +23,13 @@ interface AssetRoomView {
   linkedRoomId?: string | null;
 }
 
+interface AssetRecordView {
+  id: string;
+  name: string;
+  barcode?: string | null;
+  roomId?: string | null;
+}
+
 interface InventoryBody {
   version: number;
   tree: {
@@ -48,6 +55,8 @@ interface BackupTree {
   assetRooms: AssetRoomView[];
   assets: unknown[];
   protocols: unknown[];
+  // Arbitrary unrelated metadata written by future clients must round-trip.
+  futureRoot?: unknown;
 }
 
 let app: FastifyInstance;
@@ -175,6 +184,44 @@ function findAssetRoomByName(tree: { assetRooms: AssetRoomView[] }, name: string
   return room;
 }
 
+function findAssetByName(tree: { assets: unknown[] }, name: string): AssetRecordView {
+  const asset = tree.assets.find(
+    (candidate) => candidate !== null && typeof candidate === "object" && (candidate as { name?: unknown }).name === name,
+  );
+  if (asset === undefined) {
+    throw new Error(`asset ${name} missing`);
+  }
+  return asset as AssetRecordView;
+}
+
+/**
+ * Backups may contain old asset-room records from before the canonical
+ * namespace migration. Seed that historical shape directly; the current
+ * compatibility create route writes tree.rooms instead.
+ */
+function seedLegacyAssetRoom(groupId: string, room: AssetRoomView): AssetRoomView {
+  const row = readDoc(groupId);
+  const tree = JSON.parse(row.tree) as BackupTree;
+  tree.assetRooms.push({ ...room });
+  db.prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = ?").run(
+    JSON.stringify(tree),
+    groupId,
+  );
+  return room;
+}
+
+/** Seed an asset from the older asset-room namespace directly into the doc. */
+function seedLegacyAsset(groupId: string, asset: AssetRecordView): AssetRecordView {
+  const row = readDoc(groupId);
+  const tree = JSON.parse(row.tree) as BackupTree;
+  tree.assets.push({ ...asset });
+  db.prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = ?").run(
+    JSON.stringify(tree),
+    groupId,
+  );
+  return asset;
+}
+
 beforeAll(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "bioscom-room-link-restore-test-"));
   const dbPath = join(tempDir, "test.db");
@@ -286,7 +333,7 @@ describe("backup restore room-link integrity", () => {
     expect((JSON.parse(after.tree) as { rooms: TreeRoom[] }).rooms.some((room) => room.id === postBackupRoomId)).toBe(true);
   });
 
-  it("restores after unlinking through the instrument API while preserving location and version/history semantics", async () => {
+  it("restores after reassigning the instrument to a room in the backup while rejecting direct clearing and preserving location/version/history semantics", async () => {
     const listedBefore = await call<{ instruments: InstrumentView[] }>("GET", "/api/instruments", adminACookie);
     expect(listedBefore.status).toBe(200);
     const linked = listedBefore.body.instruments.find((candidate) => candidate.id === linkedInstrumentId);
@@ -294,23 +341,39 @@ describe("backup restore room-link integrity", () => {
     expect(linked?.roomGroupId).toBe("group-a");
     expect(linked?.roomId).toBe(postBackupRoomId);
 
-    const unlink = await call<{ ok: boolean }>(
+    // Canonical pairs cannot be unassigned by nulling them; fall back to an
+    // explicit reassignment to a real room that also exists in the backup.
+    const clear = await call<{ error?: string }>(
       "PUT",
       `/api/instruments/${linkedInstrumentId}`,
       adminACookie,
       { roomGroupId: null, roomId: null },
     );
-    expect(unlink.status).toBe(200);
+    expect(clear.status).toBe(400);
+    expect(clear.body.error).toContain("clearing the room assignment is not allowed");
+    expect(instrumentRow(linkedInstrumentId)).toEqual({
+      roomGroupId: "group-a",
+      roomId: postBackupRoomId,
+      location: "Post-backup bench",
+    });
+
+    const reassign = await call<{ ok: boolean }>(
+      "PUT",
+      `/api/instruments/${linkedInstrumentId}`,
+      adminACookie,
+      { roomGroupId: "group-a", roomId: "room-alpha" },
+    );
+    expect(reassign.status).toBe(200);
 
     const listedAfter = await call<{ instruments: InstrumentView[] }>("GET", "/api/instruments", adminACookie);
-    const unlinked = listedAfter.body.instruments.find((candidate) => candidate.id === linkedInstrumentId);
-    expect(unlinked?.roomGroupId).toBeNull();
-    expect(unlinked?.roomId).toBeNull();
-    expect(unlinked?.location).toBe("Post-backup bench");
-    expect(unlinked?.ownerLabId).toBe("group-a");
+    const reassigned = listedAfter.body.instruments.find((candidate) => candidate.id === linkedInstrumentId);
+    expect(reassigned?.roomGroupId).toBe("group-a");
+    expect(reassigned?.roomId).toBe("room-alpha");
+    expect(reassigned?.location).toBe("Post-backup bench");
+    expect(reassigned?.ownerLabId).toBe("group-a");
     expect(instrumentRow(linkedInstrumentId)).toEqual({
-      roomGroupId: null,
-      roomId: null,
+      roomGroupId: "group-a",
+      roomId: "room-alpha",
       location: "Post-backup bench",
     });
 
@@ -325,6 +388,12 @@ describe("backup restore room-link integrity", () => {
     expect(active.version).toBe(response.body.version);
     expect(JSON.parse(active.tree)).toEqual(response.body.tree);
     expect((JSON.parse(active.tree) as { rooms: TreeRoom[] }).rooms.some((room) => room.id === postBackupRoomId)).toBe(false);
+    expect(response.body.tree.rooms.some((room) => room.id === "room-alpha")).toBe(true);
+    expect(instrumentRow(linkedInstrumentId)).toEqual({
+      roomGroupId: "group-a",
+      roomId: "room-alpha",
+      location: "Post-backup bench",
+    });
     expect(historyCount("group-a")).toBe(historyBefore + 1);
     expect(restoreHistoryCountFor("group-a", backupBeforeRoom)).toBe(1);
 
@@ -334,15 +403,34 @@ describe("backup restore room-link integrity", () => {
     expect(inventory.body.tree).toEqual(response.body.tree);
   });
 
-  it("rejects a restored asset-room link to a missing physical room without name or freezer-id matching", async () => {
-    const createdAssetRoom = await call<InventoryBody>(
-      "POST",
-      "/api/groups/group-a/inventory/asset-rooms",
+  it("rejects a restored legacy asset-room link to a missing physical room without name or freezer-id matching", async () => {
+    // Historical backup shape: the asset-room record and its explicit link
+    // predate canonical room creation, so seed it directly.
+    const mappedAssetRoom = seedLegacyAssetRoom("group-a", {
+      id: "asset-room-mapped",
+      name: "Mapped Asset Room",
+      linkedRoomId: "room-alpha",
+    });
+    const inventoryWithSeed = await call<InventoryBody>("GET", "/api/groups/group-a/inventory", adminACookie);
+    expect(inventoryWithSeed.status).toBe(200);
+    const mappedAssetRoomId = findAssetRoomByName(inventoryWithSeed.body.tree, "Mapped Asset Room").id;
+    expect(mappedAssetRoomId).toBe(mappedAssetRoom.id);
+
+    // The previous test leaves the instrument on room-alpha. Reassign it to
+    // another canonical room that remains in this synthetic backup so the
+    // rejection below proves the asset-room link guard, not an instrument guard.
+    const reassign = await call<{ ok: boolean }>(
+      "PUT",
+      `/api/instruments/${linkedInstrumentId}`,
       adminACookie,
-      { name: "Mapped Asset Room", linkedRoomId: "room-alpha" },
+      { roomGroupId: "group-a", roomId: "room-beta" },
     );
-    expect(createdAssetRoom.status).toBe(201);
-    const mappedAssetRoomId = findAssetRoomByName(createdAssetRoom.body.tree, "Mapped Asset Room").id;
+    expect(reassign.status).toBe(200);
+    expect(instrumentRow(linkedInstrumentId)).toEqual({
+      roomGroupId: "group-a",
+      roomId: "room-beta",
+      location: "Post-backup bench",
+    });
 
     const backupId = await createBackup(adminACookie, "group-a");
     const seeded = backupRow(backupId, "group-a");
@@ -417,6 +505,7 @@ describe("backup restore room-link integrity", () => {
     const relaxed = JSON.parse((backupRow(backupId, "group-a") as { data: string }).data) as BackupTree;
     const relaxedAssetRoom = findAssetRoom(relaxed, mappedAssetRoomId);
     relaxedAssetRoom.linkedRoomId = null;
+    relaxed.futureRoot = { retained: { nested: true } };
     db.prepare("UPDATE group_backups SET data = ? WHERE id = ? AND group_id = ?").run(
       JSON.stringify(relaxed),
       backupId,
@@ -442,6 +531,16 @@ describe("backup restore room-link integrity", () => {
       restoredTree.deepFreezers?.some((freezer) => freezer.id === "room-alpha" && freezer.name === "Decoy Freezer"),
     ).toBe(true);
     expect(findAssetRoom(restoredTree, mappedAssetRoomId).linkedRoomId ?? null).toBeNull();
+    // The legacy record stays in its own namespace; restore does not silently
+    // promote asset-room metadata into canonical tree.rooms.
+    expect(restoredTree.assetRooms.some((room) => room.id === mappedAssetRoomId)).toBe(true);
+    expect(restoredTree.rooms.some((room) => room.id === mappedAssetRoomId)).toBe(false);
+    expect((restoredTree as BackupTree).futureRoot).toEqual({ retained: { nested: true } });
+    expect(instrumentRow(linkedInstrumentId)).toEqual({
+      roomGroupId: "group-a",
+      roomId: "room-beta",
+      location: "Post-backup bench",
+    });
     expect(historyCount("group-a")).toBe(historyBeforeSuccess + 1);
     expect(restoreHistoryCountFor("group-a", backupId)).toBe(1);
 
@@ -485,6 +584,9 @@ describe("backup restore room-link integrity", () => {
     expect(response.body.tree.rooms.some((room) => room.id === extraRoomId)).toBe(false);
     expect(findAssetRoom(response.body.tree, "asset-room-b-linked").linkedRoomId).toBe("room-b-1");
     expect(findAssetRoom(response.body.tree, "asset-room-b-null").linkedRoomId ?? null).toBeNull();
+    // Legacy asset-room records are restored in their own namespace only.
+    expect(response.body.tree.rooms.some((room) => room.id === "asset-room-b-linked")).toBe(false);
+    expect(response.body.tree.rooms.some((room) => room.id === "asset-room-b-null")).toBe(false);
     expect(instrumentRow(validInstrumentId)).toEqual({
       roomGroupId: "group-b",
       roomId: "room-b-1",
@@ -494,6 +596,165 @@ describe("backup restore room-link integrity", () => {
     expect(restoreHistoryCountFor("group-b", backupId)).toBe(1);
 
     const inventory = await call<InventoryBody>("GET", "/api/groups/group-b/inventory", adminBCookie);
+    expect(inventory.status).toBe(200);
+    expect(inventory.body.version).toBe(response.body.version);
+    expect(inventory.body.tree).toEqual(response.body.tree);
+  });
+
+  it("rejects a canonical asset roomId that names a missing physical room without legacy or name fallback", async () => {
+    const created = await call<InventoryBody>(
+      "POST",
+      "/api/groups/group-a/inventory/assets",
+      adminACookie,
+      { name: "Doomed canonical asset", barcode: "doomed-canonical-barcode", roomId: "room-beta" },
+    );
+    expect(created.status).toBe(201);
+    const createdAsset = findAssetByName(created.body.tree, "Doomed canonical asset");
+    expect(createdAsset.roomId).toBe("room-beta");
+    expect(createdAsset.barcode).toBe("doomed-canonical-barcode");
+
+    const backupId = await createBackup(adminACookie, "group-a");
+    const storedBackup = backupRow(backupId, "group-a");
+    expect(storedBackup).toBeDefined();
+
+    const corrupt = JSON.parse(storedBackup?.data ?? "{}") as BackupTree;
+    const doomed = findAssetByName(corrupt, "Doomed canonical asset");
+    doomed.roomId = "room-alpha";
+    // Decoys: same-named canonical copy, same-named legacy asset room and a
+    // deepfreezer reusing the missing id. None may satisfy a canonical asset
+    // reference, which must resolve exactly against restored tree.rooms.
+    corrupt.assetRooms.push({ id: "legacy-alpha-decoy", name: "Alpha Room" });
+    if (!(corrupt.deepFreezers ?? []).some((freezer) => freezer.id === "room-alpha")) {
+      corrupt.deepFreezers = [
+        ...(corrupt.deepFreezers ?? []),
+        { id: "room-alpha", name: "Decoy Freezer", type: "deepfreezer", shelves: [] },
+      ];
+    }
+    expect(corrupt.rooms.some((room) => room.id === "room-alpha")).toBe(false);
+    expect(corrupt.rooms.some((room) => room.name === "Alpha Room")).toBe(true);
+    expect(corrupt.assetRooms.some((room) => room.name === "Alpha Room")).toBe(true);
+    expect((corrupt.deepFreezers ?? []).some((freezer) => freezer.id === "room-alpha")).toBe(true);
+
+    db.prepare("UPDATE group_backups SET data = ? WHERE id = ? AND group_id = ?").run(
+      JSON.stringify(corrupt),
+      backupId,
+      "group-a",
+    );
+
+    const before = readDoc("group-a");
+    const historyBefore = historyCount("group-a");
+    const backupsBefore = backupCount();
+    const corruptData = (backupRow(backupId, "group-a") as { data: string }).data;
+
+    const rejected = await restoreBackup(adminACookie, "group-a", backupId);
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error).toContain("room links pointing to missing rooms");
+    expect(rejected.body.error).toMatch(/unlink|reassign/i);
+    expect(rejected.body.error).toMatch(/compatible backup/i);
+
+    const after = readDoc("group-a");
+    expect(after.tree).toBe(before.tree);
+    expect(after.version).toBe(before.version);
+    expect(historyCount("group-a")).toBe(historyBefore);
+    expect(restoreHistoryCountFor("group-a", backupId)).toBe(0);
+    expect(backupCount()).toBe(backupsBefore);
+    expect((backupRow(backupId, "group-a") as { data: string }).data).toBe(corruptData);
+    expect(findAssetByName(JSON.parse(after.tree) as BackupTree, "Doomed canonical asset").roomId).toBe("room-beta");
+
+    // Raw non-string, nonblank references fail closed without schema coercion.
+    for (const malformed of [42, false, ["room-beta"]] as unknown[]) {
+      const mutated = JSON.parse((backupRow(backupId, "group-a") as { data: string }).data) as BackupTree;
+      (findAssetByName(mutated, "Doomed canonical asset") as { roomId?: unknown }).roomId = malformed;
+      db.prepare("UPDATE group_backups SET data = ? WHERE id = ? AND group_id = ?").run(
+        JSON.stringify(mutated),
+        backupId,
+        "group-a",
+      );
+
+      const malformedRejected = await restoreBackup(adminACookie, "group-a", backupId);
+      expect(malformedRejected.status).toBe(409);
+      expect(malformedRejected.body.error).toContain("room links pointing to missing rooms");
+      const stillUnchanged = readDoc("group-a");
+      expect(stillUnchanged.tree).toBe(before.tree);
+      expect(stillUnchanged.version).toBe(before.version);
+      expect(historyCount("group-a")).toBe(historyBefore);
+      expect(restoreHistoryCountFor("group-a", backupId)).toBe(0);
+    }
+  });
+
+  it("restores canonical and legacy asset references in their own namespaces without changing ids or barcodes", async () => {
+    seedLegacyAssetRoom("group-a", {
+      id: "asset-room-legacy-valid",
+      name: "Legacy Valid Assets",
+      linkedRoomId: "room-beta",
+    });
+    seedLegacyAsset("group-a", {
+      id: "asset-legacy-valid",
+      name: "Legacy valid asset",
+      barcode: "legacy-valid-barcode",
+      roomId: "asset-room-legacy-valid",
+    });
+    seedLegacyAsset("group-a", {
+      id: "asset-unassigned-valid",
+      name: "Unassigned valid asset",
+      barcode: "unassigned-valid-barcode",
+      roomId: "",
+    });
+
+    const created = await call<InventoryBody>(
+      "POST",
+      "/api/groups/group-a/inventory/assets",
+      adminACookie,
+      { name: "Canonical valid asset", barcode: "canonical-valid-barcode", roomId: "room-beta" },
+    );
+    expect(created.status).toBe(201);
+    const canonicalAsset = findAssetByName(created.body.tree, "Canonical valid asset");
+
+    const backupId = await createBackup(adminACookie, "group-a");
+    const storedBackup = backupRow(backupId, "group-a");
+    expect(storedBackup).toBeDefined();
+    const backupData = (storedBackup as { data: string }).data;
+    const backupTree = JSON.parse(backupData) as BackupTree;
+    expect(findAssetByName(backupTree, "Legacy valid asset").roomId).toBe("asset-room-legacy-valid");
+    expect(findAssetByName(backupTree, "Canonical valid asset").roomId).toBe("room-beta");
+    expect(findAssetRoom(backupTree, "asset-room-legacy-valid").linkedRoomId).toBe("room-beta");
+
+    const before = readDoc("group-a");
+    const historyBefore = historyCount("group-a");
+    const backupsBefore = backupCount();
+
+    const response = await restoreBackup(adminACookie, "group-a", backupId);
+    expect(response.status).toBe(200);
+    expect(response.body.version).toBe(before.version + 1);
+
+    const active = readDoc("group-a");
+    expect(active.version).toBe(response.body.version);
+    expect(active.version).toBe(before.version + 1);
+    expect(JSON.parse(active.tree)).toEqual(response.body.tree);
+
+    const restored = JSON.parse(active.tree) as BackupTree;
+    const restoredCanonical = findAssetByName(restored, "Canonical valid asset");
+    expect(restoredCanonical.id).toBe(canonicalAsset.id);
+    expect(restoredCanonical.barcode).toBe("canonical-valid-barcode");
+    expect(restoredCanonical.roomId).toBe("room-beta");
+    expect(restored.rooms.some((room) => room.id === "room-beta")).toBe(true);
+
+    const restoredLegacy = findAssetByName(restored, "Legacy valid asset");
+    expect(restoredLegacy.id).toBe("asset-legacy-valid");
+    expect(restoredLegacy.barcode).toBe("legacy-valid-barcode");
+    expect(restoredLegacy.roomId).toBe("asset-room-legacy-valid");
+    expect(restored.assetRooms.some((room) => room.id === "asset-room-legacy-valid")).toBe(true);
+    expect(restored.rooms.some((room) => room.id === "asset-room-legacy-valid")).toBe(false);
+    expect(findAssetRoom(restored, "asset-room-legacy-valid").linkedRoomId).toBe("room-beta");
+
+    expect(findAssetByName(restored, "Unassigned valid asset").roomId).toBe("");
+
+    expect(historyCount("group-a")).toBe(historyBefore + 1);
+    expect(restoreHistoryCountFor("group-a", backupId)).toBe(1);
+    expect(backupCount()).toBe(backupsBefore);
+    expect((backupRow(backupId, "group-a") as { data: string }).data).toBe(backupData);
+
+    const inventory = await call<InventoryBody>("GET", "/api/groups/group-a/inventory", adminACookie);
     expect(inventory.status).toBe(200);
     expect(inventory.body.version).toBe(response.body.version);
     expect(inventory.body.tree).toEqual(response.body.tree);
