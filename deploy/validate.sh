@@ -14,12 +14,11 @@ need() {
 }
 
 unit="$base/bioscom.service"
-nginx="$base/nginx-bioscom.conf"
-bootstrap="$base/nginx-bioscom-bootstrap.conf"
+nginx="$base/nginx-lab.ubch.sci.muni.cz.conf"
 script="$base/deploy.sh"
 enabler="$base/enable-on-vm.sh"
 
-for f in "$unit" "$nginx" "$bootstrap" "$script" "$enabler"; do
+for f in "$unit" "$nginx" "$script" "$enabler"; do
   if [ ! -f "$f" ]; then
     echo "FAIL: $f not found"
     exit 1
@@ -39,28 +38,22 @@ else
   echo "ok: no inline secrets in unit"
 fi
 
-need "$nginx" '^(\s*)server_name bioscom\.ubch\.sci\.muni\.cz 147\.251\.22\.180;' 'nginx server_name (dns + ip)'
-need "$nginx" 'listen 443 ssl;' 'nginx TLS listener'
-need "$nginx" 'ssl_certificate /etc/letsencrypt/live/bioscom\.ubch\.sci\.muni\.cz/fullchain\.pem;' 'nginx ssl_certificate'
-need "$nginx" 'ssl_certificate_key /etc/letsencrypt/live/bioscom\.ubch\.sci\.muni\.cz/privkey\.pem;' 'nginx ssl_certificate_key'
+need "$nginx" '^\s*server_name lab\.ubch\.sci\.muni\.cz;' 'nginx server_name'
+need "$nginx" 'listen 80;' 'nginx port-80 listener (certbot --nginx adds 443)'
 need "$nginx" 'proxy_pass http://127\.0\.0\.1:8004;' 'nginx proxy_pass to app port'
 need "$nginx" 'proxy_http_version 1\.1;' 'nginx proxy_http_version 1.1'
-need "$nginx" 'proxy_set_header Upgrade \$http_upgrade;' 'nginx WS Upgrade header'
-need "$nginx" 'proxy_set_header Connection "upgrade";' 'nginx WS Connection header'
+need "$nginx" 'proxy_set_header X-Forwarded-Proto \$scheme;' 'nginx X-Forwarded-Proto header'
+need "$nginx" 'proxy_set_header Upgrade +\$http_upgrade;' 'nginx WS Upgrade header'
+need "$nginx" 'proxy_set_header Connection +"upgrade";' 'nginx WS Connection header'
 need "$nginx" 'proxy_read_timeout 300s;' 'nginx WS read timeout'
-need "$nginx" 'return 301 https://bioscom\.ubch\.sci\.muni\.cz\$request_uri;' 'nginx http->https redirect'
-need "$nginx" 'location \^~ /\.well-known/acme-challenge/' 'nginx acme-challenge location'
-
-need "$bootstrap" 'listen 80;' 'bootstrap port-80 listener'
-need "$bootstrap" 'server_name bioscom\.ubch\.sci\.muni\.cz 147\.251\.22\.180;' 'bootstrap server_name (dns + ip)'
-need "$bootstrap" 'proxy_pass http://127\.0\.0\.1:8004;' 'bootstrap proxy_pass'
-need "$bootstrap" 'location \^~ /\.well-known/acme-challenge/' 'bootstrap acme-challenge location'
-if grep -qE 'listen 443|ssl_certificate' "$bootstrap"; then
-  echo "FAIL: bootstrap conf must not reference TLS (certs do not exist yet)"
+if grep -qE '^\s*(listen [^;]*443|ssl_certificate)' "$nginx"; then
+  echo "FAIL: nginx template must not reference TLS (certbot --nginx adds it on the VM)"
   fail=1
 else
-  echo "ok: bootstrap conf is HTTP-only"
+  echo "ok: nginx template is pre-certbot (HTTP-only)"
 fi
+need "$enabler" '^DOMAIN=lab\.ubch\.sci\.muni\.cz$' 'enabler DOMAIN'
+need "$enabler" 'certbot --nginx -d "\$DOMAIN" --redirect' 'enabler certbot --nginx'
 
 if bash -n "$script" && bash -n "$enabler"; then
   echo "ok: deploy.sh + enable-on-vm.sh parse (bash -n)"
