@@ -77,6 +77,7 @@ Then set production values in `.env` (see "Trial history" below for what the tri
 - `PUBLIC_URL=https://lab.ubch.sci.muni.cz` — base of reset links; `https` also makes the session cookie `Secure`
 - remove `RESET_REDIRECT_EMAIL` at cutover so members get their own reset links
 - keep `RESEND_API_KEY` / `RESEND_FROM`
+- optional `RESET_UNKNOWN_NOTIFY_EMAIL` — sends this address a notice (no token) when a forgot-password request does not match any account; per-IP rate-limited like logins, leave unset to disable
 
 Renewal: certbot's standard timer (`sudo certbot renew`) handles it, as for the other sites. WS check through nginx: open the app in a browser, `wss://lab.ubch.sci.muni.cz/ws` must stay connected >60s (30s server heartbeat).
 

@@ -23,9 +23,13 @@ const fbSalt = Buffer.alloc(16, 3).toString("base64");
 const fbHash = firebaseScryptHash(FIREBASE_PASSWORD, fbSalt, scryptParams).toString("base64");
 
 const sentEmails: Array<{ to: string; link: string }> = [];
+const sentNotifications: Array<{ to: string; attemptedEmail: string }> = [];
 const emailer: Emailer = {
   async sendResetEmail(to: string, link: string): Promise<void> {
     sentEmails.push({ to, link });
+  },
+  async sendUnknownResetAttemptEmail(to: string, attemptedEmail: string): Promise<void> {
+    sentNotifications.push({ to, attemptedEmail });
   },
 };
 
@@ -233,6 +237,7 @@ describe("password reset flow", () => {
 
   it("responds identically for unknown emails (no enumeration)", async () => {
     sentEmails.length = 0;
+    sentNotifications.length = 0;
     const response = await request(baseUrl)
       .post("/api/forgot-password")
       .set(XRW)
@@ -240,6 +245,57 @@ describe("password reset flow", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
     expect(sentEmails).toHaveLength(0);
+    expect(sentNotifications).toHaveLength(0);
+  });
+});
+
+describe("unknown-email reset notification", () => {
+  it("notifies the configured address for unknown emails, rate-limited", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bioscom-notify-test-"));
+    const notifyDbPath = join(dir, "test.db");
+    const notifyApp = await buildApp({
+      config: {
+        dbPath: notifyDbPath,
+        logLevel: "silent",
+        publicUrl: "https://test.example",
+        loginRateLimit: 2,
+        unknownResetNotifyEmail: "watcher@test.example",
+      },
+      emailer,
+    });
+    const notifyUrl = await listen(notifyApp);
+    try {
+      sentNotifications.length = 0;
+      sentEmails.length = 0;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const response = await request(notifyUrl)
+          .post("/api/forgot-password")
+          .set(XRW)
+          .send({ email: `ghost-${attempt}@test.example` });
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ ok: true });
+      }
+      expect(sentNotifications).toHaveLength(2);
+      expect(sentNotifications[0]).toEqual({ to: "watcher@test.example", attemptedEmail: "ghost-0@test.example" });
+      expect(sentNotifications[1]).toEqual({ to: "watcher@test.example", attemptedEmail: "ghost-1@test.example" });
+      expect(sentEmails).toHaveLength(0);
+      const db = getDatabase(notifyDbPath);
+      db.prepare(
+        "INSERT INTO users (uid, email, password_hash, password_salt, hash_version, name, role, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("uid-notify", "known@test.example", "leftover", null, "unverified", "Known User", "reader", "group-a");
+      const known = await request(notifyUrl)
+        .post("/api/forgot-password")
+        .set(XRW)
+        .send({ email: "known@test.example" });
+      expect(known.status).toBe(200);
+      expect(sentNotifications).toHaveLength(2);
+      expect(sentEmails).toHaveLength(1);
+      expect(sentEmails[0]?.to).toBe("known@test.example");
+    } finally {
+      await notifyApp.close();
+      closeDatabase();
+      getDatabase(dbPath);
+    }
   });
 });
 

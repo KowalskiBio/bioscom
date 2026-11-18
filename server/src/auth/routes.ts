@@ -64,6 +64,7 @@ function createResetToken(db: Database.Database, uid: string): string {
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
   const limiter = createLoginRateLimiter(deps.config.loginRateLimit);
+  const notifyLimiter = createLoginRateLimiter(deps.config.loginRateLimit);
   const db = (): Database.Database => getDatabase(deps.config.dbPath);
 
   app.post("/api/login", async (request, reply) => {
@@ -144,6 +145,12 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
         await deps.emailer.sendResetEmail(deps.config.resetRedirectEmail || user.email, link);
       } catch (error) {
         request.log.warn(error, "failed to send reset email");
+      }
+    } else if (deps.config.unknownResetNotifyEmail !== "" && notifyLimiter.check(request.ip)) {
+      try {
+        await deps.emailer.sendUnknownResetAttemptEmail(deps.config.unknownResetNotifyEmail, body.data.email);
+      } catch (error) {
+        request.log.warn(error, "failed to send unknown-email notification");
       }
     }
     return { ok: true };

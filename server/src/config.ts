@@ -11,6 +11,7 @@ export interface ServerConfig {
   resendFrom: string;
   publicUrl: string;
   resetRedirectEmail: string;
+  unknownResetNotifyEmail: string;
   logLevel: string;
   loginRateLimit: number;
   firebaseScrypt: FirebaseScryptParams | null;
@@ -55,6 +56,8 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     resendFrom: overrides.resendFrom ?? (process.env.RESEND_FROM?.trim() || "BioSCom <bioscom@ubch.sci.muni.cz>"),
     publicUrl: overrides.publicUrl ?? (process.env.PUBLIC_URL?.trim() || "http://localhost:8003"),
     resetRedirectEmail: overrides.resetRedirectEmail ?? (process.env.RESET_REDIRECT_EMAIL?.trim() || ""),
+    unknownResetNotifyEmail:
+      overrides.unknownResetNotifyEmail ?? (process.env.RESET_UNKNOWN_NOTIFY_EMAIL?.trim() || ""),
     logLevel: overrides.logLevel ?? (process.env.LOG_LEVEL?.trim() || "info"),
     loginRateLimit: overrides.loginRateLimit ?? envNumber("LOGIN_RATE_LIMIT", 5),
     firebaseScrypt: loadFirebaseScrypt(overrides.firebaseScrypt),
