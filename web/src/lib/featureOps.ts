@@ -160,6 +160,12 @@ export function opAdminSetRole(uid: string, role: string): Promise<boolean> {
   return run("Failed to change role", () => api.put(`/api/admin/users/${uid}/role`, { role }));
 }
 
+export function opSetMemberRole(uid: string, role: "admin" | "reader"): Promise<boolean> {
+  return run("Failed to change role", () =>
+    api.put(`/api/groups/${encodeURIComponent(gid())}/members/${encodeURIComponent(uid)}/role`, { role }),
+  );
+}
+
 export function opAdminDeleteUser(uid: string): Promise<boolean> {
   return run("Failed to delete user", () => api.del(`/api/admin/users/${uid}`));
 }

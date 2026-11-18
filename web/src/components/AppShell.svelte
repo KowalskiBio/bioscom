@@ -15,6 +15,7 @@
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
   import { opDeleteContainer, roleCanWrite } from "../lib/ops";
+  import { opSetMemberRole } from "../lib/featureOps";
   import { stripEmoji } from "../lib/inventoryUtils";
   import { verifyCaptchaAndExecute } from "../lib/captcha";
   import {
@@ -320,6 +321,10 @@
     return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
 
+  function escapeHtmlAttr(text: string): string {
+    return escapeHtmlText(text).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  }
+
   const userInitials = $derived(
     (session.user?.name ?? "?")
       .split(/\s+/)
@@ -359,6 +364,8 @@
     if (groupId === null) {
       return;
     }
+    const me = session.user;
+    const canManage = me !== null && (me.role === "superadmin" || (me.role === "admin" && me.groupId === groupId));
     openModal({
       title: "Laboratory Members",
       bodyHtml: `<div id="members-loading">Loading...</div>`,
@@ -373,11 +380,39 @@
       )
       .then((body) => {
         const rows = body.members
-          .map((m) => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border-subtle);"><span style="font-weight:600;">${escapeHtmlText(m.name ?? "Unknown")}</span><span style="color:var(--text-muted);font-size:0.8rem;">${m.role}</span></div>`)
+          .map((m) => {
+            const name = escapeHtmlText(m.name ?? "Unknown");
+            const editable = canManage && m.role !== "superadmin" && m.uid !== me?.uid;
+            if (!editable) {
+              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border-subtle);"><span style="font-weight:600;">${name}</span><span style="color:var(--text-muted);font-size:0.8rem;">${escapeHtmlText(m.role)}</span></div>`;
+            }
+            const options = ["admin", "reader"]
+              .map((role) => `<option value="${role}"${role === m.role ? " selected" : ""}>${role}</option>`)
+              .join("");
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border-subtle);"><span style="font-weight:600;">${name}</span><select class="member-role-select" data-member-uid="${escapeHtmlAttr(m.uid)}" data-member-name="${escapeHtmlAttr(m.name ?? "Unknown")}" style="padding:0.2rem 0.4rem;font-size:0.75rem;background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--text-primary);border-radius:var(--radius-sm);outline:none;cursor:pointer;">${options}</select></div>`;
+          })
           .join("");
         const list = document.getElementById("members-loading");
         if (list !== null) {
           list.innerHTML = rows;
+          list.querySelectorAll<HTMLSelectElement>("select.member-role-select").forEach((select) => {
+            select.dataset.previousRole = select.value;
+            select.addEventListener("change", () => {
+              const uid = select.dataset.memberUid ?? "";
+              const role = select.value === "admin" ? "admin" : "reader";
+              const previous = select.dataset.previousRole ?? "reader";
+              select.disabled = true;
+              void opSetMemberRole(uid, role).then((ok) => {
+                select.disabled = false;
+                if (ok) {
+                  select.dataset.previousRole = role;
+                  showToast(`Role updated for ${select.dataset.memberName ?? "member"}`, "info");
+                } else {
+                  select.value = previous;
+                }
+              });
+            });
+          });
         }
       })
       .catch(() => {

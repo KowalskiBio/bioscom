@@ -42,6 +42,10 @@ beforeAll(async () => {
   insert.run("uid-super", "super@test.example", await argonHash("super-password"), "Super User", "superadmin", null);
     insert.run("uid-other", "other@test.example", await argonHash("other-password"), "Other User", "reader", null);
   db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES (?, ?, ?, ?)").run("group-old", "Old Lab", "BIOS-111", Date.now());
+  db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES (?, ?, ?, ?)").run("group-roles", "Roles Lab", "BIOS-222", Date.now());
+  insert.run("uid-roles-admin", "roles-admin@test.example", await argonHash("roles-admin-password"), "Roles Admin", "admin", "group-roles");
+  insert.run("uid-roles-reader", "roles-reader@test.example", await argonHash("roles-reader-password"), "Roles Reader", "reader", "group-roles");
+  insert.run("uid-roles-super", "roles-super@test.example", await argonHash("roles-super-password"), "Roles Super", "superadmin", "group-roles");
 });
 
 afterAll(async () => {
@@ -126,6 +130,77 @@ describe("GET /api/groups/:id/members", () => {
     expect(response.body.members).toEqual([{ uid: "uid-other", name: "Other User", role: "reader" }]);
     expect(JSON.stringify(response.body)).not.toContain("email");
     expect(JSON.stringify(response.body)).not.toContain("test.example");
+  });
+});
+
+describe("PUT /api/groups/:id/members/:uid/role", () => {
+  it("rejects readers", async () => {
+    const cookie = await login("roles-reader@test.example", "roles-reader-password");
+    const response = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-admin/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "reader" });
+    expect(response.status).toBe(403);
+  });
+
+  it("lets a lab admin promote and demote a member of their lab", async () => {
+    const cookie = await login("roles-admin@test.example", "roles-admin-password");
+    const promote = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-reader/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "admin" });
+    expect(promote.status).toBe(200);
+    const db = getDatabase(dbPath);
+    expect((db.prepare("SELECT role FROM users WHERE uid = 'uid-roles-reader'").get() as { role: string }).role).toBe("admin");
+    const demote = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-reader/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "reader" });
+    expect(demote.status).toBe(200);
+    expect((db.prepare("SELECT role FROM users WHERE uid = 'uid-roles-reader'").get() as { role: string }).role).toBe("reader");
+  });
+
+  it("rejects escalation to superadmin", async () => {
+    const cookie = await login("roles-admin@test.example", "roles-admin-password");
+    const response = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-reader/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "superadmin" });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects changing a member of another lab", async () => {
+    const cookie = await login("roles-admin@test.example", "roles-admin-password");
+    const response = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-other/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "admin" });
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects changing your own role", async () => {
+    const cookie = await login("roles-admin@test.example", "roles-admin-password");
+    const response = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-admin/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "reader" });
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects changing a superadmin's role", async () => {
+    const cookie = await login("roles-admin@test.example", "roles-admin-password");
+    const response = await request(baseUrl)
+      .put("/api/groups/group-roles/members/uid-roles-super/role")
+      .set(XRW)
+      .set("Cookie", cookie)
+      .send({ role: "reader" });
+    expect(response.status).toBe(403);
   });
 });
 

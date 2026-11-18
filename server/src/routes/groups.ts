@@ -1,7 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { CreateGroupBodySchema, JoinGroupBodySchema } from "@bioscom/shared";
+import { CreateGroupBodySchema, JoinGroupBodySchema, UpdateMemberRoleBodySchema } from "@bioscom/shared";
 import { getDatabase } from "../db.js";
 import type { ServerConfig } from "../config.js";
 import { requireUser } from "../auth/guards.js";
@@ -84,5 +84,33 @@ export function registerGroupRoutes(app: FastifyInstance, config: ServerConfig):
       .prepare("SELECT uid, name, role FROM users WHERE group_id = ? ORDER BY name")
       .all(id) as Array<{ uid: string; name: string | null; role: string }>;
     return { members };
+  });
+
+  app.put("/api/groups/:id/members/:uid/role", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const { id, uid } = request.params as { id: string; uid: string };
+    const isLabAdmin = user.role === "admin" && user.group_id === id;
+    if (!isLabAdmin && user.role !== "superadmin") {
+      return reply.status(403).send({ error: "Lab admin only" });
+    }
+    const body = UpdateMemberRoleBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Invalid request" });
+    }
+    const target = db().prepare("SELECT uid, role, group_id FROM users WHERE uid = ?").get(uid) as
+      | { uid: string; role: string; group_id: string | null }
+      | undefined;
+    if (target === undefined || target.group_id !== id) {
+      return reply.status(404).send({ error: "No such lab member" });
+    }
+    if (target.role === "superadmin") {
+      return reply.status(403).send({ error: "Cannot change a superadmin's role" });
+    }
+    if (target.uid === user.uid) {
+      return reply.status(403).send({ error: "You cannot change your own role" });
+    }
+    db().prepare("UPDATE users SET role = ? WHERE uid = ?").run(body.data.role, uid);
+    return { ok: true };
   });
 }

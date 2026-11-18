@@ -94,6 +94,10 @@ export const UpdateRoleBodySchema = z.object({
   role: z.enum(["admin", "reader", "superadmin"]),
 });
 
+export const UpdateMemberRoleBodySchema = z.object({
+  role: z.enum(["admin", "reader"]),
+});
+
 export const AddRoomBodySchema = z.object({
   name: z.string().trim().min(1).max(50),
   description: z.string().trim().max(500).optional(),
