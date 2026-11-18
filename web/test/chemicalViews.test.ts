@@ -46,6 +46,14 @@ const okabeIto = {
   other: { hex: "#999999", rgb: "153, 153, 153", color: "rgb(153, 153, 153)", ink: "#C3CAD4", inkColor: "rgb(195, 202, 212)" },
 } as const;
 const materialKeys = MATERIAL_TYPES.map(({ key }) => key);
+const generatedPositionCases = [
+  { key: "empty", customPosition: "", expected: "AH1" },
+  { key: "null", customPosition: null, expected: "AH1" },
+  { key: "absent", customPosition: undefined, expected: "AH1" },
+  { key: "whitespace", customPosition: "   ", expected: "AH1" },
+  { key: "manual", customPosition: "Z9", expected: "Z9" },
+  { key: "missing", customPosition: null, expected: null },
+] as const;
 
 beforeAll(async () => {
   const webRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -65,7 +73,7 @@ beforeAll(async () => {
       response.setHeader("content-type", "text/html; charset=utf-8");
       response.end(`<!doctype html>
         <html><head><meta charset="UTF-8"><title>Chemical column fixture</title></head>
-        <body><div id="app"></div><script type="module" src="/test/fixtures/chemicalViews.ts"></script></body></html>`);
+        <body><div id="app"></div><div id="modal-app"></div><div id="toast-app"></div><script type="module" src="/test/fixtures/chemicalViews.ts"></script></body></html>`);
       return;
     }
     next();
@@ -117,8 +125,8 @@ beforeAll(async () => {
       concentrationUnit: null,
       note: `Synthetic ${key} catalog stock`,
       status: "available",
-      position: `P-${index + 1}`,
-      customPosition: null,
+      position: `P-${index + 1}` as string | null,
+      customPosition: null as string | null | undefined,
       location: {
         id: "loc-palette",
         name: "Palette Shelf",
@@ -142,6 +150,17 @@ beforeAll(async () => {
       materialId: `material-palette-${key}`,
       attributes: {},
     }));
+    if (new URL(page!.url()).searchParams.get("positions") === "1") {
+      const template = stocks[0]!;
+      stocks.push(...generatedPositionCases.map((positionCase) => ({
+        ...template,
+        id: `position-stock-${positionCase.key}`,
+        name: `Position catalog ${positionCase.key}`,
+        materialId: `material-position-${positionCase.key}`,
+        position: positionCase.key === "missing" ? null : "AH1",
+        customPosition: positionCase.customPosition,
+      })));
+    }
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -469,6 +488,83 @@ describe("mounted material type chips", () => {
       const actions = page!.locator('#container-direct-chemicals-table tr[data-chemid="container-chip-bio"] td[data-column="actions"]');
       expect(await actions.count()).toBe(1);
       await page!.setViewportSize({ width: 1200, height: 800 });
+    }
+  }, 90_000);
+});
+
+describe("mounted generated-position displays and labels", () => {
+  afterEach(() => {
+    roomPreferenceColumns = [...allRoomPreferenceColumns];
+  });
+
+  it("uses generated positions in the full catalog unless a meaningful override exists", async () => {
+    roomPreferenceColumns = ["name", "location", "note", "actions"];
+    await openView("catalog", "positions=1");
+
+    for (const positionCase of generatedPositionCases) {
+      const row = page!.locator(`#stocks-table tr[data-stock-id="position-stock-${positionCase.key}"]`);
+      await row.waitFor();
+      expect(await row.locator(".stocks-dim").textContent()).toBe("Main Test Room / Main Cabinet / Palette Shelf");
+      const badge = row.locator(".chem-pos");
+      if (positionCase.expected === null) {
+        expect(await badge.count()).toBe(0);
+      } else {
+        expect(await badge.textContent()).toBe(positionCase.expected);
+      }
+    }
+  }, 40_000);
+
+  it("uses generated positions in direct and shelf tables and preserves room-label contents", async () => {
+    roomPreferenceColumns = ["name", "location", "note", "actions"];
+    await openView("detail/room-main/cont-main", "positions=1&q=Position");
+    for (const [area, table] of [
+      ["container", "container-direct-chemicals-table"],
+      ["shelf", "shelf-chemicals-table-shelf-main"],
+    ] as const) {
+      for (const positionCase of generatedPositionCases) {
+        expect(await cellText(table, `position-${area}-${positionCase.key}`, "position")).toBe(positionCase.expected ?? "—");
+      }
+    }
+
+    await openView("containers/room-main", "positions=1");
+    for (const positionCase of generatedPositionCases) {
+      const row = page!.locator(`#room-direct-chemicals-table tr[data-chemid="position-room-${positionCase.key}"]`);
+      await row.locator('button[title^="Print label"]').click();
+      await page!.waitForSelector(".stock-label-card");
+      expect(await page!.locator(".stock-label-name").textContent()).toBe(`Position room ${positionCase.key}`);
+      expect(await page!.locator(".stock-label-barcode-text").textContent()).toBe(`POSITION-ROOM-${positionCase.key.toUpperCase()}`);
+      const metadata = page!.locator(".stock-label-meta");
+      expect(await metadata.first().textContent()).toContain("Main Test Room");
+      expect(await metadata.count()).toBe(positionCase.expected === null ? 1 : 2);
+      if (positionCase.expected !== null) {
+        expect(await metadata.nth(1).textContent()).toBe(positionCase.expected);
+      }
+      await page!.click("#modal-close");
+      await page!.waitForSelector(".stock-label-card", { state: "detached" });
+    }
+  }, 90_000);
+
+  it("passes generated positions to both container and shelf label entry paths", async () => {
+    roomPreferenceColumns = ["name", "location", "note", "actions"];
+    await openView("detail/room-main/cont-main", "positions=1&q=Position");
+    for (const area of ["container", "shelf"] as const) {
+      for (const positionCase of generatedPositionCases) {
+        const row = page!.locator(`tr[data-chemid="position-${area}-${positionCase.key}"]`);
+        await row.locator('button[title="Print label"]').click();
+        await page!.waitForSelector(".stock-label-card");
+        expect(await page!.locator(".stock-label-name").textContent()).toBe(`Position ${area} ${positionCase.key}`);
+        expect(await page!.locator(".stock-label-barcode-text").textContent()).toBe(
+          `POSITION-${area.toUpperCase()}-${positionCase.key.toUpperCase()}`,
+        );
+        const metadata = page!.locator(".stock-label-meta");
+        expect(await metadata.first().textContent()).toContain("Main Test Room / Main Cabinet");
+        expect(await metadata.count()).toBe(positionCase.expected === null ? 1 : 2);
+        if (positionCase.expected !== null) {
+          expect(await metadata.nth(1).textContent()).toBe(positionCase.expected);
+        }
+        await page!.click("#modal-close");
+        await page!.waitForSelector(".stock-label-card", { state: "detached" });
+      }
     }
   }, 90_000);
 });

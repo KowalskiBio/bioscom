@@ -42,7 +42,7 @@ import { getDatabase } from "../db.js";
 import type { ServerConfig } from "../config.js";
 import { requireUser } from "../auth/guards.js";
 import type { SessionUserRow } from "../auth/sessions.js";
-import { getOrCreatePosition } from "./positions.js";
+import { assignCreatePosition, normalizePositionCode } from "./positions.js";
 import { ensureParityChecked } from "./assemble.js";
 import type { InventoryHub } from "./ws.js";
 import {
@@ -795,12 +795,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
             throw new OpError(400, `Invalid attributes for type "${typeKey}": ${validation.errors.join("; ")}`);
           }
         }
-        const position =
-          body.data.position ??
-          body.data.customPosition ??
-          (target.shelf !== null && target.container !== null
-            ? getOrCreatePosition(target.container, target.shelf, body.data.name)
-            : undefined);
+        const assignment = assignCreatePosition({
+          position: body.data.position,
+          customPosition: body.data.customPosition,
+          container: target.container,
+          shelf: target.shelf,
+          name: body.data.name,
+        });
         if (body.data.barcode !== undefined && body.data.barcode.trim() !== "") {
           const owner = findBarcodeOwnerHelper(tree, body.data.barcode.trim(), null);
           if (owner !== undefined) {
@@ -816,8 +817,8 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           unit: body.data.unit,
           concentration: body.data.concentration,
           concUnit: body.data.concUnit,
-          position,
-          customPosition: body.data.customPosition,
+          position: assignment.position,
+          customPosition: assignment.customPosition,
           note: body.data.note,
           barcode: body.data.barcode !== undefined && body.data.barcode.trim() !== "" ? body.data.barcode.trim() : undefined,
           type: body.data.type,
@@ -898,7 +899,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           chemical.position = body.data.position;
         }
         if (body.data.customPosition !== undefined) {
-          chemical.customPosition = body.data.customPosition;
+          chemical.customPosition = normalizePositionCode(body.data.customPosition);
         }
         if (body.data.note !== undefined) {
           chemical.note = body.data.note;

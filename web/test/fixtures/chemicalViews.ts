@@ -5,6 +5,8 @@ import { setUser } from "../../src/lib/stores/session.svelte";
 import { setCurrentGroup } from "../../src/lib/stores/currentGroup.svelte";
 import { applyBroadcast } from "../../src/lib/stores/inventory.svelte";
 import { setDesign } from "../../src/lib/theme.svelte";
+import Modal from "../../src/components/Modal.svelte";
+import Toasts from "../../src/components/Toasts.svelte";
 
 const params = new URLSearchParams(window.location.search);
 const role = params.get("role") ?? "editor";
@@ -20,6 +22,29 @@ setUser({
 setCurrentGroup("group-a", "Synthetic Lab");
 setDesign(params.get("design") === "bauhaus" ? "bauhaus" : "original");
 
+const generatedPositionCases = [
+  { key: "empty", customPosition: "" },
+  { key: "null", customPosition: null },
+  { key: "absent", customPosition: undefined },
+  { key: "whitespace", customPosition: "   " },
+  { key: "manual", customPosition: "Z9" },
+  { key: "missing", customPosition: null },
+] as const;
+
+function positionChemicals(area: string) {
+  if (params.get("positions") !== "1") return [];
+  return generatedPositionCases.map((positionCase) => ({
+    id: `position-${area}-${positionCase.key}`,
+    name: `Position ${area} ${positionCase.key}`,
+    type: "chemical",
+    quantity: 1,
+    unit: "pcs",
+    position: positionCase.key === "missing" ? null : "AH1",
+    ...(positionCase.customPosition === undefined ? {} : { customPosition: positionCase.customPosition }),
+    barcode: `POSITION-${area.toUpperCase()}-${positionCase.key.toUpperCase()}`,
+  }));
+}
+
 const tree = {
   rooms: [
     {
@@ -31,6 +56,7 @@ const tree = {
           name: "Main Cabinet",
           type: "cabinet",
           chemicals: [
+            ...positionChemicals("container"),
             {
               id: "container-chem",
               name: "Container direct stock",
@@ -70,6 +96,7 @@ const tree = {
               name: "Shelf A",
               type: "shelf",
               chemicals: [
+                ...positionChemicals("shelf"),
                 {
                   id: "shelf-chem",
                   name: "Shelf stock",
@@ -186,6 +213,7 @@ const tree = {
         },
       ],
       chemicals: [
+        ...positionChemicals("room"),
         ...(params.get("palette") === "room" ? MATERIAL_TYPES.map(({ key }) => ({
           id: `palette-room-${key}`,
           name: `Palette ${key}`,
@@ -254,9 +282,13 @@ const tree = {
 applyBroadcast({ groupId: "group-a", version: 1, tree }, "group-a");
 
 const target = document.getElementById("app");
-if (target === null) {
+const modalTarget = document.getElementById("modal-app");
+const toastTarget = document.getElementById("toast-app");
+if (target === null || modalTarget === null || toastTarget === null) {
   throw new Error("Missing chemical view test target");
 }
+mount(Modal, { target: modalTarget });
+mount(Toasts, { target: toastTarget });
 
 if (window.location.hash === "#catalog") {
   const { default: CatalogView } = await import("../../src/components/views/CatalogView.svelte");

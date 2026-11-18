@@ -41,7 +41,7 @@ import {
   opEditAsset,
   resolveAutoShelf,
 } from "./ops";
-import { countWords, stripEmoji } from "./inventoryUtils";
+import { countWords, effectivePosition, stripEmoji } from "./inventoryUtils";
 import { verifyCaptchaAndExecute } from "./captcha";
 import { router, navigateTo } from "./router.svelte";
 import RoomFormModal from "../components/modals/RoomFormModal.svelte";
@@ -1027,7 +1027,7 @@ export function openChemicalForm(
     concUnit: editChem?.ch.concUnit ?? "",
     cas: editChem?.ch.cas ?? "",
     note: editChem?.ch.note ?? "",
-    customPosition: editChem?.ch.customPosition ?? "",
+    customPosition: effectivePosition(editChem?.ch) ?? "",
     type: editChem?.ch.type ?? "chemical",
     attributes: initialAttributes,
     safetyNotes,

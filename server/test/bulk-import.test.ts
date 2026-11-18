@@ -124,4 +124,61 @@ describe("POST /api/groups/:id/inventory/bulk-import", () => {
       .send({ roomId: "r-1", containerId: "c-1", shelfId: "s-1", items: [] });
     expect(schemaBad.status).toBe(400);
   });
+
+  it("copies an automatically generated bulk position into both JSON fields and the SQL mirror", async () => {
+    const roomResponse = await request(baseUrl)
+      .post("/api/groups/group-b/inventory/rooms")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ name: "Bulk Position Room" });
+    expect(roomResponse.status).toBe(201);
+    const rooms = (roomResponse.body as { tree: { rooms: Array<{ id: string }> } }).tree.rooms;
+    const roomId = rooms[rooms.length - 1]?.id ?? "";
+
+    const containerResponse = await request(baseUrl)
+      .post("/api/groups/group-b/inventory/containers")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({ roomId, name: "Bulk Position Cabinet", type: "cabinet", cabinetMethod: "alphabetical", shelves: ["Shelf A-D"] });
+    expect(containerResponse.status).toBe(201);
+    const room = (containerResponse.body as {
+      tree: { rooms: Array<{ id: string; containers: Array<{ id: string; shelves: Array<{ id: string }> }> }> };
+    }).tree.rooms.find((candidate) => candidate.id === roomId);
+    const containerId = room?.containers[0]?.id ?? "";
+    const shelfId = room?.containers[0]?.shelves[0]?.id ?? "";
+
+    const imported = await request(baseUrl)
+      .post("/api/groups/group-b/inventory/bulk-import")
+      .set("Cookie", cookie)
+      .set(XRW)
+      .send({
+        roomId,
+        containerId,
+        shelfId,
+        items: [{ name: "Hydrochloric acid", customPosition: "   " }],
+      });
+    expect(imported.status).toBe(200);
+    expect(imported.body.created).toBe(1);
+
+    const doc = one<{ tree: string }>("SELECT tree FROM group_inventory_docs WHERE group_id='group-b'");
+    const stored = (
+      JSON.parse(doc.tree) as {
+        rooms: Array<{
+          id: string;
+          containers: Array<{ id: string; shelves: Array<{ id: string; chemicals: Array<{ id: string; position?: string; customPosition?: string }> }> }>;
+        }>;
+      }
+    ).rooms
+      .find((candidate) => candidate.id === roomId)
+      ?.containers.find((candidate) => candidate.id === containerId)
+      ?.shelves.find((candidate) => candidate.id === shelfId)?.chemicals[0];
+    expect(stored?.position).toBe("AH1");
+    expect(stored?.customPosition).toBe("AH1");
+    expect(
+      one<{ position: string | null; custom_position: string | null }>(
+        "SELECT position, custom_position FROM stocks WHERE id = ?",
+        stored?.id ?? "",
+      ),
+    ).toEqual({ position: "AH1", custom_position: "AH1" });
+  });
 });

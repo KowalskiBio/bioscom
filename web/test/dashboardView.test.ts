@@ -48,35 +48,50 @@ const NOTICE_CATEGORY_CASES = [
     sourceCategory: "issue",
     dataCategory: "issue",
     label: "Issue",
-    colorToken: "--accent-red",
+    boardLabel: "⚠️ Issue",
+    accent: "rgb(213, 94, 0)",
+    tint: "rgba(213, 94, 0, 0.15)",
+    originalText: "rgb(240, 178, 166)",
   },
   {
     id: "notice-category-info",
     sourceCategory: "info",
     dataCategory: "info",
     label: "Info",
-    colorToken: "--accent-blue",
+    boardLabel: "ℹ️ Info",
+    accent: "rgb(0, 114, 178)",
+    tint: "rgba(0, 114, 178, 0.15)",
+    originalText: "rgb(169, 199, 255)",
   },
   {
     id: "notice-category-suggestion",
     sourceCategory: "suggestion",
     dataCategory: "suggestion",
     label: "Suggestion",
-    colorToken: "--accent-green",
+    boardLabel: "💡 Suggestion",
+    accent: "rgb(0, 158, 115)",
+    tint: "rgba(0, 158, 115, 0.15)",
+    originalText: "rgb(171, 221, 182)",
   },
   {
     id: "notice-category-general",
     sourceCategory: "general",
     dataCategory: "general",
     label: "General",
-    colorToken: "--text-muted",
+    boardLabel: "📌 General",
+    accent: "rgb(153, 153, 153)",
+    tint: "rgba(153, 153, 153, 0.15)",
+    originalText: "rgb(195, 202, 212)",
   },
   {
     id: "notice-category-other",
     sourceCategory: "other",
     dataCategory: "general",
     label: "General",
-    colorToken: "--text-muted",
+    boardLabel: "📌 General",
+    accent: "rgb(153, 153, 153)",
+    tint: "rgba(153, 153, 153, 0.15)",
+    originalText: "rgb(195, 202, 212)",
   },
 ] as const;
 const CATEGORY_NOTICES = NOTICE_CATEGORY_CASES.map((item, index) => ({
@@ -85,6 +100,11 @@ const CATEGORY_NOTICES = NOTICE_CATEGORY_CASES.map((item, index) => ({
   content: `${item.sourceCategory} board content`,
   category: item.sourceCategory,
   timestamp: Date.UTC(2026, 10, 15 - index),
+  ...(item.sourceCategory === "issue" ? {
+    authorUid: "synthetic-dashboard-reader",
+    authorName: "Category Author",
+    reactions: [{ id: "category-reaction", text: "❤️", userName: "Category Reactor", timestamp: Date.UTC(2026, 10, 15) }],
+  } : {}),
 })) as Notice[];
 
 type DismissalPut = { method: string; path: string; body: unknown };
@@ -329,7 +349,7 @@ describe("mounted Dashboard attention", () => {
 
       for (const item of NOTICE_CATEGORY_CASES) {
         const row = page!.locator(`#dash-notice-attention-list [data-notice-id="${item.id}"]`);
-        const expectedColor = await resolvedThemeColor(item.colorToken);
+        const expectedText = design === "original" ? item.originalText : "rgb(23, 21, 18)";
         expect(await row.getAttribute("data-notice-category")).toBe(item.dataCategory);
         expect((await row.locator(".dash-notice-category").textContent())?.trim()).toBe(item.label);
 
@@ -339,25 +359,42 @@ describe("mounted Dashboard attention", () => {
             const label = element.querySelector(".dash-notice-category");
             const glyph = element.querySelector(".stat-glyph");
             if (label === null || glyph === null) throw new Error("Missing notice label or glyph");
+            const labelStyle = getComputedStyle(label);
             return {
               borderColor: rowStyle.borderLeftColor,
               borderStyle: rowStyle.borderLeftStyle,
               borderWidth: rowStyle.borderLeftWidth,
-              labelColor: getComputedStyle(label).color,
+              labelColor: labelStyle.color,
+              labelBackground: labelStyle.backgroundColor,
+              labelBorderColor: labelStyle.borderColor,
+              labelBorderStyle: labelStyle.borderStyle,
+              labelBorderWidth: labelStyle.borderWidth,
               glyphColor: getComputedStyle(glyph).backgroundColor,
             };
           });
 
         expect(await readColors()).toEqual({
-          borderColor: expectedColor,
+          borderColor: item.accent,
           borderStyle: "solid",
           borderWidth: "4px",
-          labelColor: expectedColor,
-          glyphColor: expectedColor,
+          labelColor: expectedText,
+          labelBackground: item.tint,
+          labelBorderColor: item.accent,
+          labelBorderStyle: "solid",
+          labelBorderWidth: "1px",
+          glyphColor: item.accent,
         });
         await row.locator(".dash-notice-link").hover();
-        expect((await readColors()).labelColor).toBe(expectedColor);
+        expect((await readColors()).labelColor).toBe(expectedText);
       }
+
+      const lowStockDetail = page!.locator("#dash-stock-attention-list .dash-attention-detail.low").first();
+      expect(await lowStockDetail.evaluate((element) => getComputedStyle(element).color)).toBe(
+        await resolvedThemeColor("--accent-red"),
+      );
+      expect(await resolvedThemeColor("--accent-green")).toBe(
+        design === "original" ? "rgb(34, 197, 94)" : "rgb(30, 125, 50)",
+      );
 
       const issueLink = page!.locator(
         '#dash-notice-attention-list [data-notice-id="notice-category-issue"] .dash-notice-link',
@@ -419,6 +456,64 @@ describe("mounted Dashboard attention", () => {
           body: { key: "notice:notice-category-issue", dismissed: true },
         },
       ]);
+      expect(pageErrors).toEqual([]);
+    }, 40_000);
+    it(`uses the same Okabe–Ito presentation on mounted Noticeboard categories in ${design}`, async () => {
+      noticesPayload = CATEGORY_NOTICES;
+      await page!.setViewportSize({ width: 1100, height: 900 });
+      await page!.goto(url(`view=noticeboard&case=notice-category-colors&design=${design}`), { waitUntil: "networkidle" });
+      await page!.waitForFunction(
+        (count) => document.querySelectorAll("#noticeboard-container .protocol-card").length === count,
+        NOTICE_CATEGORY_CASES.length,
+      );
+
+      for (const item of NOTICE_CATEGORY_CASES) {
+        const card = page!.locator(`#noticeboard-container [data-notice-id="${item.id}"]`);
+        const chip = card.locator(".notice-category-chip");
+        expect((await chip.textContent())?.trim()).toBe(design === "original" ? item.boardLabel : item.label);
+        expect((await card.locator(".protocol-title").textContent())?.trim()).toBe(`${item.label} category post`);
+        const presentation = await card.evaluate((element) => {
+          const cardStyle = getComputedStyle(element);
+          const chip = element.querySelector(".notice-category-chip");
+          if (chip === null) throw new Error("Missing mounted notice category chip");
+          const chipStyle = getComputedStyle(chip);
+          return {
+            borderColor: cardStyle.borderLeftColor,
+            borderStyle: cardStyle.borderLeftStyle,
+            borderWidth: cardStyle.borderLeftWidth,
+            chipBackground: chipStyle.backgroundColor,
+            chipColor: chipStyle.color,
+          };
+        });
+        expect(presentation).toEqual({
+          borderColor: item.accent,
+          borderStyle: "solid",
+          borderWidth: "4px",
+          chipBackground: item.tint,
+          chipColor: design === "original" ? item.originalText : "rgb(23, 21, 18)",
+        });
+      }
+
+      const issueCard = page!.locator('#noticeboard-container [data-notice-id="notice-category-issue"]');
+      const expectedBlue = design === "original" ? "rgb(14, 165, 233)" : "rgb(29, 79, 162)";
+      const expectedRed = design === "original" ? "rgb(239, 68, 68)" : "rgb(222, 44, 30)";
+      const author = page!.getByText("Category Author", { exact: true });
+      expect(await author.evaluate((element) => getComputedStyle(element).color)).toBe(expectedBlue);
+      const deleteButton = issueCard.locator('button[title="Delete"]');
+      await deleteButton.hover();
+      await expect.poll(() => deleteButton.evaluate((element) => getComputedStyle(element).color)).toBe(expectedRed);
+      expect(await resolvedThemeColor("--accent-green")).toBe(
+        design === "original" ? "rgb(34, 197, 94)" : "rgb(30, 125, 50)",
+      );
+      if (design === "bauhaus") {
+        const thumbsGlyph = issueCard.locator('button[title="Thumbs Up"] .glyph-circle-blue');
+        const heartGlyph = issueCard.locator('button[title="Heart"] .glyph-circle-red');
+        expect(await thumbsGlyph.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(expectedBlue);
+        expect(await heartGlyph.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(expectedRed);
+      }
+
+      await page!.setViewportSize({ width: 390, height: 844 });
+      expect(await page!.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       expect(pageErrors).toEqual([]);
     }, 40_000);
   }

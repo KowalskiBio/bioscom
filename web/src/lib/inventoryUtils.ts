@@ -16,11 +16,45 @@ export function materialTypeColorClass(type: string | null | undefined): string 
   }
 }
 
+const NOTICE_CATEGORY_COLORS = {
+  issue: { accent: "#D55E00", rgb: "213, 94, 0", originalText: "#F0B2A6" },
+  info: { accent: "#0072B2", rgb: "0, 114, 178", originalText: "#A9C7FF" },
+  suggestion: { accent: "#009E73", rgb: "0, 158, 115", originalText: "#ABDDB6" },
+  general: { accent: "#999999", rgb: "153, 153, 153", originalText: "#C3CAD4" },
+} as const;
+
+type NoticeCategoryPalette = (typeof NOTICE_CATEGORY_COLORS)[keyof typeof NOTICE_CATEGORY_COLORS];
+
+export function noticeCategoryPalette(
+  category: string | null | undefined,
+  design: "original" | "bauhaus" = "original",
+): NoticeCategoryPalette & { tint: string; text: string } {
+  const normalized = category?.trim().toLowerCase();
+  const colors = normalized === "issue" || normalized === "info" || normalized === "suggestion"
+    ? NOTICE_CATEGORY_COLORS[normalized]
+    : NOTICE_CATEGORY_COLORS.general;
+  return {
+    ...colors,
+    tint: `rgba(${colors.rgb}, 0.15)`,
+    text: design === "bauhaus" ? "#171512" : colors.originalText,
+  };
+}
+
+export function effectivePosition(
+  source: { position?: string | null; customPosition?: string | null } | null | undefined,
+): string | null | undefined {
+  const customPosition = source?.customPosition;
+  if (customPosition !== null && customPosition !== undefined && customPosition.trim() !== "") {
+    return customPosition;
+  }
+  return source?.position;
+}
+
 export function computePositions(cont: Container): Record<string, string> {
   const map: Record<string, string> = {};
   for (const sh of cont.shelves ?? []) {
     for (const ch of sh.chemicals ?? []) {
-      map[ch.id] = ch.customPosition ?? ch.position ?? "—";
+      map[ch.id] = effectivePosition(ch) ?? "—";
     }
   }
   return map;

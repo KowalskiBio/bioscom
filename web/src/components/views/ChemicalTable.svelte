@@ -14,6 +14,7 @@
     type ChemicalTableLayout,
   } from "../../lib/chemicalColumns";
   import {
+    effectivePosition,
     highlightHtml,
     materialTypeColorClass,
     quantityClass,
@@ -63,7 +64,7 @@
   }
 
   function positionText(ch: Chemical): string {
-    return posMap[ch.id] ?? ch.customPosition ?? ch.position ?? "—";
+    return posMap[ch.id] ?? effectivePosition(ch) ?? "—";
   }
 
   function rowLocationText(ch: Chemical): string {

@@ -18,7 +18,7 @@
     DASHBOARD_STOCK_ALERT_LIMIT,
     withoutDismissedAlerts,
   } from "../../lib/dashboardAttention";
-  import { stripEmoji } from "../../lib/inventoryUtils";
+  import { noticeCategoryPalette, stripEmoji } from "../../lib/inventoryUtils";
   import { openChemicalForm } from "../../lib/forms";
   import { navigateTo } from "../../lib/router.svelte";
   import { theme } from "../../lib/theme.svelte";
@@ -392,7 +392,8 @@
                             {#each noticeAlerts as item (item.dismissalKey)}
                                 {@const pending = userId !== null && dashboardDismissals.pendingFor(userId, item.dismissalKey)}
                                 {@const error = userId !== null ? dashboardDismissals.errorFor(userId, item.dismissalKey) : ""}
-                                <li class="dash-item dash-attention-item dash-notice-item" data-attention-key={item.dismissalKey} data-notice-id={item.noticeId} data-notice-category={item.category.toLowerCase()}>
+                                {@const categoryPalette = noticeCategoryPalette(item.category, design)}
+                                <li class="dash-item dash-attention-item dash-notice-item" data-attention-key={item.dismissalKey} data-notice-id={item.noticeId} data-notice-category={item.category.toLowerCase()} style={`--dash-notice-accent:${categoryPalette.accent};--dash-notice-rgb:${categoryPalette.rgb};--dash-notice-text:${categoryPalette.text};`}>
                                     <a class="dash-attention-link dash-notice-link" href={item.href} aria-label={`${item.title}. Open notice board`}>
                                         <span class="stat-glyph g-square g-blue" aria-hidden="true"></span>
                                         <span class="dash-item-main">

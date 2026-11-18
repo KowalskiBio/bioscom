@@ -103,6 +103,7 @@ const CLEAR_DETAIL_PATH = `/api/groups/group-a/materials/${CLEAR_MATERIAL_ID}`;
 
 let detailCalls = 0;
 let detailPhase: "initial" | "updated" = "initial";
+let fixtureVariant = "default";
 let mergeCandidateCalls = 0;
 let events: string[] = [];
 let writes: RecordedWrite[] = [];
@@ -186,8 +187,8 @@ function primaryStock(): StockDto {
     concentrationUnit: "mol/L",
     note: "Original stock note",
     status: "available",
-    position: "A-17",
-    customPosition: "A-17",
+    position: fixtureVariant === "legacy-position" ? "AH1" : "A-17",
+    customPosition: fixtureVariant === "legacy-position" ? "" : "A-17",
     location: {
       id: "loc-room-main",
       name: "Material Detail Room",
@@ -496,6 +497,7 @@ afterAll(async () => {
 beforeEach(() => {
   detailCalls = 0;
   detailPhase = "initial";
+  fixtureVariant = "default";
   mergeCandidateCalls = 0;
   events = [];
   writes = [];
@@ -507,6 +509,7 @@ function url(query = ""): string {
 }
 
 async function gotoDetail(query = ""): Promise<void> {
+  fixtureVariant = new URLSearchParams(query).get("variant") ?? "default";
   await page!.setViewportSize({ width: 1100, height: 900 });
   await page!.goto(url(query), { waitUntil: "networkidle" });
   await page!.waitForSelector("#material-detail");
@@ -705,6 +708,42 @@ describe("mounted MaterialDetailModal", () => {
       "Safety notes": "corrosive irritant",
     });
     expect(await page!.locator("#material-detail .material-detail-action").count()).toBe(2);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+});
+
+describe("mounted MaterialDetailModal generated-position editing", () => {
+  it.each([
+    { behavior: "retains an unchanged generated position", expected: "AH1" },
+    { behavior: "retains the generated position on a name-only edit", name: "Tris base renamed", expected: "AH1" },
+    { behavior: "saves a meaningful manual override", position: "Z9", expected: "Z9" },
+    { behavior: "sends an explicit blank clear", position: "   ", expected: "" },
+  ])("$behavior", async ({ name, position, expected }) => {
+    await gotoDetail(`material=${MATERIAL_ID}&variant=legacy-position`);
+    await openEditor();
+
+    expect(await inputValue("f-cpos")).toBe("AH1");
+    if (name !== undefined) {
+      await page!.fill("#f-cn2", name);
+    }
+    if (position !== undefined) {
+      await page!.fill("#f-cpos", position);
+    }
+    await page!.click("#modal-confirm");
+    await expect.poll(() => writes.length, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => detailCalls, { timeout: 10_000 }).toBe(2);
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      method: "PUT",
+      path: PUT_PATH,
+      requestedWith: "XMLHttpRequest",
+    });
+    expect(writes[0]?.body).toMatchObject({
+      ...(name === undefined ? {} : { name }),
+      customPosition: expected,
+    });
+    expect(writes[0]?.body).not.toHaveProperty("position");
     expect(pageErrors).toEqual([]);
   }, 40_000);
 });

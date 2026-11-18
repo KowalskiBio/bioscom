@@ -6,7 +6,7 @@
   import { showToast } from "../../lib/stores/toast.svelte";
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
     import { opDeleteNotice, opAddReaction, opDeleteReaction } from "../../lib/featureOps";
-  import { countWords, stripEmoji } from "../../lib/inventoryUtils";
+  import { countWords, noticeCategoryPalette, stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
 
   const design = $derived(theme.design);
@@ -14,12 +14,6 @@
   const notices = $derived([...noticeList.items].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)));
   const isSuperadmin = $derived(session.user?.role === "superadmin");
 
-  const categoryColors: Record<string, string> = {
-    suggestion: "rgba(34, 197, 94, 0.15)",
-    issue: "rgba(239, 68, 68, 0.15)",
-    info: "rgba(59, 130, 246, 0.15)",
-    general: "rgba(255, 255, 255, 0.05)",
-  };
   const categoryLabels: Record<string, string> = {
     suggestion: "💡 Suggestion",
     issue: "⚠️ Issue",
@@ -80,12 +74,13 @@
 <div id="noticeboard-container" class="protocols-container" style={`display: ${notices.length === 0 ? "none" : "block"};`}>
     {#each notices as n (n.id)}
       {@const cat = n.category ?? "general"}
+      {@const categoryPalette = noticeCategoryPalette(cat, design)}
       {@const canDelete = isSuperadmin || n.authorUid === session.user?.uid}
       {@const reactions = Object.values(n.reactions ?? {}).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))}
-        <div class="protocol-card fade-in" style={`border-left: 4px solid ${cat === "suggestion" ? "var(--accent-green)" : cat === "issue" ? "var(--accent-red, #ef4444)" : cat === "info" ? "var(--accent-blue)" : "var(--border-subtle)"};`}>
+        <div class="protocol-card fade-in" data-notice-id={n.id} style={`border-left: 4px solid ${categoryPalette.accent};`}>
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
                 <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem;">
-                    <span style={`font-size: 0.7rem; background: ${categoryColors[cat] ?? categoryColors.general}; padding: 0.15rem 0.4rem; border-radius: 3px; font-weight: 600; margin-right: 0.25rem;`}>{design === "bauhaus" ? (categoryPlainLabels[cat] ?? categoryPlainLabels.general) : (categoryLabels[cat] ?? categoryLabels.general)}</span>
+                    <span class="notice-category-chip" style={`font-size: 0.7rem; color: ${categoryPalette.text}; background: ${categoryPalette.tint}; padding: 0.15rem 0.4rem; border-radius: 3px; font-weight: 600; margin-right: 0.25rem;`}>{design === "bauhaus" ? (categoryPlainLabels[cat] ?? categoryPlainLabels.general) : (categoryLabels[cat] ?? categoryLabels.general)}</span>
                     {#if n.authorName}<span style="font-weight: 600; color: var(--accent-blue); display: inline-flex; align-items: center;">{#if n.authorAvatar}<img src={n.authorAvatar} style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-subtle); margin-right: 0.35rem;" title={design === "bauhaus" ? stripEmoji(n.authorName) : n.authorName}>{/if}{design === "bauhaus" ? stripEmoji(n.authorName) : n.authorName}</span>{/if}
                     {#if n.authorLab}<span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 0.5rem;">{design === "bauhaus" ? stripEmoji(n.authorLab) : n.authorLab}</span>{/if}
                     {#if n.timestamp}<span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 0.5rem;">{new Date(n.timestamp).toLocaleString()}</span>{/if}

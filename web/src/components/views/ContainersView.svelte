@@ -2,7 +2,7 @@
   import type { Chemical, Container } from "@bioscom/shared";
   import { inventory, inventoryFor } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
-  import { countChems, escapeHtml, stripEmoji } from "../../lib/inventoryUtils";
+  import { countChems, effectivePosition, escapeHtml, stripEmoji } from "../../lib/inventoryUtils";
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
@@ -157,7 +157,7 @@
           {@const barcode = (ch.barcode ?? "").trim()}
           <div class="row-actions">
             {#if barcode !== ""}
-              <button class="btn-inline" title={`Print label for ${ch.name}`} aria-label={`Print label for ${ch.name}`} onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: room.name, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}>
+              <button class="btn-inline" title={`Print label for ${ch.name}`} aria-label={`Print label for ${ch.name}`} onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: room.name, position: effectivePosition(ch) ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg>
               </button>
             {/if}

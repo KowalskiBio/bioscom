@@ -119,7 +119,8 @@ function otherGroupTree(): InventoryTree {
   } as InventoryTree;
 }
 
-window.location.hash = "#dashboard";
+const view = params.get("view") === "noticeboard" ? "noticeboard" : "dashboard";
+window.location.hash = view === "noticeboard" ? "#noticeboard" : "#dashboard";
 setDesign(design);
 setUser({
   uid,
@@ -174,7 +175,14 @@ Object.assign(window, {
   },
 });
 
-const { default: DashboardView } = await import("../../src/components/views/DashboardView.svelte");
 const target = document.getElementById("app");
 if (target === null) throw new Error("Missing dashboard test target");
-mount(DashboardView, { target });
+if (view === "noticeboard") {
+  const { fetchNotices } = await import("../../src/lib/stores/notices.svelte");
+  await fetchNotices();
+  const { default: NoticeboardView } = await import("../../src/components/views/NoticeboardView.svelte");
+  mount(NoticeboardView, { target });
+} else {
+  const { default: DashboardView } = await import("../../src/components/views/DashboardView.svelte");
+  mount(DashboardView, { target });
+}

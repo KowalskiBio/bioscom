@@ -38,11 +38,17 @@ interface InventoryState {
         quantity?: number;
         unit?: string;
         position?: string;
+        customPosition?: string;
       }>;
       containers: Array<{
         id: string;
         name: string;
-        shelves: Array<{ id: string; name: string; chemicals: Array<{ id: string; name: string; position?: string; quantity?: number }> }>;
+        chemicals?: Array<{ id: string; name: string; position?: string; customPosition?: string }>;
+        shelves: Array<{
+          id: string;
+          name: string;
+          chemicals: Array<{ id: string; name: string; position?: string; customPosition?: string; quantity?: number }>;
+        }>;
       }>;
     }>;
   };
@@ -252,6 +258,281 @@ describe("container, shelf and chemical ops", () => {
       .send({ roomId });
     expect(removedContainer.status).toBe(200);
     expect((removedContainer.body as InventoryState).tree.rooms[0]?.containers).toEqual([]);
+  });
+});
+
+describe("generated and manual position overrides", () => {
+  interface AlphabeticalShelf {
+    roomId: string;
+    containerId: string;
+    shelfId: string;
+  }
+
+  async function makeAlphabeticalShelf(roomName: string): Promise<AlphabeticalShelf> {
+    const room = (
+      await request(baseUrl)
+        .post("/api/groups/group-a/inventory/rooms")
+        .set(XRW)
+        .set("Cookie", ownerCookie)
+        .send({ name: roomName })
+    ).body as InventoryState;
+    const roomId = room.tree.rooms[room.tree.rooms.length - 1]?.id ?? "";
+    const container = (
+      await request(baseUrl)
+        .post("/api/groups/group-a/inventory/containers")
+        .set(XRW)
+        .set("Cookie", ownerCookie)
+        .send({ roomId, name: "Position Cabinet", type: "cabinet", cabinetMethod: "alphabetical", shelves: ["Shelf A-D"] })
+    ).body as InventoryState;
+    const created = container.tree.rooms.find((candidate) => candidate.id === roomId)?.containers[0];
+    return { roomId, containerId: created?.id ?? "", shelfId: created?.shelves[0]?.id ?? "" };
+  }
+
+  function readDoc(): {
+    rooms: Array<{
+      id: string;
+      containers: Array<{
+        id: string;
+        shelves: Array<{ id: string; chemicals: Array<{ id: string; name: string; position?: string; customPosition?: string }> }>;
+      }>;
+    }>;
+  } {
+    const row = getDatabase(dbPath)
+      .prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'group-a'")
+      .get() as { tree: string };
+    return JSON.parse(row.tree) as ReturnType<typeof readDoc>;
+  }
+
+  function writeDoc(doc: unknown): void {
+    getDatabase(dbPath)
+      .prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = 'group-a'")
+      .run(JSON.stringify(doc));
+  }
+
+  function storedChemical(
+    state: InventoryState,
+    target: AlphabeticalShelf,
+    chemicalId: string,
+  ): { id: string; name: string; position?: string; customPosition?: string } {
+    const room = state.tree.rooms.find((candidate) => candidate.id === target.roomId);
+    const container = room?.containers.find((candidate) => candidate.id === target.containerId);
+    const shelf = container?.shelves.find((candidate) => candidate.id === target.shelfId);
+    const chemical = shelf?.chemicals.find((candidate) => candidate.id === chemicalId);
+    if (chemical === undefined) {
+      throw new Error("chemical not found in response");
+    }
+    return chemical;
+  }
+
+  function stockRow(chemicalId: string): { position: string | null; custom_position: string | null } {
+    return getDatabase(dbPath)
+      .prepare("SELECT position, custom_position FROM stocks WHERE id = ?")
+      .get(chemicalId) as { position: string | null; custom_position: string | null };
+  }
+
+  it("seeds an automatically generated code into both position fields and the SQL mirror", async () => {
+    const target = await makeAlphabeticalShelf("Generated Code Room");
+    const created = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, name: "Hydrochloric acid" });
+    expect(created.status).toBe(201);
+    const tree = (created.body as InventoryState).tree;
+    const chemicalId = tree.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId)?.chemicals[0]?.id ?? "";
+    const stored = storedChemical(created.body as InventoryState, target, chemicalId);
+    expect(stored.position).toBe("AH1");
+    expect(stored.customPosition).toBe("AH1");
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: "AH1" });
+  });
+
+  it("treats blank manual custom position as absent so automatic generation still applies", async () => {
+    const target = await makeAlphabeticalShelf("Blank Custom Room");
+    const created = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({
+        roomId: target.roomId,
+        containerId: target.containerId,
+        shelfId: target.shelfId,
+        name: "Hydrochloric acid",
+        customPosition: "   ",
+      });
+    expect(created.status).toBe(201);
+    const tree = (created.body as InventoryState).tree;
+    const chemicalId = tree.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId)?.chemicals[0]?.id ?? "";
+    const stored = storedChemical(created.body as InventoryState, target, chemicalId);
+    expect(stored.position).toBe("AH1");
+    expect(stored.customPosition).toBe("AH1");
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: "AH1" });
+  });
+
+  it("keeps an explicit manual position authoritative without cloning it into customPosition", async () => {
+    const target = await makeAlphabeticalShelf("Manual Position Room");
+    const withCustom = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({
+        roomId: target.roomId,
+        containerId: target.containerId,
+        shelfId: target.shelfId,
+        name: "Hydrochloric acid",
+        position: "M1",
+        customPosition: "M2",
+      });
+    expect(withCustom.status).toBe(201);
+    const withCustomTree = (withCustom.body as InventoryState).tree;
+    const firstShelf = withCustomTree.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId);
+    const first = firstShelf?.chemicals[0];
+    expect(first?.position).toBe("M1");
+    expect(first?.customPosition).toBe("M2");
+
+    const positionOnly = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({
+        roomId: target.roomId,
+        containerId: target.containerId,
+        shelfId: target.shelfId,
+        name: "Hydrochloric acid",
+        position: "M3",
+      });
+    expect(positionOnly.status).toBe(201);
+    const positionOnlyTree = (positionOnly.body as InventoryState).tree;
+    const second = positionOnlyTree.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId)?.chemicals[1];
+    expect(second?.position).toBe("M3");
+    expect(second?.customPosition).toBeUndefined();
+  });
+
+  it("does not fabricate a position for direct rooms or containers without a shelf", async () => {
+    const room = (
+      await request(baseUrl)
+        .post("/api/groups/group-a/inventory/rooms")
+        .set(XRW)
+        .set("Cookie", ownerCookie)
+        .send({ name: "No Shelf Position Room" })
+    ).body as InventoryState;
+    const roomId = room.tree.rooms[room.tree.rooms.length - 1]?.id ?? "";
+
+    const direct = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId, name: "Room ethanol", customPosition: "   " });
+    expect(direct.status).toBe(201);
+    const directChemical = (direct.body as InventoryState).tree.rooms
+      .find((candidate) => candidate.id === roomId)?.chemicals?.[0];
+    expect(directChemical?.position).toBeUndefined();
+    expect(directChemical?.customPosition).toBeUndefined();
+    expect(stockRow(directChemical?.id ?? "")).toEqual({ position: null, custom_position: null });
+
+    const container = (
+      await request(baseUrl)
+        .post("/api/groups/group-a/inventory/containers")
+        .set(XRW)
+        .set("Cookie", ownerCookie)
+        .send({ roomId, name: "Shelf-less Cabinet", type: "cabinet", cabinetMethod: "alphabetical" })
+    ).body as InventoryState;
+    const containerId = container.tree.rooms.find((candidate) => candidate.id === roomId)?.containers[0]?.id ?? "";
+
+    const withoutShelf = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId, containerId, name: "Cabinet ethanol", customPosition: " " });
+    expect(withoutShelf.status).toBe(201);
+    const withoutShelfChemical = (withoutShelf.body as InventoryState).tree.rooms
+      .find((candidate) => candidate.id === roomId)?.containers.find((candidate) => candidate.id === containerId)
+      ?.chemicals?.[0];
+    expect(withoutShelfChemical?.position).toBeUndefined();
+    expect(withoutShelfChemical?.customPosition).toBeUndefined();
+    expect(stockRow(withoutShelfChemical?.id ?? "")).toEqual({ position: null, custom_position: null });
+  });
+
+  it("clears a legacy empty override without losing an existing generated position", async () => {
+    const target = await makeAlphabeticalShelf("Legacy Override Room");
+    const created = await request(baseUrl)
+      .post("/api/groups/group-a/inventory/chemicals")
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, name: "Hydrochloric acid" });
+    expect(created.status).toBe(201);
+    const createdTree = (created.body as InventoryState).tree;
+    const chemicalId = createdTree.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId)?.chemicals[0]?.id ?? "";
+
+    const legacy = readDoc();
+    const legacyChemical = legacy.rooms
+      .find((candidate) => candidate.id === target.roomId)
+      ?.containers.find((candidate) => candidate.id === target.containerId)
+      ?.shelves.find((candidate) => candidate.id === target.shelfId)?.chemicals.find((candidate) => candidate.id === chemicalId);
+    if (legacyChemical === undefined) {
+      throw new Error("seeded chemical missing from document");
+    }
+    legacyChemical.position = "AH1";
+    legacyChemical.customPosition = "";
+    writeDoc(legacy);
+
+    const cleaned = await request(baseUrl)
+      .put(`/api/groups/group-a/inventory/chemicals/${chemicalId}`)
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, customPosition: "   " });
+    expect(cleaned.status).toBe(200);
+    const cleanedChemical = storedChemical(cleaned.body as InventoryState, target, chemicalId);
+    expect(cleanedChemical.position).toBe("AH1");
+    expect(cleanedChemical.customPosition).toBeUndefined();
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: null });
+
+    const renamed = await request(baseUrl)
+      .put(`/api/groups/group-a/inventory/chemicals/${chemicalId}`)
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, name: "Hydrochloric acid 2" });
+    expect(renamed.status).toBe(200);
+    const renamedChemical = storedChemical(renamed.body as InventoryState, target, chemicalId);
+    expect(renamedChemical.position).toBe("AH1");
+    expect(renamedChemical.customPosition).toBeUndefined();
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: null });
+
+    const overridden = await request(baseUrl)
+      .put(`/api/groups/group-a/inventory/chemicals/${chemicalId}`)
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, customPosition: "Z9" });
+    expect(overridden.status).toBe(200);
+    const overriddenChemical = storedChemical(overridden.body as InventoryState, target, chemicalId);
+    expect(overriddenChemical.position).toBe("AH1");
+    expect(overriddenChemical.customPosition).toBe("Z9");
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: "Z9" });
+
+    const cleared = await request(baseUrl)
+      .put(`/api/groups/group-a/inventory/chemicals/${chemicalId}`)
+      .set(XRW)
+      .set("Cookie", ownerCookie)
+      .send({ roomId: target.roomId, containerId: target.containerId, shelfId: target.shelfId, customPosition: "" });
+    expect(cleared.status).toBe(200);
+    const clearedChemical = storedChemical(cleared.body as InventoryState, target, chemicalId);
+    expect(clearedChemical.position).toBe("AH1");
+    expect(clearedChemical.customPosition).toBeUndefined();
+    expect(stockRow(chemicalId)).toEqual({ position: "AH1", custom_position: null });
   });
 });
 

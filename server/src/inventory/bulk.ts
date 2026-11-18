@@ -15,7 +15,7 @@ import {
   locationChemicals,
   resolveStockTarget,
 } from "./doc.js";
-import { getOrCreatePosition } from "./positions.js";
+import { assignCreatePosition } from "./positions.js";
 
 export function registerBulkImportRoutes(app: FastifyInstance, config: ServerConfig, hub: InventoryHub): void {
   const db = (): Database.Database => getDatabase(config.dbPath);
@@ -99,6 +99,13 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
               continue;
             }
           }
+          const assignment = assignCreatePosition({
+            position: item.position,
+            customPosition: item.customPosition,
+            container: target.container,
+            shelf: target.shelf,
+            name: item.name,
+          });
           const chemical: Chemical = {
             id: genId(),
             name: item.name,
@@ -108,8 +115,8 @@ export function registerBulkImportRoutes(app: FastifyInstance, config: ServerCon
             unit: item.unit,
             concentration: item.concentration,
             concUnit: item.concUnit,
-            position: item.position ?? item.customPosition ?? (target.shelf !== null && target.container !== null ? getOrCreatePosition(target.container, target.shelf, item.name) : undefined),
-            customPosition: item.customPosition,
+            position: assignment.position,
+            customPosition: assignment.customPosition,
             note: item.note,
             barcode: code ?? undefined,
             type: item.type,

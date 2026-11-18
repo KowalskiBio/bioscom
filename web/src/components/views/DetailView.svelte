@@ -7,6 +7,7 @@
   import { session } from "../../lib/stores/session.svelte";
   import {
     computePositions,
+    effectivePosition,
     parseDeepFreezerShelf,
     chemMatchesQuery,
     sortChems,
@@ -558,7 +559,7 @@
   {@const barcode = (ch.barcode ?? "").trim()}
   <div class="row-actions">
     {#if barcode !== ""}
-      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
+      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: effectivePosition(ch) ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
     {/if}
     {#if opts.canEdit && !isReader && room !== undefined && cont !== undefined}
       <button class="btn-inline" title="Edit" aria-label={`Edit ${ch.name}`} onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -573,7 +574,7 @@
   {@const barcode = (ch.barcode ?? "").trim()}
   <div class="row-actions">
     {#if barcode !== ""}
-      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: ch.customPosition ?? ch.position ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
+      <button class="btn-inline" title="Print label" aria-label="Print label" onclick={() => openStockLabelModal({ name: ch.name, barcode, type: ch.type ?? undefined, locationText: `${room?.name ?? ""} / ${cont?.name ?? ""}`, position: effectivePosition(ch) ?? null, lotCode: ch.batchInfo?.lotCode ?? null, expiresAt: ch.batchInfo?.expiresAt ?? null })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M16 5v14"/><path d="M20 5v14"/></svg></button>
     {/if}
     <button class="btn-inline" title="Edit" aria-label={`Edit ${ch.name}`} onclick={() => openChemicalForm(room, cont, { editChemId: ch.id })}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
     {#if !isReader}

@@ -46,6 +46,43 @@ export function generateSequentialBoxPosition(shelf: Shelf): string {
   return "A1";
 }
 
+export function normalizePositionCode(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+export interface CreatePositionAssignmentInput {
+  position: string | undefined;
+  customPosition: string | undefined;
+  container: Container | null;
+  shelf: Shelf | null;
+  name: string;
+}
+
+export interface CreatePositionAssignment {
+  position: string | undefined;
+  customPosition: string | undefined;
+}
+
+export function assignCreatePosition(input: CreatePositionAssignmentInput): CreatePositionAssignment {
+  const manualPosition = normalizePositionCode(input.position);
+  const manualCustomPosition = normalizePositionCode(input.customPosition);
+  if (manualPosition !== undefined) {
+    return { position: manualPosition, customPosition: manualCustomPosition };
+  }
+  if (manualCustomPosition !== undefined) {
+    return { position: manualCustomPosition, customPosition: manualCustomPosition };
+  }
+  if (input.container !== null && input.shelf !== null) {
+    const generated = getOrCreatePosition(input.container, input.shelf, input.name);
+    return { position: generated, customPosition: generated };
+  }
+  return { position: undefined, customPosition: undefined };
+}
+
 export function getOrCreatePosition(container: Container, shelf: Shelf, chemName: string): string {
   if (container.type === "cabinet") {
     const isAlphabetical =

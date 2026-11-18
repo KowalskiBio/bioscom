@@ -10,7 +10,7 @@
   } from "../../lib/stores/catalogColumnPreferences.svelte";
   import { router } from "../../lib/router.svelte";
   import { openCatalogStockEditForm, openMaterialDetailModal } from "../../lib/forms";
-  import { materialTypeColorClass } from "../../lib/inventoryUtils";
+  import { effectivePosition, materialTypeColorClass } from "../../lib/inventoryUtils";
   import { roleCanWrite } from "../../lib/ops";
   import {
     catalogDescriptorFieldsForSelection,
@@ -111,7 +111,7 @@
   }
 
   function stockPosition(stock: CatalogStock): string {
-    return stock.customPosition ?? stock.position ?? "";
+    return effectivePosition(stock) ?? "";
   }
 
   function productText(value: string | null | undefined): string {
