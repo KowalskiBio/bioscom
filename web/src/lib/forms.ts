@@ -1,4 +1,16 @@
-import type { Container, Room } from "@bioscom/shared";
+import type { Chemical, Container, Room } from "@bioscom/shared";
+import {
+  DEFAULT_RACK_COLUMNS,
+  DEFAULT_RACK_ROWS,
+  DEFAULT_RACK_SHELVES,
+  MAX_RACK_COLUMNS,
+  MAX_RACK_ROWS,
+  MAX_RACK_SHELVES,
+  resolveRackColumns,
+  resolveRackRows,
+  resolveRackShelves,
+  validateAttributes,
+} from "@bioscom/shared";
 import { openModal, closeModal } from "./modal.svelte";
 import { showToast } from "./stores/toast.svelte";
 import {
@@ -7,6 +19,11 @@ import {
   opDeleteRoom,
   opAddContainer,
   opEditContainer,
+  opAddDeepFreezer,
+  opAddDeepFreezerRack,
+  opAddDeepFreezerBox,
+  opUpdateDeepFreezerGrid,
+  opMoveDeepFreezerRack,
   opShareContainer,
   roleCanWrite,
   type ShelfSpec,
@@ -24,9 +41,9 @@ import {
   opEditAsset,
   resolveAutoShelf,
 } from "./ops";
-import { countWords } from "./inventoryUtils";
+import { countWords, effectivePosition, stripEmoji } from "./inventoryUtils";
 import { verifyCaptchaAndExecute } from "./captcha";
-import { router } from "./router.svelte";
+import { router, navigateTo } from "./router.svelte";
 import RoomFormModal from "../components/modals/RoomFormModal.svelte";
 import ContainerFormModal from "../components/modals/ContainerFormModal.svelte";
 import ChemicalFormModal from "../components/modals/ChemicalFormModal.svelte";
@@ -39,6 +56,10 @@ import InstrumentFormModal from "../components/modals/InstrumentFormModal.svelte
 import BookingModal from "../components/modals/BookingModal.svelte";
 import CatalogFormModal from "../components/modals/CatalogFormModal.svelte";
 import PrintRequestModal from "../components/modals/PrintRequestModal.svelte";
+import MaterialDetailModal from "../components/modals/MaterialDetailModal.svelte";
+import MaterialMergeModal from "../components/modals/MaterialMergeModal.svelte";
+import BulkImportModal from "../components/modals/BulkImportModal.svelte";
+import StockLabelModal from "../components/modals/StockLabelModal.svelte";
 import {
   opCreateNotice,
   opUpdateNotice,
@@ -51,6 +72,14 @@ import {
   opUpdateProfile,
 } from "./featureOps";
 import { session } from "./stores/session.svelte";
+import { prefs } from "./stores/prefs.svelte";
+import { catalog } from "./stores/catalog.svelte";
+import { currentGroup } from "./stores/currentGroup.svelte";
+import { fetchInventory, inventory, inventoryFor } from "./stores/inventory.svelte";
+
+function isBauhaus(): boolean {
+  return document.body.dataset.design === "bauhaus";
+}
 
 export function openNoticeForm(edit?: { id: string; title: string; content: string; category: string }): void {
   const form = { title: edit?.title ?? "", content: edit?.content ?? "", category: edit?.category ?? "general" };
@@ -82,33 +111,116 @@ export function openNoticeForm(edit?: { id: string; title: string; content: stri
   });
 }
 
-export function openInstrumentForm(edit?: { id: string; name: string; description: string; location: string; contactPerson: string; contactEmail: string }): void {
+interface InstrumentEditorRecord {
+  id: string;
+  name: string;
+  description: string;
+  location: string;
+  contactPerson: string;
+  contactEmail: string;
+  roomGroupId?: string | null;
+  roomId?: string | null;
+}
+
+interface InstrumentEditorDraft {
+  name: string;
+  description: string;
+  location: string;
+  contactPerson: string;
+  contactEmail: string;
+  roomId: string;
+}
+
+export function openInstrumentForm(edit?: InstrumentEditorRecord, draft?: InstrumentEditorDraft): void {
+  const groupId = currentGroup.groupId;
+  const currentTree = inventoryFor(groupId);
+  const physicalRooms = currentTree?.rooms ?? [];
+  const pairedRoomId = edit !== undefined && edit.roomGroupId === groupId ? (edit.roomId ?? "") : "";
+  const confirmedRoomId = physicalRooms.some((room) => room.id === pairedRoomId) ? pairedRoomId : "";
   const form = {
-    name: edit?.name ?? "",
-    description: edit?.description ?? "",
-    location: edit?.location ?? "",
-    contactPerson: edit?.contactPerson ?? "",
-    contactEmail: edit?.contactEmail ?? "",
+    name: draft?.name ?? edit?.name ?? "",
+    description: draft?.description ?? edit?.description ?? "",
+    location: draft?.location ?? edit?.location ?? "",
+    contactPerson: draft?.contactPerson ?? edit?.contactPerson ?? "",
+    contactEmail: draft?.contactEmail ?? edit?.contactEmail ?? "",
+    roomId: draft?.roomId ?? confirmedRoomId,
   };
+
+  function createPhysicalRoom(): void {
+    const savedDraft = {
+      name: form.name,
+      description: form.description,
+      location: form.location,
+      contactPerson: form.contactPerson,
+      contactEmail: form.contactEmail,
+      roomId: form.roomId,
+    };
+    openRoomForm("add", undefined, () => {
+      if (groupId === null || currentGroup.groupId !== groupId) return;
+      void fetchInventory(groupId)
+        .catch(() => undefined)
+        .then(() => {
+          if (currentGroup.groupId === groupId) openInstrumentForm(edit, savedDraft);
+        });
+    });
+  }
+
   openModal({
     title: edit === undefined ? "Add Instrument" : "Edit Instrument",
     component: InstrumentFormModal,
-    props: { form },
+    props: {
+      form,
+      rooms: physicalRooms,
+      roomStatus: currentTree === null ? (inventory.loadError === "" ? "loading" : "error") : "ready",
+      onCreateRoom: createPhysicalRoom,
+    },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
-      const location = form.location.trim();
-      if (name === "" || location === "") {
-        showToast("Name and location are required", "error");
+      if (name === "") {
+        showToast("Name is required", "error");
         return;
       }
-      const ok =
-        edit === undefined
-          ? await opCreateInstrument({ name, description: form.description.trim() || undefined, location, contactPerson: form.contactPerson.trim() || undefined, contactEmail: form.contactEmail.trim() || undefined })
-          : await opUpdateInstrument(edit.id, { name, description: form.description.trim(), location, contactPerson: form.contactPerson.trim(), contactEmail: form.contactEmail.trim() });
+      const selectedRoom = groupId === null ? undefined : physicalRooms.find((room) => room.id === form.roomId);
+      if (selectedRoom === undefined || groupId === null) {
+        showToast("Select a physical room before saving this instrument", "error");
+        document.getElementById("i-room")?.focus();
+        return;
+      }
+
+      const location = form.location.trim();
+      if (edit === undefined) {
+        const ok = await opCreateInstrument({
+          name,
+          description: form.description.trim() || undefined,
+          location,
+          contactPerson: form.contactPerson.trim() || undefined,
+          contactEmail: form.contactEmail.trim() || undefined,
+          roomGroupId: groupId,
+          roomId: selectedRoom.id,
+        });
+        if (ok) {
+          closeModal();
+          showToast("Instrument added");
+        }
+        return;
+      }
+
+      const body: Parameters<typeof opUpdateInstrument>[1] = {
+        name,
+        description: form.description.trim(),
+        contactPerson: form.contactPerson.trim(),
+        contactEmail: form.contactEmail.trim(),
+      };
+      if (form.location !== (edit.location ?? "")) body.location = location;
+      if (form.roomId !== confirmedRoomId) {
+        body.roomGroupId = groupId;
+        body.roomId = selectedRoom.id;
+      }
+      const ok = await opUpdateInstrument(edit.id, body);
       if (ok) {
         closeModal();
-        showToast(edit === undefined ? "Instrument added" : "Instrument saved");
+        showToast("Instrument saved");
       }
     },
   });
@@ -117,7 +229,7 @@ export function openInstrumentForm(edit?: { id: string; name: string; descriptio
 export function openBookingModal(instrumentId: string, instrumentName: string): void {
   const form = { date: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "10:00", note: "" };
   openModal({
-    title: `Book: ${instrumentName}`,
+    title: isBauhaus() ? `Book: ${stripEmoji(instrumentName)}` : `Book: ${instrumentName}`,
     component: BookingModal,
     props: { form, instrumentId },
     btnText: "Book",
@@ -170,7 +282,7 @@ export function openCatalogForm(edit?: { id: string; name: string; description: 
 export function openPrintRequestModal(item?: { id: string; name: string }): void {
   const form = { note: "", quantity: 1 };
   openModal({
-    title: item === undefined ? "Custom Print Request" : `Request: ${item.name}`,
+    title: item === undefined ? "Custom Print Request" : (isBauhaus() ? `Request: ${stripEmoji(item.name)}` : `Request: ${item.name}`),
     component: PrintRequestModal,
     props: { form, custom: item === undefined },
     btnText: "Send Request",
@@ -185,6 +297,55 @@ export function openPrintRequestModal(item?: { id: string; name: string }): void
         showToast("Print request sent");
       }
     },
+  });
+}
+
+export function openMaterialDetailModal(materialId: string): void {
+  const material = catalog.items.find((item) => item.id === materialId);
+  openModal({
+    title: material?.name ?? "Chemical",
+    size: "xwide",
+    component: MaterialDetailModal,
+    props: { materialId },
+    btnText: null,
+  });
+}
+
+export function openMaterialMergeModal(sourceMaterialId: string, sourceMaterialName: string): void {
+  openModal({
+    title: "Merge material",
+    size: "xwide",
+    component: MaterialMergeModal,
+    props: { sourceMaterialId, sourceMaterialName },
+    btnText: null,
+  });
+}
+
+export function openStockLabelModal(input: {
+  name: string;
+  barcode: string;
+  type?: string;
+  locationText?: string;
+  position?: string | null;
+  lotCode?: string | null;
+  expiresAt?: number | null;
+}): void {
+  openModal({
+    title: "Stock label",
+    size: "wide",
+    component: StockLabelModal,
+    props: input,
+    btnText: null,
+  });
+}
+
+export function openBulkImportModal(room: Room, container: Container): void {
+  openModal({
+    title: `Import items into ${container.name}`,
+    size: "xwide",
+    component: BulkImportModal,
+    props: { room, container },
+    btnText: null,
   });
 }
 
@@ -237,7 +398,7 @@ export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => v
           : room !== undefined && (await opEditRoom(room.id, n, desc));
       if (ok) {
         closeModal();
-        showToast(mode === "add" ? `Room "${n}" added` : "Saved");
+        showToast(mode === "add" ? `Room "${isBauhaus() ? stripEmoji(n) : n}" added` : "Saved");
         onDone?.();
       }
     },
@@ -247,7 +408,7 @@ export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => v
 export function openDeleteRoomConfirm(room: Room, onDone?: () => void): void {
   openModal({
     title: "Delete Room",
-    bodyHtml: `<p>Delete <strong>${escapeHtmlText(room.name)}</strong> and all its contents?</p>`,
+    bodyHtml: `<p>Delete <strong>${escapeHtmlText(isBauhaus() ? stripEmoji(room.name) : room.name)}</strong> and all its contents?</p>`,
     btnText: "Delete",
     onConfirm: () => {
       verifyCaptchaAndExecute(async () => {
@@ -280,9 +441,6 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
     customRanges: [] as Array<{ start: string; end: string }>,
     customExtraNames: "",
     doorCount: 2,
-    freezerType: "standard",
-    rackCount: 4,
-    boxCount: 5,
     isShared: false,
     sharedGroups: {} as Record<string, boolean>,
   };
@@ -304,7 +462,6 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
       const shelves: ShelfSpec[] = [];
       let cabinetMethod: "numerical" | "alphabetical" | "custom" = "numerical";
       let customRangeType: "alphabetical" | "numerical" = "numerical";
-      let actualType: "cabinet" | "fridge" | "freezer" | "deepfreezer" = type;
       if (type === "cabinet") {
         cabinetMethod = form.system as "numerical" | "alphabetical" | "custom";
         if (cabinetMethod === "numerical") {
@@ -332,21 +489,12 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
           }
         }
       } else {
-        if (type === "freezer" && form.freezerType === "deepfreezer") {
-          actualType = "deepfreezer";
-          for (let r = 1; r <= form.rackCount; r += 1) {
-            for (let b = 1; b <= form.boxCount; b += 1) {
-              shelves.push(`Rack ${r} / Box ${b}`);
-            }
-          }
-        } else {
-          for (let i = 0; i < form.countNum; i += 1) {
-            shelves.push(`Shelf ${i + 1}`);
-          }
-          if (type === "fridge") {
-            for (let i = 1; i <= form.doorCount; i += 1) {
-              shelves.push(`Door shelf ${i}`);
-            }
+        for (let i = 0; i < form.countNum; i += 1) {
+          shelves.push(`Shelf ${i + 1}`);
+        }
+        if (type === "fridge" || type === "freezer") {
+          for (let i = 1; i <= form.doorCount; i += 1) {
+            shelves.push(`Door shelf ${i}`);
           }
         }
       }
@@ -359,7 +507,7 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
         name,
         description: form.description.trim() === "" ? undefined : form.description.trim(),
         emoji: form.emoji.trim() === "" ? undefined : form.emoji.trim(),
-        type: actualType,
+        type,
         cabinetMethod: type === "cabinet" ? cabinetMethod : undefined,
         customRangeType: type === "cabinet" && cabinetMethod === "custom" ? customRangeType : undefined,
         shelves,
@@ -381,8 +529,83 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
         }
       }
       closeModal();
-      showToast(`${typeLabel} "${name}" added`);
+      showToast(`${typeLabel} "${isBauhaus() ? stripEmoji(name) : name}" added`);
       onDone?.();
+    },
+  });
+}
+
+function rackDimension(value: number | null | undefined, label: "Rows" | "Columns" | "Shelves per rack", max: number): number | null {
+  const dimension = Number(value);
+  if (!Number.isInteger(dimension) || dimension < 1 || dimension > max) {
+    showToast(`${label} must be a whole number between 1 and ${max}`, "error");
+    return null;
+  }
+  return dimension;
+}
+
+function rackSlotOptions(cont: Container, movingRackName?: string): Array<{ value: number; label: string }> {
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const options: Array<{ value: number; label: string }> = [];
+  for (let slot = 0; slot < rows * columns; slot += 1) {
+    const occupied = Object.entries(cont.rackPositions ?? {}).some(
+      ([rackName, position]) => rackName !== movingRackName && position === slot,
+    );
+    if (!occupied) options.push({ value: slot + 1, label: `Slot ${slot + 1}` });
+  }
+  return options;
+}
+
+export function openDeepFreezerForm(): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = {
+    name: "",
+    description: "",
+    emoji: "",
+    rackRows: DEFAULT_RACK_ROWS,
+    rackColumns: DEFAULT_RACK_COLUMNS,
+    rackShelves: DEFAULT_RACK_SHELVES,
+  };
+  openModal({
+    title: "Add Deep Freezer",
+    component: SimplePromptModal,
+    props: { form, kind: "container" as const, showRackGrid: true, showShelfCount: true },
+    btnText: "Add",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      if (name === "" || name.length > 100) {
+        showToast("Deep freezer name is required (max 100 chars)", "error");
+        return;
+      }
+      const rackRows = rackDimension(form.rackRows, "Rows", MAX_RACK_ROWS);
+      const rackColumns = rackDimension(form.rackColumns, "Columns", MAX_RACK_COLUMNS);
+      const rackShelves = rackDimension(form.rackShelves, "Shelves per rack", MAX_RACK_SHELVES);
+      if (rackRows === null || rackColumns === null || rackShelves === null) return;
+      const description = form.description.trim();
+      if (description.length > 500) {
+        showToast("Description must be 500 characters or fewer", "error");
+        return;
+      }
+      const emoji = form.emoji.trim();
+      if (emoji.length > 16) {
+        showToast("Emoji must be 16 characters or fewer", "error");
+        return;
+      }
+      const id = await opAddDeepFreezer(
+        name,
+        description === "" ? undefined : description,
+        emoji === "" ? undefined : emoji,
+        { rackRows, rackColumns, rackShelves },
+      );
+      if (id !== null) {
+        closeModal();
+        showToast(`Deep freezer "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        navigateTo("detail", { roomId: id, containerId: id });
+      }
     },
   });
 }
@@ -440,9 +663,165 @@ export function openAddShelfForm(room: Room, cont: Container, onDone?: () => voi
         showToast("Enter shelf name", "error");
         return;
       }
-      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name })) {
+      const shelfType = cont.type === "cabinet" || cont.type === "deepfreezer" ? undefined : "shelf";
+      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, type: shelfType })) {
         closeModal();
-        showToast(`Shelf "${name}" added`);
+        showToast(`Shelf "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openAddDeepFreezerRackForm(cont: Container, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const slotOptions = rackSlotOptions(cont);
+  const form = { name: "", slot: slotOptions[0]?.value ?? 0 };
+  openModal({
+    title: "Add Rack",
+    component: SimplePromptModal,
+    props: {
+      form,
+      kind: "shelf" as const,
+      showSlotPicker: true,
+      slotOptions,
+      slotLabel: "Rack slot",
+      slotHint: `${rows} rows × ${columns} columns · ${slotOptions.length} free slots`,
+    },
+    btnText: slotOptions.length === 0 ? null : "Add",
+    onConfirm: async () => {
+      const name = form.name.trim();
+      if (name === "") {
+        showToast("Enter rack name", "error");
+        return;
+      }
+      const slot = Number(form.slot);
+      if (slotOptions.length === 0) {
+        showToast("No free slots are available in this rack grid", "error");
+        return;
+      }
+      if (!Number.isInteger(slot) || !slotOptions.some((option) => option.value === slot)) {
+        showToast("Select an available rack slot", "error");
+        return;
+      }
+      if (await opAddDeepFreezerRack(cont.id, name, slot - 1)) {
+        closeModal();
+        showToast(`Rack "${isBauhaus() ? stripEmoji(name) : name}" added`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openMoveDeepFreezerRackForm(cont: Container, rackName: string, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const rows = resolveRackRows(cont);
+  const columns = resolveRackColumns(cont);
+  const currentSlot = cont.rackPositions?.[rackName];
+  if (currentSlot === undefined || !Number.isInteger(currentSlot) || currentSlot < 0 || currentSlot >= rows * columns) {
+    showToast("Current rack position is invalid", "error");
+    return;
+  }
+  const slotOptions = rackSlotOptions(cont, rackName);
+  const form = { name: rackName, slot: currentSlot + 1 };
+  openModal({
+    title: `Move Rack ${rackName}`,
+    component: SimplePromptModal,
+    props: {
+      form,
+      kind: "slot" as const,
+      showSlotPicker: true,
+      slotOptions,
+      slotLabel: "Destination slot",
+      slotHint: `Current slot ${currentSlot + 1} · Only free slots and the current slot are listed`,
+    },
+    btnText: "Move",
+    onConfirm: async () => {
+      const slot = Number(form.slot);
+      if (!Number.isInteger(slot) || !slotOptions.some((option) => option.value === slot)) {
+        showToast("Select an available destination slot", "error");
+        return;
+      }
+      if (await opMoveDeepFreezerRack(cont.id, rackName, slot - 1)) {
+        closeModal();
+        showToast(`Rack "${isBauhaus() ? stripEmoji(rackName) : rackName}" moved to slot ${slot}`);
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openDeepFreezerGridSettings(cont: Container, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = {
+    name: cont.name,
+    rackRows: resolveRackRows(cont),
+    rackColumns: resolveRackColumns(cont),
+  };
+  openModal({
+    title: "Rack grid settings",
+    component: SimplePromptModal,
+    props: { form, kind: "rack-grid" as const },
+    btnText: "Save",
+    onConfirm: async () => {
+      const rackRows = rackDimension(form.rackRows, "Rows", MAX_RACK_ROWS);
+      const rackColumns = rackDimension(form.rackColumns, "Columns", MAX_RACK_COLUMNS);
+      if (rackRows === null || rackColumns === null) return;
+      if (await opUpdateDeepFreezerGrid(cont.id, rackRows, rackColumns)) {
+        closeModal();
+        showToast("Rack grid updated");
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openDeepFreezerShelfSettings(cont: Container, onDone?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const form = { name: cont.name, rackShelves: resolveRackShelves(cont) };
+  openModal({
+    title: "Shelves per rack",
+    component: SimplePromptModal,
+    props: { form, kind: "rack-shelves" as const },
+    btnText: "Save",
+    onConfirm: async () => {
+      const rackShelves = rackDimension(form.rackShelves, "Shelves per rack", MAX_RACK_SHELVES);
+      if (rackShelves === null) return;
+      if (await opUpdateDeepFreezerGrid(cont.id, resolveRackRows(cont), resolveRackColumns(cont), rackShelves)) {
+        closeModal();
+        showToast("Shelves per rack updated");
+        onDone?.();
+      }
+    },
+  });
+}
+
+export function openAddDeepFreezerBoxForm(cont: Container, rackName: string, onDone?: () => void): void {
+  const form = { color: "" };
+  openModal({
+    title: `Add Box to Rack ${rackName}`,
+    component: SimplePromptModal,
+    props: { form, kind: "color" as const },
+    btnText: "Add",
+    onConfirm: async () => {
+      const color = form.color.trim();
+      if (await opAddDeepFreezerBox(cont.id, rackName, color !== "" ? color : undefined)) {
+        closeModal();
+        showToast("Box added");
         onDone?.();
       }
     },
@@ -462,9 +841,9 @@ export function openAddBoxForm(room: Room, cont: Container, parentShelfId: strin
         showToast("Enter box name", "error");
         return;
       }
-      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, parentShelfId })) {
+      if (await opAddShelf({ roomId: room.id, containerId: cont.id, name, type: "box", parentShelfId })) {
         closeModal();
-        showToast(`Box "${name}" added`);
+        showToast(`Box "${isBauhaus() ? stripEmoji(name) : name}" added`);
         onDone?.();
       }
     },
@@ -510,19 +889,136 @@ export function openChangeBoxColorForm(room: Room, cont: Container, shelfId: str
   });
 }
 
+function epochToDateInput(value: number | null | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return "";
+  }
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function parseDateInputUtc(value: string): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (match === null) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return Date.UTC(year, month - 1, day);
+}
+
+type ChemicalFormState = ChemicalFormValues & {
+  shelfId: string;
+  cabinetShelf: string;
+  roomId: string;
+  contId: string;
+  product: { manufacturer: string; catalogNumber: string };
+  batch: { lotCode: string; originType: string; expiresAt: string; receivedAt: string; preparedBy: string };
+  safetyNotes: string[];
+};
+
+function parseSafetyTags(value: unknown): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of value.split(/[\s,]+/)) {
+    const tag = part.replace(/^#+/, "").trim();
+    if (tag === "") {
+      continue;
+    }
+    const key = tag.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+interface ChemicalFormMatch {
+  ch: Chemical;
+  /** Value used by the placement select (shelf id, box id, or container id for direct stock). */
+  placement: string;
+  /** Resolvable shelf id for the API (parent shelf when the chemical sits in a box). */
+  shelfId: string;
+  boxId?: string;
+}
+
+function findChemicalInContainer(cont: Container, chemicalId: string): ChemicalFormMatch | undefined {
+  for (const shelf of cont.shelves ?? []) {
+    for (const ch of shelf.chemicals ?? []) {
+      if (ch.id === chemicalId) {
+        const parentId = shelf.parentShelfId;
+        if (parentId !== undefined && parentId !== null && parentId !== "") {
+          return { ch, placement: shelf.id, shelfId: parentId, boxId: shelf.id };
+        }
+        return { ch, placement: shelf.id, shelfId: shelf.id };
+      }
+    }
+  }
+  for (const ch of cont.chemicals ?? []) {
+    if (ch.id === chemicalId) {
+      return { ch, placement: cont.id, shelfId: "" };
+    }
+  }
+  return undefined;
+}
+
+function findChemicalInRoom(room: Room, chemicalId: string): ChemicalFormMatch | undefined {
+  const ch = (room.chemicals ?? []).find((candidate) => candidate.id === chemicalId);
+  return ch === undefined ? undefined : { ch, placement: "", shelfId: "" };
+}
+
+function defaultPlacementFor(cont?: Container): string {
+  if (cont === undefined) {
+    return "";
+  }
+  if (cont.type === "deepfreezer") {
+    return (cont.shelves ?? [])[0]?.id ?? "";
+  }
+  if (cont.type === "cabinet") {
+    return "";
+  }
+  // Matrioshka containers default to their first top-level shelf, or the
+  // container itself when it has no shelves (direct placement).
+  return (cont.shelves ?? []).find((shelf) => !shelf.parentShelfId && shelf.type !== "box")?.id ?? cont.id;
+}
+
 export function openChemicalForm(
-  room: Room,
-  cont: Container,
-  opts: { shelfId?: string; editChemId?: string } = {},
+  room?: Room,
+  cont?: Container,
+  opts: { shelfId?: string; editChemId?: string; afterSaved?: () => void } = {},
 ): void {
-  const editChem =
-    opts.editChemId !== undefined
-      ? (cont.shelves ?? []).flatMap((sh) => (sh.chemicals ?? []).map((ch) => ({ sh, ch }))).find((e) => e.ch.id === opts.editChemId)
-      : undefined;
-  const initialShelf = opts.shelfId ?? editChem?.sh.id ?? (cont.shelves ?? [])[0]?.id ?? "";
-  const form: ChemicalFormValues & { shelfId: string; cabinetShelf: string } = {
+  const availableRooms =
+    opts.editChemId !== undefined && room !== undefined ? [room] : (inventory.tree?.rooms ?? []);
+  const contextRooms =
+    cont === undefined
+      ? [...availableRooms].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      : [];
+  const editMatch =
+    opts.editChemId === undefined
+      ? undefined
+      : cont !== undefined
+        ? findChemicalInContainer(cont, opts.editChemId)
+        : room !== undefined
+          ? findChemicalInRoom(room, opts.editChemId)
+          : undefined;
+  const editChem = editMatch;
+  const initialShelf = opts.shelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
+  const isDirectContainerEdit =
+    cont !== undefined && editMatch?.shelfId === "" && editMatch.placement === cont.id;
+  const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
+  const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
+  const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
+  delete initialAttributes.safety_notes;
+  const form: ChemicalFormState = {
     shelfId: initialShelf,
-    cabinetShelf: "auto",
+    cabinetShelf: isDirectContainerEdit ? initialShelf : "auto",
+    roomId: room?.id ?? "",
+    contId: cont?.id ?? "",
     name: editChem?.ch.name ?? "",
     formula: editChem?.ch.formula ?? "",
     quantity: editChem?.ch.quantity ?? null,
@@ -531,14 +1027,61 @@ export function openChemicalForm(
     concUnit: editChem?.ch.concUnit ?? "",
     cas: editChem?.ch.cas ?? "",
     note: editChem?.ch.note ?? "",
-    customPosition: editChem?.ch.customPosition ?? "",
+    customPosition: effectivePosition(editChem?.ch) ?? "",
+    type: editChem?.ch.type ?? "chemical",
+    attributes: initialAttributes,
+    safetyNotes,
+    product: {
+      manufacturer: editChem?.ch.product?.manufacturer ?? "",
+      catalogNumber: editChem?.ch.product?.catalogNumber ?? "",
+    },
+    batchInfo: {
+      lotCode: editChem?.ch.batchInfo?.lotCode ?? undefined,
+      originType: editChem?.ch.batchInfo?.originType ?? undefined,
+      receivedAt: editChem?.ch.batchInfo?.receivedAt ?? undefined,
+      preparedAt: editChem?.ch.batchInfo?.preparedAt ?? undefined,
+      preparedBy: editChem?.ch.batchInfo?.preparedBy ?? undefined,
+      expiresAt: editChem?.ch.batchInfo?.expiresAt ?? undefined,
+    },
+    batch: {
+      lotCode: editChem?.ch.batchInfo?.lotCode ?? "",
+      originType: editChem?.ch.batchInfo?.originType ?? "",
+      expiresAt: epochToDateInput(editChem?.ch.batchInfo?.expiresAt),
+      receivedAt: epochToDateInput(editChem?.ch.batchInfo?.receivedAt),
+      preparedBy: editChem?.ch.batchInfo?.preparedBy ?? "",
+    },
   };
   openModal({
     title: opts.editChemId !== undefined ? "Edit Chemical" : "Add Chemical",
     component: ChemicalFormModal,
-    props: { form, container: cont },
+    props: { form, container: cont, rooms: cont === undefined ? contextRooms : undefined },
     btnText: opts.editChemId !== undefined ? "Save" : "Add",
+    size: "xwide",
     onConfirm: async () => {
+      const attributes: Record<string, string | number | boolean | null> = {};
+      for (const [key, value] of Object.entries(form.attributes)) {
+        if (value === "" || value === undefined) {
+          continue;
+        }
+        attributes[key] = value;
+      }
+      // CAS/formula are legacy dedicated fields on chemicals; sync derives the
+      // canonical attributes from them, so never send them from the descriptor map.
+      delete attributes.cas_number;
+      delete attributes.molecular_formula;
+      // The tag editor stores safety notes as string[] in form state; the
+      // payload/validator contract stays a single whitespace-joined string.
+      const safetyNotes = form.safetyNotes.map((tag) => tag.trim()).filter((tag) => tag !== "");
+      if (form.type === "chemical" && safetyNotes.length > 0) {
+        attributes.safety_notes = safetyNotes.join(" ");
+      } else {
+        delete attributes.safety_notes;
+      }
+      const attributeValidation = validateAttributes(form.type, attributes);
+      if (!attributeValidation.ok) {
+        showToast(`Invalid fields: ${attributeValidation.errors.join("; ")}`, "error");
+        return;
+      }
       const name = form.name.trim();
       if (name === "" || name.length > 100) {
         showToast("Chemical name is required (max 100 chars)", "error");
@@ -549,7 +1092,7 @@ export function openChemicalForm(
         return;
       }
       const casVal = form.cas.trim();
-      if (casVal !== "" && !/^\d{1,7}-\d{2}-\d$/.test(casVal)) {
+      if (form.type === "chemical" && casVal !== "" && !/^\d{1,7}-\d{2}-\d$/.test(casVal)) {
         showToast("Invalid CAS number format (e.g. 7647-01-0)", "error");
         return;
       }
@@ -557,65 +1100,221 @@ export function openChemicalForm(
         showToast("Quantity must be a non-negative number", "error");
         return;
       }
+      const productDraft: NonNullable<ChemicalFormValues["product"]> = {};
+      let hasProduct = false;
+      for (const key of ["manufacturer", "catalogNumber"] as const) {
+        const value = form.product[key].trim();
+        if (value !== "") {
+          productDraft[key] = value;
+          hasProduct = true;
+        }
+      }
+      const productValue: ChemicalFormValues["product"] | undefined = hasProduct
+        ? productDraft
+        : opts.editChemId !== undefined && hadProduct
+          ? null
+          : undefined;
+      const batchDraft: NonNullable<ChemicalFormValues["batchInfo"]> = {};
+      const lotCode = form.batch.lotCode.trim();
+      if (lotCode !== "") {
+        batchDraft.lotCode = lotCode;
+      }
+      const originType = form.batch.originType.trim();
+      if (originType !== "") {
+        batchDraft.originType = originType as NonNullable<ChemicalFormValues["batchInfo"]>["originType"];
+      }
+      const expiresAt = parseDateInputUtc(form.batch.expiresAt);
+      if (expiresAt !== undefined) {
+        batchDraft.expiresAt = expiresAt;
+      }
+      const receivedAt = parseDateInputUtc(form.batch.receivedAt);
+      if (receivedAt !== undefined) {
+        batchDraft.receivedAt = receivedAt;
+      }
+      const preparedBy = form.batch.preparedBy.trim();
+      if (preparedBy !== "") {
+        batchDraft.preparedBy = preparedBy;
+      }
+      const existingPreparedAt = editChem?.ch.batchInfo?.preparedAt;
+      if (typeof existingPreparedAt === "number") {
+        batchDraft.preparedAt = existingPreparedAt;
+      }
+      const batchValue = Object.keys(batchDraft).length > 0 ? batchDraft : undefined;
       const values: ChemicalFormValues = {
         name,
-        formula: form.formula.trim(),
+        formula: form.type === "chemical" ? form.formula.trim() : "",
         quantity: form.quantity,
         unit: form.unit,
         concentration: form.concentration,
         concUnit: form.concUnit,
-        cas: casVal,
+        cas: form.type === "chemical" ? casVal : "",
         note: form.note.trim(),
         customPosition: form.customPosition.trim(),
+        type: form.type,
+        attributes: attributeValidation.value,
+        product: productValue,
+        batchInfo: batchValue,
       };
-      let shelfId = form.shelfId;
-      if (cont.type === "cabinet") {
-        const isAlphabetical =
-          cont.cabinetMethod === "alphabetical" ||
-          (cont.cabinetMethod === "custom" && cont.customRangeType === "alphabetical");
-        const hasRangeShelves = (cont.shelves ?? []).some((s) => s.isRangeShelf === true);
-        const canAuto = isAlphabetical || hasRangeShelves;
-        if (form.cabinetShelf === "auto" && canAuto) {
-          shelfId = resolveAutoShelf(cont, name) ?? shelfId;
+      const activeRoom = cont !== undefined ? room : contextRooms.find((r) => r.id === form.roomId);
+      const activeCont = cont ?? (activeRoom?.containers ?? []).find((c) => c.id === form.contId);
+      if (activeRoom === undefined) {
+        showToast("Select a room before adding a chemical", "error");
+        return;
+      }
+      // Resolve the placement select into explicit location ids. Empty strings
+      // mean "not at that level"; the ops omit blank ids from the payload.
+      // A blank container choice is a valid room-level placement (room.chemicals):
+      // keep container/shelf/box ids empty so the server records it directly in
+      // the room. Only an explicit container choice runs the cascade branches.
+      let targetShelfId = "";
+      let targetBoxId: string | undefined;
+      const keepDirectContainerPlacement =
+        isDirectContainerEdit &&
+        activeCont !== undefined &&
+        (activeCont.type === "cabinet" ? form.cabinetShelf === activeCont.id : form.shelfId === activeCont.id);
+      if (activeCont !== undefined) {
+        // The container id is only the direct-placement select value, never an API shelf id.
+        if (keepDirectContainerPlacement) {
+          targetShelfId = "";
+        } else if (activeCont.type === "cabinet") {
+          const isAlphabetical =
+            activeCont.cabinetMethod === "alphabetical" ||
+            (activeCont.cabinetMethod === "custom" && activeCont.customRangeType === "alphabetical");
+          const hasRangeShelves = (activeCont.shelves ?? []).some((s) => s.isRangeShelf === true);
+          const canAuto = isAlphabetical || hasRangeShelves;
+          targetShelfId = form.shelfId;
+          if (form.cabinetShelf === "auto") {
+            if (canAuto) {
+              targetShelfId = resolveAutoShelf(activeCont, name) ?? targetShelfId;
+            } else if (targetShelfId === "" || targetShelfId === "auto") {
+              targetShelfId = (activeCont.shelves ?? [])[0]?.id ?? "";
+            }
+          } else if (form.cabinetShelf !== "") {
+            targetShelfId = form.cabinetShelf;
+          }
+        } else if (activeCont.type === "deepfreezer") {
+          // Deep freezer boxes are flat shelves; keep the existing rack/box flow.
+          targetShelfId = form.shelfId;
         } else {
-          shelfId = form.cabinetShelf;
+          const choice = form.shelfId;
+          const isDirect = choice === "" || choice === activeCont.id || choice.startsWith(`${activeCont.id}:`);
+          if (!isDirect) {
+            const placementShelf = (activeCont.shelves ?? []).find((candidate) => candidate.id === choice);
+            if (placementShelf === undefined) {
+              showToast("Select a placement", "error");
+              return;
+            }
+            const parentId = placementShelf.parentShelfId;
+            if (parentId !== undefined && parentId !== null && parentId !== "") {
+              targetShelfId = parentId;
+              targetBoxId = placementShelf.id;
+            } else {
+              targetShelfId = placementShelf.id;
+            }
+          }
+        }
+        if (!keepDirectContainerPlacement && activeCont.type === "cabinet" && targetShelfId === "") {
+          showToast("Select a shelf placement", "error");
+          return;
+        }
+        if (!keepDirectContainerPlacement && activeCont.type === "deepfreezer" && targetShelfId === "") {
+          showToast("Select a box placement", "error");
+          return;
         }
       }
       if (opts.editChemId !== undefined) {
-        const ok = await opEditChemical(room.id, cont.id, editChem!.sh.id, opts.editChemId, values, shelfId);
+        if (editMatch === undefined || (cont !== undefined && activeCont === undefined)) {
+          showToast("Chemical not found", "error");
+          return;
+        }
+        if (cont === undefined && activeCont !== undefined) {
+          showToast("Room-level packages must stay directly in their room when edited here", "error");
+          return;
+        }
+        const ok = await opEditChemical(
+          activeRoom.id,
+          activeCont?.id ?? "",
+          editMatch.shelfId,
+          opts.editChemId,
+          values,
+          targetShelfId,
+          targetBoxId,
+          editMatch.boxId,
+        );
         if (ok) {
           closeModal();
           showToast("Chemical saved");
+          opts.afterSaved?.();
         }
       } else {
-        const ok = await opAddChemical(room.id, cont.id, shelfId, values);
+        const ok = await opAddChemical(activeRoom.id, activeCont?.id ?? "", targetShelfId, values, targetBoxId);
         if (ok) {
           closeModal();
-          showToast(`Chemical "${name}" added`);
+          showToast(`Chemical "${isBauhaus() ? stripEmoji(name) : name}" added`);
         }
       }
     },
   });
 }
 
+export function openCatalogStockEditForm(stockId: string, afterSaved?: () => void): void {
+  if (!roleCanWrite()) {
+    showToast("Access Denied", "error");
+    return;
+  }
+  const tree = inventoryFor(currentGroup.groupId);
+  if (tree === null) {
+    showToast("Inventory is not loaded yet. Please try again in a moment.", "error");
+    return;
+  }
+
+  for (const room of tree.rooms) {
+    for (const cont of room.containers ?? []) {
+      if (findChemicalInContainer(cont, stockId) !== undefined) {
+        openChemicalForm(room, cont, { editChemId: stockId, afterSaved });
+        return;
+      }
+    }
+    if (findChemicalInRoom(room, stockId) !== undefined) {
+      openChemicalForm(room, undefined, { editChemId: stockId, afterSaved });
+      return;
+    }
+  }
+
+  for (const freezer of tree.deepFreezers ?? []) {
+    if (findChemicalInContainer(freezer, stockId) !== undefined) {
+      const room: Room = { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] };
+      openChemicalForm(room, freezer, { editChemId: stockId, afterSaved });
+      return;
+    }
+  }
+
+  showToast("Package not found in the current lab inventory. Refresh Packages and try again.", "error");
+}
+
 export function openChemicalRadioPrompt(room: Room, cont: Container, preSelectedShelfId?: string): void {
+  if (prefs.radioMode === "never") {
+    openChemicalForm(room, cont, { shelfId: preSelectedShelfId });
+    return;
+  }
+  const bauhaus = document.body.dataset.design === "bauhaus";
   openModal({
     title: "Laboratory Background Radio",
     bodyHtml: `<div style="text-align: center; padding: 1rem 0;">
-      <div style="font-size: 3rem; margin-bottom: 1rem; animation: floatBlob 2s ease-in-out infinite alternate;">🎵</div>
+      <div style="font-size: 3rem; margin-bottom: 1rem; animation: floatBlob 2s ease-in-out infinite alternate;">${bauhaus ? '<span class="glyph glyph-circle-ink" aria-hidden="true"></span>' : "🎵"}</div>
       <h3 style="margin-bottom: 0.5rem; color: var(--text-primary);">Laboratory Background Radio</h3>
       <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem; max-width: 320px; margin-left: auto; margin-right: auto;">
         Would you like to play some background folk music while you add this chemical?
       </p>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 280px; margin: 0 auto;">
         <button class="btn-primary" data-radio-action="cechomor" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem; background: linear-gradient(135deg, var(--accent-blue), #3b82f6); border: none;">
-          <span>🎻 Play Čechomor (String Folk)</span>
+          <span>${bauhaus ? "" : "🎻 "}Play Čechomor (String Folk)</span>
         </button>
         <button class="btn-primary" data-radio-action="moravanka" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem; background: linear-gradient(135deg, var(--accent-purple), #8b5cf6); border: none;">
-          <span>🎺 Play Moravanka (Brass Band)</span>
+          <span>${bauhaus ? "" : "🎺 "}Play Moravanka (Brass Band)</span>
         </button>
         <button class="btn-secondary" data-radio-action="none" style="width: 100%; padding: 0.75rem;">
-          <span>🔇 No music, thanks</span>
+          <span>${bauhaus ? "" : "🔇 "}No music, thanks</span>
         </button>
       </div>
     </div>`,
@@ -662,10 +1361,14 @@ export function openProtocolForm(edit?: { id: string; title: string; content: st
   });
 }
 
-export function openAssetRoomForm(edit?: { id: string; name: string }): void {
+export function openAssetRoomForm(
+  edit?: { id: string; name: string; linkedRoomId?: string | null },
+  options?: { preferredRoomId?: string | null },
+): void {
+  void options;
   const form = { name: edit?.name ?? "" };
   openModal({
-    title: edit === undefined ? "Add Asset Room" : "Edit Asset Room",
+    title: edit === undefined ? "Add Room" : "Edit Asset Room",
     component: AssetRoomFormModal,
     props: { form },
     btnText: edit === undefined ? "Add" : "Save",
@@ -675,27 +1378,32 @@ export function openAssetRoomForm(edit?: { id: string; name: string }): void {
         showToast("Enter name", "error");
         return;
       }
-      const ok = edit === undefined ? await opAddAssetRoom(name) : await opEditAssetRoom(edit.id, name);
+      const ok = edit === undefined
+        ? await opAddAssetRoom(name)
+        : await opEditAssetRoom(edit.id, name);
       if (ok) {
         closeModal();
-        showToast(edit === undefined ? "Asset room added" : "Asset room updated");
+        showToast(edit === undefined ? "Room added" : "Asset room updated");
       }
     },
   });
 }
 
-export function openAssetForm(assetRooms: Array<{ id: string; name: string }>, edit?: { id: string; name: string; model?: string | null; barcode?: string | null; description?: string | null; roomId?: string | null }): void {
+export function openAssetForm(edit?: { id: string; name: string; model?: string | null; barcode?: string | null; description?: string | null; roomId?: string | null }): void {
+  const rooms = inventoryFor(currentGroup.groupId)?.rooms ?? [];
+  const originalRoomId = edit?.roomId ?? "";
+  const initialRoomId = rooms.some((room) => room.id === originalRoomId) ? originalRoomId : "";
   const form = {
     name: edit?.name ?? "",
     model: edit?.model ?? "",
     barcode: edit?.barcode ?? "",
     description: edit?.description ?? "",
-    roomId: edit?.roomId ?? "",
+    roomId: initialRoomId,
   };
   openModal({
     title: edit === undefined ? "Add Asset Item" : "Edit Asset Item",
     component: AssetFormModal,
-    props: { form, assetRooms },
+    props: { form, rooms },
     btnText: edit === undefined ? "Add" : "Save",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -703,22 +1411,32 @@ export function openAssetForm(assetRooms: Array<{ id: string; name: string }>, e
         showToast("Enter name", "error");
         return;
       }
-      const ok =
-        edit === undefined
-          ? await opAddAsset({
-              name,
-              model: form.model.trim() === "" ? undefined : form.model.trim(),
-              barcode: form.barcode.trim() === "" ? undefined : form.barcode.trim(),
-              description: form.description.trim() === "" ? undefined : form.description.trim(),
-              roomId: form.roomId,
-            })
-          : await opEditAsset(edit.id, {
-              name,
-              model: form.model.trim(),
-              barcode: form.barcode.trim(),
-              description: form.description.trim(),
-              roomId: form.roomId,
-            });
+      if (form.roomId !== "" && !rooms.some((room) => room.id === form.roomId)) {
+        showToast("Select a current physical room", "error");
+        document.getElementById("a-room")?.focus();
+        return;
+      }
+      const fields = {
+        name,
+        model: form.model.trim(),
+        barcode: form.barcode.trim(),
+        description: form.description.trim(),
+      };
+      let ok: boolean;
+      if (edit === undefined) {
+        ok = await opAddAsset({
+          name,
+          model: fields.model === "" ? undefined : fields.model,
+          barcode: fields.barcode === "" ? undefined : fields.barcode,
+          description: fields.description === "" ? undefined : fields.description,
+          ...(form.roomId === "" ? {} : { roomId: form.roomId }),
+        });
+      } else {
+        ok = await opEditAsset(edit.id, {
+          ...fields,
+          ...(form.roomId === initialRoomId ? {} : { roomId: form.roomId }),
+        });
+      }
       if (ok) {
         closeModal();
         showToast(edit === undefined ? "Asset added" : "Asset saved");

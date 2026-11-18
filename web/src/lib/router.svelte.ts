@@ -1,7 +1,11 @@
+import { theme } from "./theme.svelte";
+
 export const TOP_VIEWS = [
+  "dashboard",
   "rooms",
   "protocols",
   "assets",
+  "catalog",
   "noticeboard",
   "instruments",
   "printing",
@@ -11,6 +15,10 @@ export const TOP_VIEWS = [
 
 export type TopView = (typeof TOP_VIEWS)[number];
 
+export function defaultView(): TopView {
+  return theme.design === "bauhaus" ? "dashboard" : "rooms";
+}
+
 export type Route =
   | { view: "rooms" }
   | { view: "containers"; roomId: string }
@@ -18,7 +26,7 @@ export type Route =
   | { view: TopView };
 
 export function parseHash(hash: string): Route {
-  if (!hash || hash === "#" || hash === "#rooms") {
+  if (hash === "#rooms" || hash === "#/rooms") {
     return { view: "rooms" };
   }
   if (hash.startsWith("#containers/")) {
@@ -46,7 +54,7 @@ export function parseHash(hash: string): Route {
   if ((TOP_VIEWS as readonly string[]).includes(viewName)) {
     return { view: viewName as TopView };
   }
-  return { view: "rooms" };
+  return { view: defaultView() };
 }
 
 let route = $state<Route>(parseHash(window.location.hash));

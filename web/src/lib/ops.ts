@@ -72,10 +72,106 @@ export function opDeleteContainer(roomId: string, containerId: string): Promise<
   );
 }
 
+export async function opAddDeepFreezer(
+  name: string,
+  description?: string,
+  emoji?: string,
+  grid?: { rackRows: number; rackColumns: number; rackShelves?: number },
+): Promise<string | null> {
+  try {
+    const result = await api.post<{ tree: { deepFreezers?: Container[] } }>(
+      `/api/groups/${gid()}/inventory/deepfreezers`,
+      {
+        name,
+        ...(description !== undefined ? { description } : {}),
+        ...(emoji !== undefined ? { emoji } : {}),
+        ...(grid !== undefined ? grid : {}),
+      },
+    );
+    const freezers = result.tree.deepFreezers ?? [];
+    return freezers[freezers.length - 1]?.id ?? null;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add deep freezer", "error");
+    }
+    return null;
+  }
+}
+
+export async function opAddDeepFreezerRack(freezerId: string, name: string, slot?: number): Promise<boolean> {
+  try {
+    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks`, {
+      name,
+      ...(slot !== undefined ? { slot } : {}),
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add rack", "error");
+    }
+    return false;
+  }
+}
+
+export function opUpdateDeepFreezerGrid(
+  freezerId: string,
+  rackRows: number,
+  rackColumns: number,
+  rackShelves?: number,
+): Promise<boolean> {
+  return run("Failed to update rack grid", () =>
+    api.put(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}`, {
+      rackRows,
+      rackColumns,
+      ...(rackShelves !== undefined ? { rackShelves } : {}),
+    }),
+  );
+}
+
+export function opMoveDeepFreezerRack(freezerId: string, rackName: string, slot: number): Promise<boolean> {
+  return run("Failed to move rack", () =>
+    api.post(
+      `/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/racks/${encodeURIComponent(rackName)}/move`,
+      { slot },
+    ),
+  );
+}
+
+export async function opAddDeepFreezerBox(freezerId: string, rackName: string, color?: string): Promise<boolean> {
+  try {
+    await api.post(`/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/boxes`, {
+      rackName,
+      ...(color !== undefined && color !== "" ? { color } : {}),
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast("Failed to add box", "error");
+    }
+    return false;
+  }
+}
+
+export function opMoveDeepFreezerBox(freezerId: string, boxId: string, shelf: number): Promise<boolean> {
+  return run("Failed to move box", () =>
+    api.post(
+      `/api/groups/${gid()}/inventory/deepfreezers/${encodeURIComponent(freezerId)}/boxes/${encodeURIComponent(boxId)}/move`,
+      { shelf },
+    ),
+  );
+}
+
 export function opAddShelf(body: {
   roomId: string;
   containerId: string;
   name: string;
+  type?: "shelf" | "door_shelf" | "crate" | "box";
   parentShelfId?: string;
   rackName?: string;
   boxName?: string;
@@ -116,6 +212,23 @@ export function opChangeBoxColor(roomId: string, containerId: string, shelfId: s
   return opEditShelfMeta(roomId, containerId, shelfId, { color });
 }
 
+export type ChemicalProductFormValue = {
+  manufacturer?: string;
+  supplier?: string;
+  catalogNumber?: string;
+  productName?: string;
+  variant?: string;
+};
+
+export type ChemicalBatchInfoFormValue = {
+  lotCode?: string;
+  originType?: "purchased" | "prepared" | "derived" | "unknown";
+  expiresAt?: number;
+  receivedAt?: number;
+  preparedAt?: number;
+  preparedBy?: string;
+};
+
 export interface ChemicalFormValues {
   name: string;
   formula: string;
@@ -126,6 +239,11 @@ export interface ChemicalFormValues {
   cas: string;
   note: string;
   customPosition: string;
+  barcode?: string;
+  type: string;
+  attributes: Record<string, string | number | boolean | null>;
+  product?: ChemicalProductFormValue | null;
+  batchInfo?: ChemicalBatchInfoFormValue;
 }
 
 export function opAddChemical(
@@ -133,12 +251,14 @@ export function opAddChemical(
   containerId: string,
   shelfId: string,
   values: ChemicalFormValues,
+  boxId?: string,
 ): Promise<boolean> {
   return run("Failed to add chemical", () =>
     api.post(`/api/groups/${gid()}/inventory/chemicals`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
       name: values.name,
       cas: values.cas === "" ? undefined : values.cas,
       formula: values.formula === "" ? undefined : values.formula,
@@ -148,6 +268,11 @@ export function opAddChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition === "" ? undefined : values.customPosition,
       note: values.note === "" ? undefined : values.note,
+      barcode: values.barcode === "" ? undefined : values.barcode,
+      type: values.type,
+      attributes: values.attributes,
+      ...(values.product !== null && values.product !== undefined ? { product: values.product } : {}),
+      ...(values.batchInfo !== undefined ? { batchInfo: values.batchInfo } : {}),
     }),
   );
 }
@@ -159,12 +284,15 @@ export function opEditChemical(
   chemicalId: string,
   values: ChemicalFormValues,
   moveTargetShelfId?: string,
+  moveTargetBoxId?: string,
+  originalBoxId?: string,
 ): Promise<boolean> {
   return run("Failed to save chemical", async () => {
     await api.put(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(originalBoxId !== undefined && originalBoxId !== "" ? { boxId: originalBoxId } : {}),
       name: values.name,
       cas: values.cas,
       formula: values.formula,
@@ -174,32 +302,52 @@ export function opEditChemical(
       concUnit: values.concUnit,
       customPosition: values.customPosition,
       note: values.note,
+      barcode: values.barcode,
+      type: values.type,
+      attributes: values.attributes,
+      batchInfo: values.batchInfo,
+      ...(values.product === null
+        ? { product: null }
+        : values.product !== undefined
+          ? { product: values.product }
+          : {}),
     });
-    if (moveTargetShelfId !== undefined && moveTargetShelfId !== shelfId) {
+    const fromKey = `${containerId}|${shelfId}|${originalBoxId ?? ""}`;
+    const toShelf = moveTargetShelfId ?? "";
+    const toBox = moveTargetBoxId ?? "";
+    if (moveTargetShelfId !== undefined && `${containerId}|${toShelf}|${toBox}` !== fromKey) {
       await api.post(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/move`, {
         fromRoomId: roomId,
-        fromContainerId: containerId,
-        fromShelfId: shelfId,
+        ...(containerId !== "" ? { fromContainerId: containerId } : {}),
+        ...(shelfId !== "" ? { fromShelfId: shelfId } : {}),
+        ...(originalBoxId !== undefined && originalBoxId !== "" ? { fromBoxId: originalBoxId } : {}),
         toRoomId: roomId,
-        toContainerId: containerId,
-        toShelfId: moveTargetShelfId,
+        ...(containerId !== "" ? { toContainerId: containerId } : {}),
+        ...(toShelf !== "" ? { toShelfId: toShelf } : {}),
+        ...(toBox !== "" ? { toBoxId: toBox } : {}),
       });
     }
   });
 }
 
-export function opDeleteChemical(roomId: string, containerId: string, shelfId: string, chemicalId: string): Promise<boolean> {
+export function opDeleteChemical(roomId: string, containerId: string, shelfId: string, chemicalId: string, boxId?: string): Promise<boolean> {
   return run("Failed to delete chemical", () =>
-    api.del(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, { roomId, containerId, shelfId }),
+    api.del(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}`, {
+      roomId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
+    }),
   );
 }
 
-export function opAdjustQty(roomId: string, containerId: string, shelfId: string, chemicalId: string, delta: number): Promise<boolean> {
+export function opAdjustQty(roomId: string, containerId: string, shelfId: string, chemicalId: string, delta: number, boxId?: string): Promise<boolean> {
   return run("Failed to adjust quantity", () =>
     api.post(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/adjust-qty`, {
       roomId,
-      containerId,
-      shelfId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
       delta,
     }),
   );
@@ -250,13 +398,21 @@ export function opDeleteProtocol(protocolId: string): Promise<boolean> {
   return run("Failed to delete protocol", () => api.del(`/api/groups/${gid()}/inventory/protocols/${protocolId}`));
 }
 
-export function opAddAssetRoom(name: string): Promise<boolean> {
-  return run("Failed to add asset room", () => api.post(`/api/groups/${gid()}/inventory/asset-rooms`, { name }));
+export function opAddAssetRoom(name: string, linkedRoomId?: string | null): Promise<boolean> {
+  return run("Failed to add asset room", () =>
+    api.post(`/api/groups/${gid()}/inventory/asset-rooms`, {
+      name,
+      ...(linkedRoomId !== undefined ? { linkedRoomId } : {}),
+    }),
+  );
 }
 
-export function opEditAssetRoom(roomId: string, name: string): Promise<boolean> {
+export function opEditAssetRoom(roomId: string, name: string, linkedRoomId?: string | null): Promise<boolean> {
   return run("Failed to save asset room", () =>
-    api.put(`/api/groups/${gid()}/inventory/asset-rooms/${roomId}`, { name }),
+    api.put(`/api/groups/${gid()}/inventory/asset-rooms/${roomId}`, {
+      name,
+      ...(linkedRoomId !== undefined ? { linkedRoomId } : {}),
+    }),
   );
 }
 

@@ -1,21 +1,81 @@
 import type { Chemical, Container, Room, Shelf } from "@bioscom/shared";
 
+export function materialTypeColorClass(type: string | null | undefined): string {
+  switch (type) {
+    case "chemical":
+    case "reagent":
+    case "antibody":
+    case "primer":
+    case "solution":
+    case "biological_stock":
+      return `material-type-${type}`;
+    case "other":
+      return "material-type-other";
+    default:
+      return "material-type-other";
+  }
+}
+
+const NOTICE_CATEGORY_COLORS = {
+  issue: { accent: "#D55E00", rgb: "213, 94, 0", originalText: "#F0B2A6" },
+  info: { accent: "#0072B2", rgb: "0, 114, 178", originalText: "#A9C7FF" },
+  suggestion: { accent: "#009E73", rgb: "0, 158, 115", originalText: "#ABDDB6" },
+  general: { accent: "#999999", rgb: "153, 153, 153", originalText: "#C3CAD4" },
+} as const;
+
+type NoticeCategoryPalette = (typeof NOTICE_CATEGORY_COLORS)[keyof typeof NOTICE_CATEGORY_COLORS];
+
+export function noticeCategoryPalette(
+  category: string | null | undefined,
+  design: "original" | "bauhaus" = "original",
+): NoticeCategoryPalette & { tint: string; text: string } {
+  const normalized = category?.trim().toLowerCase();
+  const colors = normalized === "issue" || normalized === "info" || normalized === "suggestion"
+    ? NOTICE_CATEGORY_COLORS[normalized]
+    : NOTICE_CATEGORY_COLORS.general;
+  return {
+    ...colors,
+    tint: `rgba(${colors.rgb}, 0.15)`,
+    text: design === "bauhaus" ? "#171512" : colors.originalText,
+  };
+}
+
+export function effectivePosition(
+  source: { position?: string | null; customPosition?: string | null } | null | undefined,
+): string | null | undefined {
+  const customPosition = source?.customPosition;
+  if (customPosition !== null && customPosition !== undefined && customPosition.trim() !== "") {
+    return customPosition;
+  }
+  return source?.position;
+}
+
 export function computePositions(cont: Container): Record<string, string> {
   const map: Record<string, string> = {};
   for (const sh of cont.shelves ?? []) {
     for (const ch of sh.chemicals ?? []) {
-      map[ch.id] = ch.customPosition ?? ch.position ?? "—";
+      map[ch.id] = effectivePosition(ch) ?? "—";
     }
   }
   return map;
 }
 
+export function countDirectChems(cont: Container): number {
+  return (cont.chemicals ?? []).length;
+}
+
 export function countChems(cont: Container): number {
-  return (cont.shelves ?? []).reduce((sum, sh) => sum + (sh.chemicals ?? []).length, 0);
+  return (
+    countDirectChems(cont) +
+    (cont.shelves ?? []).reduce((sum, sh) => sum + (sh.chemicals ?? []).length, 0)
+  );
 }
 
 export function countAllChems(room: Room): number {
-  return (room.containers ?? []).reduce((sum, cont) => sum + countChems(cont), 0);
+  return (
+    (room.chemicals ?? []).length +
+    (room.containers ?? []).reduce((sum, cont) => sum + countChems(cont), 0)
+  );
 }
 
 export function getFirstLetter(name: string): string {
@@ -153,4 +213,14 @@ export function countWords(text: string): number {
 
 export function canManageContainerContents(role: string): boolean {
   return role !== "reader";
+}
+
+export function stripEmoji(text: string | null | undefined): string {
+  if (text === null || text === undefined) {
+    return "";
+  }
+  return text
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }

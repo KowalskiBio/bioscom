@@ -9,7 +9,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "probe:integrity": "tsx scripts/probe-integrity.ts",
+    "census:slots": "tsx scripts/slot-census.ts",
+    "drill:restore": "tsx scripts/restore-drill.ts",
+    "make:tier2-fixture": "tsx scripts/_drill-fixture.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

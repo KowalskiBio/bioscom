@@ -4,6 +4,9 @@
   import { session, loadSession, setUser, clearSession } from "../lib/stores/session.svelte";
   import { groupList, fetchPublicGroups } from "../lib/stores/groups.svelte";
   import { showToast } from "../lib/stores/toast.svelte";
+  import { theme } from "../lib/theme.svelte";
+
+  const design = $derived(theme.design);
 
   type Panel = "welcome" | "login" | "register-user" | "register-group" | "reset";
 
@@ -332,25 +335,33 @@
     <!-- Panel 1: Welcome Portal / Group Selection -->
     <div class="login-card" id="auth-panel-welcome" class:hidden={panel !== "welcome"}>
         <div class="login-logo">
-            <svg viewBox="0 0 40 40" fill="none">
-                <path d="M20 6 L32 13 L32 27 L20 34 L8 27 L8 13 Z" fill="none" stroke="url(#g_login)" stroke-width="2"/>
-                <circle cx="20" cy="6" r="3" fill="url(#g_login)"/>
-                <circle cx="32" cy="13" r="3" fill="url(#g_login)"/>
-                <circle cx="32" cy="27" r="3" fill="url(#g_login)"/>
-                <circle cx="20" cy="34" r="3" fill="url(#g_login)"/>
-                <circle cx="8" cy="27" r="3" fill="url(#g_login)"/>
-                <circle cx="8" cy="13" r="3" fill="url(#g_login)"/>
-                <circle cx="20" cy="20" r="3" fill="url(#g_login)"/>
-                <path d="M20 6 L20 20 M32 13 L20 20 M32 27 L20 20 M20 34 L20 20 M8 27 L20 20 M8 13 L20 20" stroke="url(#g_login)" stroke-width="1.5" opacity="0.5"/>
-                <defs>
-                    <linearGradient id="g_login" x1="8" y1="6" x2="32" y2="34">
-                        <stop offset="0%" stop-color="#0ea5e9"/>
-                        <stop offset="100%" stop-color="#c084fc"/>
-                    </linearGradient>
-                </defs>
-            </svg>
-            <span class="login-title">BioSCom</span>
-            <span class="login-subtitle">Laboratory Portals</span>
+            {#if design === "bauhaus"}
+                <svg class="login-brand-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                    <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                    <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                </svg>
+            {:else}
+                <svg viewBox="0 0 40 40" fill="none">
+                    <path d="M20 6 L32 13 L32 27 L20 34 L8 27 L8 13 Z" fill="none" stroke="url(#g_login)" stroke-width="2"/>
+                    <circle cx="20" cy="6" r="3" fill="url(#g_login)"/>
+                    <circle cx="32" cy="13" r="3" fill="url(#g_login)"/>
+                    <circle cx="32" cy="27" r="3" fill="url(#g_login)"/>
+                    <circle cx="20" cy="34" r="3" fill="url(#g_login)"/>
+                    <circle cx="8" cy="27" r="3" fill="url(#g_login)"/>
+                    <circle cx="8" cy="13" r="3" fill="url(#g_login)"/>
+                    <circle cx="20" cy="20" r="3" fill="url(#g_login)"/>
+                    <path d="M20 6 L20 20 M32 13 L20 20 M32 27 L20 20 M20 34 L20 20 M8 27 L20 20 M8 13 L20 20" stroke="url(#g_login)" stroke-width="1.5" opacity="0.5"/>
+                    <defs>
+                        <linearGradient id="g_login" x1="8" y1="6" x2="32" y2="34">
+                            <stop offset="0%" stop-color="#0ea5e9"/>
+                            <stop offset="100%" stop-color="#c084fc"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            {/if}
+            <span class="login-title">{design === "bauhaus" ? "LABHAUS" : "BioSCom"}</span>
+            <span class="login-subtitle">{design === "bauhaus" ? "Lab Operations" : "Laboratory Portals"}</span>
         </div>
 
         <div class="auth-welcome-content" style="width: 100%; display: flex; flex-direction: column; gap: 1.25rem;">
@@ -376,7 +387,14 @@
     <!-- Panel 2: Sign In -->
     <div class="login-card" id="auth-panel-login" class:hidden={panel !== "login"} class:shake={shake === "login"}>
         <div class="login-logo">
-            <span class="login-title">BioSCom</span>
+            {#if design === "bauhaus"}
+                <svg class="login-brand-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                    <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                    <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                </svg>
+            {/if}
+            <span class="login-title">{design === "bauhaus" ? "LABHAUS" : "BioSCom"}</span>
             <span class="login-subtitle" id="auth-login-subtitle">{loginSubtitle}</span>
         </div>
         <div class="login-form">
@@ -400,7 +418,14 @@
     <!-- Panel 3: Register Account & Join Lab -->
     <div class="login-card" id="auth-panel-register-user" class:hidden={panel !== "register-user"} class:shake={shake === "register-user"}>
         <div class="login-logo">
-            <span class="login-title">BioSCom</span>
+            {#if design === "bauhaus"}
+                <svg class="login-brand-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                    <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                    <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                </svg>
+            {/if}
+            <span class="login-title">{design === "bauhaus" ? "LABHAUS" : "BioSCom"}</span>
             <span class="login-subtitle">Join a Laboratory</span>
         </div>
         <div class="login-form">
@@ -429,7 +454,14 @@
     <!-- Panel 4: Create a New Lab Group -->
     <div class="login-card" id="auth-panel-register-group" class:hidden={panel !== "register-group"} class:shake={shake === "register-group"}>
         <div class="login-logo">
-            <span class="login-title">BioSCom</span>
+            {#if design === "bauhaus"}
+                <svg class="login-brand-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                    <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                    <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                </svg>
+            {/if}
+            <span class="login-title">{design === "bauhaus" ? "LABHAUS" : "BioSCom"}</span>
             <span class="login-subtitle">Create a New Laboratory</span>
         </div>
         <div class="login-form">
@@ -458,7 +490,14 @@
     <!-- Panel 5: Reset Password -->
     <div class="login-card" id="auth-panel-reset" class:hidden={panel !== "reset"} class:shake={shake === "reset"}>
         <div class="login-logo">
-            <span class="login-title">BioSCom</span>
+            {#if design === "bauhaus"}
+                <svg class="login-brand-mark" width="56" height="20" viewBox="0 0 58 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="#DE2C1E"/>
+                    <polygon points="28,1 37,19 19,19" fill="#F0B62B"/>
+                    <rect x="41" y="1" width="18" height="18" fill="#1D4FA2"/>
+                </svg>
+            {/if}
+            <span class="login-title">{design === "bauhaus" ? "LABHAUS" : "BioSCom"}</span>
             <span class="login-subtitle">Reset Password</span>
         </div>
         <div class="login-form">

@@ -12,5 +12,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // Each fixture launches Vite and Chromium; serialize to avoid pending WebSocket races.
+    maxWorkers: 1,
   },
 });

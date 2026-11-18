@@ -6,7 +6,10 @@
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
   import { opDeleteProtocol, roleCanWrite } from "../../lib/ops";
   import { openProtocolForm } from "../../lib/forms";
+  import { stripEmoji } from "../../lib/inventoryUtils";
+  import { theme } from "../../lib/theme.svelte";
 
+  const design = $derived(theme.design);
   const protocols = $derived(inventory.tree?.protocols ?? []);
   const isReader = $derived(session.user?.role === "reader");
 
@@ -34,8 +37,8 @@
 <div id="protocols-container" class="protocols-container" style={`display: ${protocols.length === 0 ? "none" : "block"};`}>
     {#each protocols as prot (prot.id)}
         <div class="protocol-card" style={isReader ? "" : "cursor:pointer;"} onclick={isReader ? undefined : () => openProtocolForm({ id: prot.id, title: prot.title ?? "", content: prot.content ?? "" })}>
-            <div class="protocol-title">{prot.title}</div>
-            <div class="protocol-content">{prot.content}</div>
+            <div class="protocol-title">{design === "bauhaus" ? stripEmoji(prot.title) : prot.title}</div>
+            <div class="protocol-content">{design === "bauhaus" ? stripEmoji(prot.content) : prot.content}</div>
             <div class="protocol-actions">
                 {#if !isReader}
                     <button class="btn-inline danger" title="Delete" onclick={(e) => { e.stopPropagation(); deleteProtocol(prot.id, prot.title ?? ""); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
@@ -45,5 +48,5 @@
     {/each}
 </div>
 <div id="protocols-empty" class="empty-state" style={`display: ${protocols.length === 0 ? "block" : "none"};`}>
-    <div class="empty-icon">📖</div><h2>No protocols yet</h2><p>Add your first standard solution or protocol</p>
+    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-blue" aria-hidden="true"></span>{:else}📖{/if}</div><h2>No protocols yet</h2><p>Add your first standard solution or protocol</p>
 </div>

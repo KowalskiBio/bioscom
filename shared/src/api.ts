@@ -1,4 +1,73 @@
 import { z } from "zod";
+import { MAX_RACK_COLUMNS, MAX_RACK_ROWS, MAX_RACK_SHELVES, MAX_RACK_SLOTS } from "./inventory.js";
+
+const rackRowsSchema = z.number().int().min(1).max(MAX_RACK_ROWS);
+const rackColumnsSchema = z.number().int().min(1).max(MAX_RACK_COLUMNS);
+const rackSlotSchema = z.number().int().min(0).max(MAX_RACK_SLOTS - 1);
+const rackShelvesSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
+const rackShelfSchema = z.number().int().min(1).max(MAX_RACK_SHELVES);
+
+/** A nullable, nonempty stable document id used by optional room links. */
+const nullableBodyIdSchema = z.string().trim().min(1).nullable();
+
+interface InstrumentRoomLinkValues {
+  roomGroupId?: string | null;
+  roomId?: string | null;
+}
+
+/**
+ * Instrument room update links are all-or-nothing. Both fields omitted means
+ * "keep the current assignment"; both nonempty ids assign a new room. Both null
+ * parses here so the API can reject clearing the now-mandatory room with an
+ * explicit 4xx instead of a generic schema error. Anything else, including a
+ * present-but-undefined half, is a broken pair and must not be silently
+ * treated as "no change".
+ */
+function refineInstrumentRoomLink(value: InstrumentRoomLinkValues, ctx: z.RefinementCtx): void {
+  const hasGroupId = Object.prototype.hasOwnProperty.call(value, "roomGroupId");
+  const hasRoomId = Object.prototype.hasOwnProperty.call(value, "roomId");
+  if (!hasGroupId && !hasRoomId) return;
+  if (!hasGroupId || !hasRoomId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must be provided together",
+      path: [hasGroupId ? "roomId" : "roomGroupId"],
+    });
+    return;
+  }
+  const groupId = value.roomGroupId;
+  const roomId = value.roomId;
+  if (groupId === undefined || roomId === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must be nonempty ids or both null",
+      path: [groupId === undefined ? "roomGroupId" : "roomId"],
+    });
+    return;
+  }
+  if ((groupId === null) !== (roomId === null)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "roomGroupId and roomId must both be null or both be set",
+      path: [groupId === null ? "roomGroupId" : "roomId"],
+    });
+  }
+}
+
+const instrumentRoomLinkFields = {
+  roomGroupId: nullableBodyIdSchema.optional(),
+  roomId: nullableBodyIdSchema.optional(),
+};
+
+/**
+ * New instruments must be created with a canonical physical-room pair. Unlike
+ * the update fields, neither half is optional or nullable: an explicit room in
+ * the caller's owning lab is part of the create contract.
+ */
+const requiredInstrumentRoomFields = {
+  roomGroupId: z.string().trim().min(1),
+  roomId: z.string().trim().min(1),
+};
 
 export const RegisterBodySchema = z.object({
   email: z.email().max(254),
@@ -47,12 +116,21 @@ const ShelfSpecSchema = z.union([
   }),
 ]);
 
+export const AddDeepFreezerBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(500).optional(),
+  emoji: z.string().trim().max(16).optional(),
+  rackRows: rackRowsSchema.optional(),
+  rackColumns: rackColumnsSchema.optional(),
+  rackShelves: rackShelvesSchema.optional(),
+});
+
 export const AddContainerBodySchema = z.object({
   roomId: z.string().min(1),
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   emoji: z.string().trim().max(16).optional(),
-  type: z.enum(["cabinet", "fridge", "freezer", "deepfreezer"]),
+  type: z.enum(["cabinet", "fridge", "freezer", "crate", "deepfreezer"]),
   cabinetMethod: z.enum(["numerical", "alphabetical", "custom"]).optional(),
   customRangeType: z.enum(["alphabetical", "numerical"]).optional(),
   shelves: z.array(ShelfSpecSchema).max(50).optional(),
@@ -69,10 +147,35 @@ export const EditContainerBodySchema = z
     message: "empty update",
   });
 
+export const AddDeepFreezerRackBodySchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  slot: rackSlotSchema.optional(),
+});
+
+export const MoveDeepFreezerRackBodySchema = z.object({
+  slot: rackSlotSchema,
+});
+
+export const ResizeDeepFreezerBodySchema = z.object({
+  rackRows: rackRowsSchema,
+  rackColumns: rackColumnsSchema,
+  rackShelves: rackShelvesSchema.optional(),
+});
+
+export const AddDeepFreezerBoxBodySchema = z.object({
+  rackName: z.string().trim().min(1).max(50),
+  color: z.string().trim().max(32).optional(),
+});
+
+export const MoveDeepFreezerBoxBodySchema = z.object({
+  shelf: rackShelfSchema,
+});
+
 export const AddShelfBodySchema = z.object({
   roomId: z.string().min(1),
   containerId: z.string().min(1),
   name: z.string().trim().min(1).max(100),
+  type: z.enum(["shelf", "door_shelf", "crate", "box"]).optional(),
   parentShelfId: z.string().min(1).optional(),
   rackName: z.string().trim().max(100).optional(),
   boxName: z.string().trim().max(100).optional(),
@@ -90,10 +193,33 @@ export const EditShelfBodySchema = z
   })
   .refine((value) => value.name !== undefined || value.color !== undefined, { message: "empty update" });
 
+export const StockProductBodySchema = z.object({
+  manufacturer: z.string().trim().max(100).optional(),
+  supplier: z.string().trim().max(100).optional(),
+  catalogNumber: z.string().trim().max(64).optional(),
+  productName: z.string().trim().max(160).optional(),
+  variant: z.string().trim().max(100).optional(),
+});
+
+export const BatchInfoBodySchema = z.object({
+  lotCode: z.string().trim().max(64).optional(),
+  originType: z.enum(["purchased", "prepared", "derived", "unknown"]).optional(),
+  receivedAt: z.number().int().nonnegative().optional(),
+  preparedAt: z.number().int().nonnegative().optional(),
+  preparedBy: z.string().trim().max(120).optional(),
+  expiresAt: z.number().int().nonnegative().optional(),
+});
+
+export const ChemicalAttributesBodySchema = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
+
 export const AddChemicalBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(100),
   cas: z.string().trim().max(32).optional(),
   formula: z.string().trim().max(100).optional(),
@@ -105,13 +231,19 @@ export const AddChemicalBodySchema = z.object({
   customPosition: z.string().trim().max(64).optional(),
   note: z.string().max(4000).optional(),
   shelfOverride: z.string().min(1).optional(),
+  barcode: z.string().trim().max(64).optional(),
+  type: z.string().trim().min(1).max(40).optional(),
+  attributes: ChemicalAttributesBodySchema.optional(),
+  product: StockProductBodySchema.optional(),
+  batchInfo: BatchInfoBodySchema.optional(),
 });
 
 export const EditChemicalBodySchema = z
   .object({
     roomId: z.string().min(1),
-    containerId: z.string().min(1),
-    shelfId: z.string().min(1),
+    containerId: z.string().min(1).optional(),
+    shelfId: z.string().min(1).optional(),
+    boxId: z.string().min(1).optional(),
     name: z.string().trim().min(1).max(100).optional(),
     cas: z.string().trim().max(32).optional(),
     formula: z.string().trim().max(100).optional(),
@@ -123,6 +255,11 @@ export const EditChemicalBodySchema = z
     customPosition: z.string().trim().max(64).optional(),
     note: z.string().max(4000).optional(),
     shelfOverride: z.string().min(1).optional(),
+    barcode: z.string().trim().max(64).optional(),
+    type: z.string().trim().min(1).max(40).optional(),
+    attributes: ChemicalAttributesBodySchema.optional(),
+    product: StockProductBodySchema.nullable().optional(),
+    batchInfo: BatchInfoBodySchema.optional(),
   })
   .refine(
     (value) =>
@@ -136,7 +273,12 @@ export const EditChemicalBodySchema = z
       value.position !== undefined ||
       value.customPosition !== undefined ||
       value.note !== undefined ||
-      value.shelfOverride !== undefined,
+      value.shelfOverride !== undefined ||
+      value.barcode !== undefined ||
+      value.type !== undefined ||
+      value.attributes !== undefined ||
+      value.product !== undefined ||
+      value.batchInfo !== undefined,
     { message: "empty update" },
   );
 
@@ -151,24 +293,59 @@ export const DeleteShelfBodySchema = z.object({
 
 export const DeleteChemicalBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
 });
 
 export const AdjustQtyBodySchema = z.object({
   roomId: z.string().min(1),
-  containerId: z.string().min(1),
-  shelfId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
   delta: z.number(),
+});
+
+export const BulkImportItemSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  type: z.string().trim().min(1).max(40).optional(),
+  attributes: ChemicalAttributesBodySchema.optional(),
+  cas: z.string().trim().max(32).optional(),
+  formula: z.string().trim().max(100).optional(),
+  quantity: z.number().optional(),
+  unit: z.string().trim().max(16).optional(),
+  concentration: z.number().optional(),
+  concUnit: z.string().trim().max(16).optional(),
+  position: z.string().trim().max(32).optional(),
+  customPosition: z.string().trim().max(64).optional(),
+  note: z.string().max(4000).optional(),
+  barcode: z.string().trim().max(64).optional(),
+  product: StockProductBodySchema.optional(),
+  batchInfo: BatchInfoBodySchema.optional(),
+});
+
+export const BulkImportBodySchema = z.object({
+  roomId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
+  items: z.array(BulkImportItemSchema).min(1).max(500),
+});
+
+export const MergeMaterialsBodySchema = z.object({
+  sourceMaterialId: z.string().min(1),
+  targetMaterialId: z.string().min(1),
 });
 
 export const MoveChemicalBodySchema = z.object({
   fromRoomId: z.string().min(1),
-  fromContainerId: z.string().min(1),
-  fromShelfId: z.string().min(1),
+  fromContainerId: z.string().min(1).optional(),
+  fromShelfId: z.string().min(1).optional(),
+  fromBoxId: z.string().min(1).optional(),
   toRoomId: z.string().min(1),
-  toContainerId: z.string().min(1),
-  toShelfId: z.string().min(1),
+  toContainerId: z.string().min(1).optional(),
+  toShelfId: z.string().min(1).optional(),
+  toBoxId: z.string().min(1).optional(),
   position: z.string().trim().max(32).optional(),
 });
 
@@ -196,11 +373,15 @@ export const EditProtocolBodySchema = z
 
 export const AddAssetRoomBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
+  linkedRoomId: nullableBodyIdSchema.optional(),
 });
 
 export const EditAssetRoomBodySchema = z
-  .object({ name: z.string().trim().min(1).max(100).optional() })
-  .refine((value) => value.name !== undefined, { message: "empty update" });
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    linkedRoomId: nullableBodyIdSchema.optional(),
+  })
+  .refine((value) => value.name !== undefined || value.linkedRoomId !== undefined, { message: "empty update" });
 
 export const AddAssetBodySchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -243,19 +424,26 @@ export const ReactionBodySchema = z.object({
 export const CreateInstrumentBodySchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(4000).optional(),
-  location: z.string().trim().min(1).max(200),
+  // Optional placement detail only. The canonical room link is authoritative;
+  // when this is missing or blank the server falls back to the room name.
+  location: z.string().trim().max(200).optional(),
   contactPerson: z.string().trim().max(200).optional(),
   contactEmail: z.string().trim().max(254).optional(),
+  ...requiredInstrumentRoomFields,
 });
 
 export const UpdateInstrumentBodySchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(4000).optional(),
-    location: z.string().trim().min(1).max(200).optional(),
+    // Optional placement detail: omitted preserves the stored note, an empty
+    // string clears it, and the room assignment is validated separately.
+    location: z.string().trim().max(200).optional(),
     contactPerson: z.string().trim().max(200).optional(),
     contactEmail: z.string().trim().max(254).optional(),
+    ...instrumentRoomLinkFields,
   })
+  .superRefine(refineInstrumentRoomLink)
   .refine((value) => Object.keys(value).length > 0, { message: "empty update" });
 
 export const BookingBodySchema = z.object({
@@ -334,6 +522,9 @@ export type EditShelfBody = z.infer<typeof EditShelfBodySchema>;
 export type AddChemicalBody = z.infer<typeof AddChemicalBodySchema>;
 export type EditChemicalBody = z.infer<typeof EditChemicalBodySchema>;
 export type AdjustQtyBody = z.infer<typeof AdjustQtyBodySchema>;
+export type BulkImportItem = z.infer<typeof BulkImportItemSchema>;
+export type BulkImportBody = z.infer<typeof BulkImportBodySchema>;
+export type MergeMaterialsBody = z.infer<typeof MergeMaterialsBodySchema>;
 export type MoveChemicalBody = z.infer<typeof MoveChemicalBodySchema>;
 export type AddProtocolBody = z.infer<typeof AddProtocolBodySchema>;
 export type EditProtocolBody = z.infer<typeof EditProtocolBodySchema>;

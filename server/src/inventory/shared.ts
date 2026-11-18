@@ -46,25 +46,31 @@ export function registerSharedContainerRoutes(app: FastifyInstance, config: Serv
         if (!parsed.success) {
           continue;
         }
+        const collect = (container: Container, roomId: string, roomName: string): void => {
+          if (
+            container.ownerGroupId !== undefined &&
+            container.ownerGroupId !== groupId &&
+            container.sharedWithGroupIds.includes(groupId)
+          ) {
+            const ownerGroup = db()
+              .prepare("SELECT name FROM groups WHERE id = ?")
+              .get(container.ownerGroupId) as { name: string } | undefined;
+            shared.push({
+              roomId,
+              roomName,
+              ownerGroupId: container.ownerGroupId ?? row.group_id,
+              ownerGroupName: ownerGroup?.name ?? container.ownerGroupName ?? "Unknown lab",
+              container,
+            });
+          }
+        };
         for (const room of parsed.data.rooms) {
           for (const container of room.containers) {
-            if (
-              container.ownerGroupId !== undefined &&
-              container.ownerGroupId !== groupId &&
-              container.sharedWithGroupIds.includes(groupId)
-            ) {
-              const ownerGroup = db()
-                .prepare("SELECT name FROM groups WHERE id = ?")
-                .get(container.ownerGroupId) as { name: string } | undefined;
-              shared.push({
-                roomId: room.id,
-                roomName: room.name,
-                ownerGroupId: container.ownerGroupId ?? row.group_id,
-                ownerGroupName: ownerGroup?.name ?? container.ownerGroupName ?? "Unknown lab",
-                container,
-              });
-            }
+            collect(container, room.id, room.name);
           }
+        }
+        for (const freezer of parsed.data.deepFreezers ?? []) {
+          collect(freezer, freezer.id, freezer.name);
         }
       }
       return { sharedContainers: shared };

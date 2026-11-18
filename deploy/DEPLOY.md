@@ -173,7 +173,106 @@ git push proxmox1:BioSCom.git main
 ssh proxmox1 'cd BioSCom && ./deploy/deploy.sh'   # git pull, npm ci, build -ws, systemctl restart
 ```
 
+## Rolling out the inventory refactor (typed materials)
+
+What the release changes under the hood: the legacy per-group **JSON inventory document
+stays the read/write driver** for now, but the schema gains a relational core
+(materials → products → batches → stocks, locations, shares), mirrored transactionally on
+every write. On the FIRST boot of this build, the server creates those tables and runs an
+**idempotent backfill** (JSON docs → relational rows) plus a **parity check**, all inside
+the same code path as normal migrations (`server/src/db/migrate.ts`). Nothing else in this
+runbook changes.
+
+### Pre-flight (before `git push proxmox1:BioSCom.git main`)
+
+1. Snapshot the only production data copy:
+   ```bash
+   ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-pre-inventory-refactor.db\"" && sha256sum /home/kowalski/backups/bioscom-pre-inventory-refactor.db'
+   ```
+2. (Sanity re-run locally: `npm test -w server` must be green before pushing.)
+
+### Deploy
+
+Same as Routine updates:
+
+```bash
+git push proxmox1:BioSCom.git main
+ssh proxmox1 'cd BioSCom && ./deploy/deploy.sh'   # git pull, npm ci, build -ws, systemctl restart
+```
+
+### Expected boot logs (first boot of the new build)
+
+`ssh proxmox1 'journalctl -u bioscom -n 80 --no-pager'`:
+
+- The migration runner is silent for the SQL files themselves; after any newly applied
+  migration it prints one line per backfill run, per group-checked:
+  ```
+  [inventory-backfill] synced N group(s), anomalies: 0
+  ```
+  (`synced N` = how many group docs were reconciled this boot; on later boots this rule is
+  silent unless a doc version drifted or an anomaly was found — silence is the healthy state.)
+- `[inventory-parity]` must NOT appear at all. Any `[inventory-parity] ... mismatch(es)`
+  line is an alarm: it means relational and document disagree; investigate before letting
+  colleagues in (see probe below).
+- `[inventory-sync] mirror failed` lines during operation indicate a per-write mirror
+  failure — the legacy write still succeeded (document is authoritative here); investigate
+  and then just re-edit anything in that group (sync re-heals on every mutation; the boot
+  backfill also re-heals stale docs).
+
+### Verification checklist (post-release smoke, ~5 min)
+
+1. Parity probe per lab (once, needs a logged-in session cookie; a member login of that
+   lab works): visit `https://bioscom.ubch.sci.muni.cz/api/groups/<group-id>/inventory/parity`
+   in that browser session — must answer `{ "ok": true, "issues": [] }`.
+   Alternatively without cookies, on the VM:
+   ```bash
+   ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "SELECT COUNT(*) FROM inventory_sync_state"'  # 1 row per synced group
+   ```
+2. Open the app: **Catalog** tab lists your materials with types; create/edit one legacy
+   chemical (existing flow must work exactly as before); open the **Stocks** tab and
+   confirm legacy rows show CAS etc.; create one typed item (e.g. antibody with target/
+   host) via Add Chemical → Item type; confirm it appears in Catalog with a type chip.
+3. Next `systemctl restart bioscom` → journal shows NO `[inventory-backfill] synced 0`
+   anomalies and still no `[inventory-parity]` line (data converged 1:1).
+
+### Rollback for this release
+
+**Current rollback posture: snapshot-restore ONLY.** After this build boots, the inventory document **is** rewritten once (legacy nested deep freezers are hoisted to root level with version +1 logged via `[inventory-backfill] relocated ...`), and its every write also depends on new side tables. There is no "deploy previous tag and ignore the new tables" path anymore.
+
+To restore after any operational incident:
+
+1. Stop the unit: `sudo systemctl stop bioscom`.
+2. Restore the pre-refactor snapshot: `cp /home/kowalski/backups/bioscom-pre-inventory-refactor.db /home/kowalski/BioSCom/bioscom.db` (drop `-wal`/`-shm` sidecars; WAL rebuilds).
+3. Start the unit and verify: `curl -sS https://bioscom.ubch.sci.muni.cz/api/health` → `{"status":"ok"}`; check one real login; check **`GET /api/groups/<lab>/inventory/parity` returns `{ok: true, issues: []}`** per lab before saying rollback is done.
+4. Everything written *between* rollout and the incident (post-hoist) is not yet mapped backwards — the new tables may contain information that the restored doc lost. Only after you reconcile manually via the parity probe per lab (`/api/groups/<id>/inventory/parity`) can you call the rollback inclusive.
+
+Monitoring contract you can rely on (already-live, not aspirational): **every boot** runs backfill (idempotent doc→relational sync with structurally-drift-detection incl. deepfreezer hoists) + parity probe for every group; expect silent healthy output when converged, JSON lines when it isn't: `[inventory-backfill] synced N group(s), anomalies: 0` and any `[inventory-parity] ... mismatch(es)` line as a true alarm. `migration_0001..0007`
+apply transactionally per file; `migration_0006` adds nullable `rack_rows`/`rack_columns` to `locations` so untouched legacy rows keep NULL and keep resolving as the implicit 8x4 (32-slot) grid; `migration_0007` adds nullable `rack_shelves`/`shelf_index` (per-rack box capacity and one-based box shelf, NULL preserved for legacy rows and normalized at read time to 13 shelves / numeric box names); mirror failures during a write (`[inventory-sync] mirror failed for group …`) are **savepointed** — the doc commits, the mirror rolls back atomically and naturally re-heals on the next boot via the above contract. Gone-off PARITY probe after merges returns `ok:true` by design; only true drift trips parity now.
+
+### Tier-2 verification package (offline drills on a production copy)
+
+Three operator scripts live in `server/scripts/` (all read-only against the source; none of them ever touches the live DB):
+
+```bash
+# on proxmox1, work against a copy — the live service keeps running:
+sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO '/tmp/bioscom-tier2.db'"
+cd /home/kowalski/BioSCom/server
+
+npm run probe:integrity -- --db /tmp/bioscom-tier2.db   # parity + mirror sanity
+npm run census:slots   -- --db /tmp/bioscom-tier2.db   # deep-freeze geometry audit
+npm run drill:restore  -- --db /tmp/bioscom-tier2.db   # snapshot→boot→parity end-to-end
+npm run drill:restore  -- --db /tmp/bioscom-tier2.db --tamper   # proves drift detection fires
+```
+
+- **probe:integrity** — opens the copy read-only; reports per-group parity, legacy nested freezers still awaiting the boot hoist (informational), orphan mirror rows, and `mirror-uninitialized` if the relational tables are absent. Exit `0` clean / `1` parity-or-orphan issues / `2` structural gap. Mirrors what every boot already logs; use it pre-release and after any manual DB surgery.
+- **census:slots** — audits freezer geometry that write endpoints enforce but old data may violate: rack slots must be unique and within each freezer's configured `rackRows x rackColumns` capacity (missing/NULL dims mean the legacy 8x4 = 0..31 grid), box shelf indices must be unique per rack and within `rackShelves` (missing count = 13, numeric legacy box names count as their index), boxes must resolve to a rack, no duplicate (rack, box) pairs, no two vials in the same box position, no dangling `sharedWithGroupIds`. Informational notes (loose shelves, chemicals directly on a freezer, hoist-pending nests) do not fail the run. Exit `0`/`1` on anomalies.
+- **drill:restore** — the rollback contract exercised end-to-end: snapshots the DB via `VACUUM INTO` into a temp dir, boots the built server against that snapshot on an alternate port, waits for `/api/public/groups`, then re-checks parity on the snapshot. Default run must end `PASS — parity is clean`; `--tamper` first deletes one group's `stocks` mirror rows and must end `PASS — drift was detected`. `--keep` preserves the workdir for forensics. Requires `npm run build -w server` first. Run once after any restore rehearsal, and after each inventory-model migration.
+
+A synthetic repro for all anomaly classes (plus a clean-control group) is one command away: `npm run make:tier2-fixture -- --out /tmp/tier2 [--drift]` — point the three scripts at the printed path to watch every check fire (`--drift` additionally deletes one material row so parity must flag it).
+
 ## Backups
+
+
 
 ```bash
 ssh proxmox1 'sqlite3 /home/kowalski/BioSCom/bioscom.db "VACUUM INTO \"/home/kowalski/backups/bioscom-$(date +%Y%m%d).db\"" && sha256sum /home/kowalski/backups/bioscom-*.db'

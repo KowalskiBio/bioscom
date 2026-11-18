@@ -9,13 +9,16 @@
     chemMatchesQuery,
     highlightHtml,
     normalizeFormula,
+    stripEmoji,
   } from "../lib/inventoryUtils";
+  import { theme } from "../lib/theme.svelte";
 
   let inputEl = $state<HTMLInputElement | null>(null);
   let open = $state(false);
 
   const route = $derived(router.route);
   const q = $derived(searchState.query.trim().toLowerCase());
+  const design = $derived(theme.design);
 
   interface SearchItem {
     kind: "chemical" | "protocol" | "asset" | "instrument" | "printCatalog" | "printRequest";
@@ -59,7 +62,7 @@
           kind: "protocol",
           name: p.title ?? "",
           detail: (p.content ?? "").replace(/\n/g, " ").slice(0, 60),
-          badge: "📖 Protocol",
+          badge: design === "bauhaus" ? "Protocol" : "📖 Protocol",
           itemId: p.id,
         });
       }
@@ -74,7 +77,7 @@
           kind: "asset",
           name: a.name ?? "",
           detail: a.model ?? "Asset",
-          badge: "📦 Asset",
+          badge: design === "bauhaus" ? "Asset" : "📦 Asset",
           itemId: a.id,
         });
       }
@@ -89,7 +92,7 @@
           kind: "instrument",
           name: inst.name ?? "",
           detail: inst.location ?? "",
-          badge: "🔬 Instrument",
+          badge: design === "bauhaus" ? "Instrument" : "🔬 Instrument",
           itemId: inst.id,
         });
       }
@@ -105,7 +108,7 @@
           kind: "printCatalog",
           name: item.name ?? "",
           detail: `${item.category ?? ""} | ${item.material ?? ""}`,
-          badge: "🖨️ 3D Catalog",
+          badge: design === "bauhaus" ? "3D Catalog" : "🖨️ 3D Catalog",
           itemId: item.id,
         });
       }
@@ -119,7 +122,7 @@
           kind: "printRequest",
           name: r.catalogItemName ?? "",
           detail: r.note ?? "",
-          badge: "🖨️ 3D Request",
+          badge: design === "bauhaus" ? "3D Request" : "🖨️ 3D Request",
           itemId: r.id,
         });
       }
@@ -186,10 +189,10 @@
                 {#each results as item (item.kind + item.name + item.detail)}
                     <div class="autocomplete-item" onclick={() => pick(item)}>
                         <div style="display:flex;align-items:center;gap:0.5rem">
-                            <span class="autocomplete-item-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(item.name, q)}</span>
-                            <span class={`autocomplete-item-pos ${item.kind === "protocol" ? "protocol-badge" : ""} ${item.kind === "asset" ? "asset-badge" : ""}`}>{item.badge}</span>
+                            <span class="autocomplete-item-name"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html highlightHtml(design === "bauhaus" ? stripEmoji(item.name) : item.name, q)}</span>
+                            <span class={`autocomplete-item-pos ${item.kind === "protocol" ? "protocol-badge" : ""} ${item.kind === "asset" ? "asset-badge" : ""}`}>{design === "bauhaus" ? stripEmoji(item.badge) : item.badge}</span>
                         </div>
-                        <span class="autocomplete-item-shelf">{item.detail}</span>
+                        <span class="autocomplete-item-shelf">{design === "bauhaus" ? stripEmoji(item.detail) : item.detail}</span>
                     </div>
                 {/each}
             {/if}

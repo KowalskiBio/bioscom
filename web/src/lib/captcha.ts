@@ -44,7 +44,7 @@ export function verifyCaptchaAndExecute(action: () => void): void {
   options.sort(() => Math.random() - 0.5);
 
   openModal({
-    title: "🐸 Anti-Bot Check",
+    title: document.body.dataset.design === "bauhaus" ? "Anti-Bot Check" : "🐸 Anti-Bot Check",
     component: CaptchaBody,
     props: {
       imageUrl: imageUrl(targetFrog.file),

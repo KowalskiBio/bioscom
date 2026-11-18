@@ -27,6 +27,12 @@ export const InstrumentSchema = z.looseObject({
   contactEmail: optionalTextSchema,
   ownerLabId: optionalTextSchema,
   ownerLabName: optionalTextSchema,
+  // Canonical physical-room assignment. New instruments/bookings require a
+  // complete pair pointing at a real room in an inventory tree. Legacy records
+  // may omit or null these until migrated; the free-text `location` is only a
+  // placement note and never a room locator.
+  roomGroupId: optionalIdSchema,
+  roomId: optionalIdSchema,
   bookings: rtdbArray(InstrumentBookingSchema).catch([]),
 });
 

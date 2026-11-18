@@ -23,6 +23,10 @@ function widget(): HTMLElement | null {
   return document.getElementById("lab-radio-widget");
 }
 
+function isBauhaus(): boolean {
+  return document.body.dataset.design === "bauhaus";
+}
+
 function audio(): HTMLAudioElement | null {
   return document.getElementById("lab-radio-audio") as HTMLAudioElement | null;
 }
@@ -54,7 +58,7 @@ export function startLabRadio(station: string): void {
       w.querySelector(".vinyl-container")?.classList.add("playing");
       const playBtn = document.getElementById("btn-radio-play");
       if (playBtn !== null) {
-        playBtn.textContent = "⏸️";
+        playBtn.textContent = isBauhaus() ? "II" : "⏸️";
       }
     })
     .catch(() => {
@@ -75,7 +79,7 @@ export function toggleRadioPlay(): void {
         w.querySelector(".vinyl-container")?.classList.add("playing");
         const playBtn = document.getElementById("btn-radio-play");
         if (playBtn !== null) {
-          playBtn.textContent = "⏸️";
+          playBtn.textContent = isBauhaus() ? "II" : "⏸️";
         }
       })
       .catch(() => {
@@ -86,7 +90,7 @@ export function toggleRadioPlay(): void {
     w.querySelector(".vinyl-container")?.classList.remove("playing");
     const playBtn = document.getElementById("btn-radio-play");
     if (playBtn !== null) {
-      playBtn.textContent = "▶️";
+      playBtn.textContent = isBauhaus() ? "▶" : "▶️";
     }
   }
 }

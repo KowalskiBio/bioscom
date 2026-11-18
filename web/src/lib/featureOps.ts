@@ -48,13 +48,23 @@ export function opCreateInstrument(body: {
   location: string;
   contactPerson?: string;
   contactEmail?: string;
+  roomGroupId?: string | null;
+  roomId?: string | null;
 }): Promise<boolean> {
   return run("Failed to add instrument", () => api.post("/api/instruments", body));
 }
 
 export function opUpdateInstrument(
   id: string,
-  body: { name?: string; description?: string; location?: string; contactPerson?: string; contactEmail?: string },
+  body: {
+    name?: string;
+    description?: string;
+    location?: string;
+    contactPerson?: string;
+    contactEmail?: string;
+    roomGroupId?: string | null;
+    roomId?: string | null;
+  },
 ): Promise<boolean> {
   return run("Failed to save instrument", () => api.put(`/api/instruments/${id}`, body));
 }
