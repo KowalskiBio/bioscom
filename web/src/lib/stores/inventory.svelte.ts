@@ -1,5 +1,5 @@
 import type { Container, InventoryTree, SharedContainerRef } from "@bioscom/shared";
-import { api } from "../api";
+import { ApiError, api } from "../api";
 import type { InventoryBroadcast } from "../ws";
 
 export interface SharedContainerListItem {
@@ -62,7 +62,7 @@ export async function fetchInventory(groupId: string): Promise<void> {
     // A refresh failure must not turn the last confirmed document into an empty
     // inventory. Callers retain the existing rejection semantics.
     if (generation === requestGeneration && requestedGroupId === groupId) {
-      loadError = "Couldn’t load room assignments.";
+      loadError = error instanceof ApiError ? error.message : "Couldn’t load room assignments.";
     }
     throw error;
   }

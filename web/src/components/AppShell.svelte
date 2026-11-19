@@ -636,6 +636,9 @@
             </div>
         {/if}
         <!-- Dashboard View (Bauhaus home) -->
+        {#if inventory.loadError !== ""}
+            <div role="alert" style="margin: 0.5rem 1rem; padding: 0.6rem 1rem; border: 1px solid #b3372f; border-radius: 8px; color: #b3372f; font-weight: 600;">{inventory.loadError}</div>
+        {/if}
         <section id="view-dashboard" class="view" class:active={route.view === "dashboard"}>
             {#if design === "bauhaus"}
                 <DashboardView />
