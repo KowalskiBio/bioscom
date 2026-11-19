@@ -14,7 +14,8 @@
   import { closeLabRadio, toggleRadioPlay, setRadioVolume } from "../lib/radio";
   import { showToast } from "../lib/stores/toast.svelte";
   import { exportPDF, exportContainerPDF } from "../lib/exports";
-  import { opDeleteContainer, roleCanWrite } from "../lib/ops";
+  import { opDeleteContainer, opDeleteContainerGrid, opSetContainerGrid, opSetRoomGrid, roleCanWrite } from "../lib/ops";
+  import type { GridSettings } from "../lib/grid";
   import { stripEmoji } from "../lib/inventoryUtils";
   import { verifyCaptchaAndExecute } from "../lib/captcha";
   import {
@@ -33,6 +34,7 @@
   import { openModal, closeModal } from "../lib/modal.svelte";
   import Modal from "./Modal.svelte";
   import SettingsModal from "./modals/SettingsModal.svelte";
+  import GridSettingsModal from "./modals/GridSettingsModal.svelte";
   import GlobalSearch from "./GlobalSearch.svelte";
   import RoomsView from "./views/RoomsView.svelte";
   import DashboardView from "./views/DashboardView.svelte";
@@ -78,6 +80,7 @@
   const badgeGroup = $derived(groupList.items.find((g) => g.id === session.user?.groupId));
   const badgeVisible = $derived(session.user !== null);
   const isReader = $derived(session.user?.role === "reader");
+  const canWrite = $derived(roleCanWrite());
   const isSuperadmin = $derived(session.user?.role === "superadmin");
   const catalogTypeLabel = $derived(
     catalog.typeFilter === "" ? "all types" : (materialTypeLabels()[catalog.typeFilter] ?? catalog.typeFilter),
@@ -187,6 +190,57 @@
       return;
     }
     openRoomForm("add");
+  }
+
+  function configureRoomGrid(): void {
+    if (!canWrite || route.view !== "rooms") return;
+    const rooms = inventory.tree?.rooms ?? [];
+    const roomGrid = inventory.tree?.roomGrid;
+    openModal({
+      title: "Room grid",
+      component: GridSettingsModal,
+      props: {
+        gridName: "Room grid",
+        itemLabel: "rooms",
+        itemCount: rooms.length,
+        initialRows: roomGrid?.rows ?? Math.min(20, Math.max(1, Math.ceil(rooms.length / 3))),
+        initialColumns: roomGrid?.columns ?? 3,
+        initialHideEmptySlots: roomGrid?.hideEmptySlots ?? false,
+        onSave: async (settings: GridSettings) => {
+          const saved = await opSetRoomGrid(settings);
+          if (saved) showToast("Room grid saved");
+          return saved;
+        },
+      },
+    });
+  }
+
+  function configureContainerGrid(): void {
+    if (!canWrite || route.view !== "containers" || containersRoom === undefined || isVirtualShared) return;
+    const currentRoom = containersRoom;
+    const containers = currentRoom.containers ?? [];
+    openModal({
+      title: "Container grid",
+      component: GridSettingsModal,
+      props: {
+        gridName: "Container grid",
+        itemLabel: "containers",
+        itemCount: containers.length,
+        initialRows: currentRoom.containerGrid?.rows ?? Math.min(20, Math.max(1, Math.ceil(containers.length / 3))),
+        initialColumns: currentRoom.containerGrid?.columns ?? 3,
+        initialHideEmptySlots: currentRoom.containerGrid?.hideEmptySlots ?? false,
+        onSave: async (settings: GridSettings) => {
+          const saved = await opSetContainerGrid(currentRoom.id, settings);
+          if (saved) showToast("Container grid saved");
+          return saved;
+        },
+        onUseDefaultView: async () => {
+          const restored = await opDeleteContainerGrid(currentRoom.id);
+          if (restored) showToast("Default container view restored");
+          return restored;
+        },
+      },
+    });
   }
 
   function onExportPdf(): void {
@@ -613,6 +667,12 @@
                 <div><h1>Rooms &amp; equipment</h1><p class="view-subtitle">Select a room to view its storage, instruments and assigned barcodes</p></div>
                 <div class="view-header-actions">
                     <button id="btn-export-pdf" class="btn-secondary" onclick={onExportPdf}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export PDF</span></button>
+                    {#if canWrite && route.view === "rooms"}
+                        <button id="btn-room-grid" type="button" class="btn-secondary" aria-label="Room grid" title="Room grid settings" onclick={configureRoomGrid}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                            <span>Grid</span>
+                        </button>
+                    {/if}
                     <button id="btn-add-room" class="btn-primary" onclick={onAddRoom}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Room</span></button>
                 </div>
             </div>
@@ -626,6 +686,12 @@
                 <div class="view-header-actions">
                     <button id="btn-edit-room" class="btn-secondary" title="Edit room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onEditRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                     <button id="btn-delete-room" class="btn-danger-outline" title="Delete room" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onDeleteRoom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    {#if canWrite && route.view === "containers" && containersRoom !== undefined && !isVirtualShared}
+                        <button id="btn-container-grid" type="button" class="btn-secondary" aria-label="Container grid" title="Container grid settings" onclick={configureContainerGrid}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                            <span>Grid</span>
+                        </button>
+                    {/if}
                     <button id="btn-add-room-chemical" class="btn-primary" style={`display: ${!isReader ? "inline-flex" : "none"};`} onclick={onAddRoomChemical}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
                     <button id="btn-add-cabinet" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("cabinet")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Cabinet</span></button>
                     <button id="btn-add-fridge" class="btn-primary btn-fridge" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("fridge")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Fridge</span></button>

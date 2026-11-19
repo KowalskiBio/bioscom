@@ -8,6 +8,7 @@ import {
   optionalBooleanSchema,
   rtdbArray,
 } from "./common.js";
+import { GridLayoutDocSchema } from "./grid.js";
 import { InstrumentSchema } from "./instrument.js";
 import { NoticeSchema } from "./notice.js";
 import { PrintCatalogItemSchema, PrintRequestSchema } from "./print.js";
@@ -280,6 +281,9 @@ export const RoomSchema = z.looseObject({
   description: optionalTextSchema,
   containers: rtdbArray(ContainerSchema).catch([]),
   chemicals: rtdbArray(ChemicalSchema).nullish().catch(undefined),
+  // Optional doc-only container layout grid for this room. Keyed by stable
+  // container ids; corrupt/missing metadata degrades to "no grid".
+  containerGrid: GridLayoutDocSchema,
 });
 
 export const AssetRoomSchema = z.looseObject({
@@ -308,6 +312,9 @@ export const ProtocolSchema = z.looseObject({
 
 export const InventoryTreeSchema = z.looseObject({
   rooms: rtdbArray(RoomSchema).catch([]),
+  // Optional doc-only room layout grid. Keyed by stable room ids; deep
+  // freezers stay in their own rail and are never part of this grid.
+  roomGrid: GridLayoutDocSchema,
   deepFreezers: rtdbArray(ContainerSchema).nullish().catch(undefined),
   assetRooms: rtdbArray(AssetRoomSchema).catch([]),
   assets: rtdbArray(AssetSchema).catch([]),

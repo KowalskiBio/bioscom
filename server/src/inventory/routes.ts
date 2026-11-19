@@ -25,6 +25,18 @@ import {
   EditAssetRoomBodySchema,
   AddAssetBodySchema,
   EditAssetBodySchema,
+  ContainerGridMoveBodySchema,
+  GridSettingsSchema,
+  RoomGridMoveBodySchema,
+  MAX_GRID_ROWS,
+  autoAssignGridPositions,
+  fillFreeGridSlots,
+  gridCapacity,
+  gridPositionsFitProblem,
+  moveGridItem,
+  nextFreeGridSlot,
+  removeGridItem,
+  sortByGridSlot,
   validateAttributes as validateMaterialAttributes,
   nextFreeRackSlot,
   nextFreeRackShelf,
@@ -37,6 +49,7 @@ import {
   type Chemical,
   type Container,
   type InventoryTree,
+  type Room,
 } from "@bioscom/shared";
 import { getDatabase } from "../db.js";
 import type { ServerConfig } from "../config.js";
@@ -131,6 +144,37 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       throw new OpError(404, "Room not found");
     }
     return room.id;
+  };
+
+  // Container layout grids belong to a real canonical room only. Deep-freezer
+  // pseudo rooms (their ids resolve through findRoomOrThrow) and the virtual
+  // `shared-assets` view are never valid grid owners.
+  const resolveGridRoom = (tree: InventoryTree, roomId: string): Room => {
+    if (roomId === "shared-assets") {
+      throw new OpError(404, "Room not found");
+    }
+    const room = findRoomOrThrow(tree, roomId);
+    if (isPseudoRoom(room)) {
+      throw new OpError(404, "Room not found");
+    }
+    return room;
+  };
+
+  // Auto-place a freshly created item and grow the grid by one row while the
+  // maximum is not reached. A full 20-row grid leaves the item unpositioned;
+  // creation itself must still succeed.
+  const autoAssignNewGridItem = (
+    grid: { rows: number; columns: number; positions: Record<string, number> },
+    itemId: string,
+  ): void => {
+    let slot = nextFreeGridSlot(grid.positions, gridCapacity(grid.rows, grid.columns));
+    if (slot === null && grid.rows < MAX_GRID_ROWS) {
+      grid.rows += 1;
+      slot = nextFreeGridSlot(grid.positions, gridCapacity(grid.rows, grid.columns));
+    }
+    if (slot !== null) {
+      grid.positions[itemId] = slot;
+    }
   };
 
   app.post("/api/groups/:id/inventory/deepfreezers/:deepfreezerId/racks", async (request, reply) => {
@@ -505,7 +549,12 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
-        tree.rooms.push({ id: genId(), name: body.data.name, description: body.data.description, containers: [] });
+        const room: Room = { id: genId(), name: body.data.name, description: body.data.description, containers: [] };
+        tree.rooms.push(room);
+        if (tree.roomGrid !== undefined) {
+          autoAssignNewGridItem(tree.roomGrid, room.id);
+          tree.rooms = sortByGridSlot(tree.rooms, tree.roomGrid.positions);
+        }
         return `Added room "${body.data.name}"`;
       });
       broadcastResult(groupId, result);
@@ -571,7 +620,145 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           );
         }
         tree.rooms = tree.rooms.filter((candidate) => candidate.id !== roomId);
+        if (tree.roomGrid !== undefined) {
+          tree.roomGrid.positions = removeGridItem(tree.roomGrid.positions, roomId);
+        }
         return `Deleted room "${room.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/room-grid", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = GridSettingsSchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const { rows, columns, hideEmptySlots } = body.data;
+        if (tree.roomGrid === undefined) {
+          tree.roomGrid = {
+            rows,
+            columns,
+            positions: autoAssignGridPositions(
+              tree.rooms.map((room) => room.id),
+              gridCapacity(rows, columns),
+            ),
+            hideEmptySlots: hideEmptySlots ?? false,
+          };
+          tree.rooms = sortByGridSlot(tree.rooms, tree.roomGrid.positions);
+          return `Created room grid (${rows}x${columns})`;
+        }
+        // Shrinks must never silently renumber or drop occupied slots.
+        const grid = tree.roomGrid;
+        const previousCapacity = gridCapacity(grid.rows, grid.columns);
+        const fitProblem = gridPositionsFitProblem(grid.positions, rows, columns);
+        if (fitProblem !== null) {
+          throw new OpError(409, `Cannot resize room grid to ${rows}x${columns}: ${fitProblem}`);
+        }
+        grid.rows = rows;
+        grid.columns = columns;
+        // View-only preference: never touches positions or document order.
+        if (hideEmptySlots !== undefined) {
+          grid.hideEmptySlots = hideEmptySlots;
+        }
+        const capacity = gridCapacity(rows, columns);
+        if (capacity > previousCapacity) {
+          // Growth fills previously unpositioned rooms into the first free
+          // slots without renumbering anything that is already placed.
+          const positions = fillFreeGridSlots(tree.rooms.map((room) => room.id), grid.positions, capacity);
+          if (Object.keys(positions).length > Object.keys(grid.positions).length) {
+            grid.positions = positions;
+            tree.rooms = sortByGridSlot(tree.rooms, grid.positions);
+          }
+        }
+        return `Resized room grid to ${rows}x${columns}`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.delete("/api/groups/:id/inventory/room-grid", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      if (currentTree.roomGrid === undefined) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: null };
+      }
+      const result = mutate(groupId, user, (tree) => {
+        tree.roomGrid = undefined;
+        return "Removed room grid";
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/room-grid/move", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = RoomGridMoveBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+
+      // Resolve same-slot no-ops before mutating so they do not bump the
+      // document or append history.
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      const currentGrid = currentTree.roomGrid;
+      if (currentGrid === undefined) {
+        throw new OpError(404, "Room grid not configured");
+      }
+      const currentRoom = currentTree.rooms.find((candidate) => candidate.id === body.data.roomId);
+      if (currentRoom === undefined) {
+        throw new OpError(404, "Room not found");
+      }
+      const currentCapacity = gridCapacity(currentGrid.rows, currentGrid.columns);
+      if (body.data.slot >= currentCapacity) {
+        throw new OpError(
+          409,
+          `Slot ${body.data.slot} is outside the room grid capacity (${currentGrid.rows}x${currentGrid.columns} = ${currentCapacity} slots)`,
+        );
+      }
+      if (currentGrid.positions[body.data.roomId] === body.data.slot) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: null };
+      }
+
+      const result = mutate(groupId, user, (tree) => {
+        const grid = tree.roomGrid;
+        if (grid === undefined) {
+          throw new OpError(404, "Room grid not configured");
+        }
+        const room = tree.rooms.find((candidate) => candidate.id === body.data.roomId);
+        if (room === undefined) {
+          throw new OpError(404, "Room not found");
+        }
+        const capacity = gridCapacity(grid.rows, grid.columns);
+        if (body.data.slot >= capacity) {
+          throw new OpError(
+            409,
+            `Slot ${body.data.slot} is outside the room grid capacity (${grid.rows}x${grid.columns} = ${capacity} slots)`,
+          );
+        }
+        grid.positions = moveGridItem(grid.positions, body.data.roomId, body.data.slot);
+        tree.rooms = sortByGridSlot(tree.rooms, grid.positions);
+        return `Moved room "${room.name}" to grid slot ${body.data.slot}`;
       });
       broadcastResult(groupId, result);
       return result;
@@ -618,6 +805,12 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           }),
         };
         room.containers.push(container);
+        // Deep freezers are relocated to the root rail on the next document
+        // load; never give them a slot in this room's container grid.
+        if (room.containerGrid !== undefined && container.type !== "deepfreezer") {
+          autoAssignNewGridItem(room.containerGrid, container.id);
+          room.containers = sortByGridSlot(room.containers, room.containerGrid.positions);
+        }
         return `Added container "${body.data.name}"`;
       });
       broadcastResult(groupId, result);
@@ -671,7 +864,163 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         const room = findRoomOrThrow(tree, body.data.roomId);
         const container = findContainerOrThrow(tree, body.data.roomId, containerId);
         room.containers = room.containers.filter((candidate) => candidate.id !== containerId);
+        if (room.containerGrid !== undefined) {
+          room.containerGrid.positions = removeGridItem(room.containerGrid.positions, containerId);
+        }
         return `Deleted container "${container.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/rooms/:roomId/container-grid", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const roomId = (request.params as { roomId: string }).roomId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = GridSettingsSchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const room = resolveGridRoom(tree, roomId);
+        const { rows, columns, hideEmptySlots } = body.data;
+        if (room.containerGrid === undefined) {
+          room.containerGrid = {
+            rows,
+            columns,
+            positions: autoAssignGridPositions(
+              room.containers.map((container) => container.id),
+              gridCapacity(rows, columns),
+            ),
+            hideEmptySlots: hideEmptySlots ?? false,
+          };
+          room.containers = sortByGridSlot(room.containers, room.containerGrid.positions);
+          return `Created container grid for room "${room.name}" (${rows}x${columns})`;
+        }
+        // Owner-lab authority only; shared-container access never grants
+        // permission to rearrange another lab's layout.
+        const grid = room.containerGrid;
+        const previousCapacity = gridCapacity(grid.rows, grid.columns);
+        const fitProblem = gridPositionsFitProblem(grid.positions, rows, columns);
+        if (fitProblem !== null) {
+          throw new OpError(
+            409,
+            `Cannot resize container grid for room "${room.name}" to ${rows}x${columns}: ${fitProblem}`,
+          );
+        }
+        grid.rows = rows;
+        grid.columns = columns;
+        // View-only preference: never touches positions or document order.
+        if (hideEmptySlots !== undefined) {
+          grid.hideEmptySlots = hideEmptySlots;
+        }
+        const capacity = gridCapacity(rows, columns);
+        if (capacity > previousCapacity) {
+          // Growth fills previously unpositioned containers into the first
+          // free slots without renumbering anything that is already placed.
+          const positions = fillFreeGridSlots(
+            room.containers.map((container) => container.id),
+            grid.positions,
+            capacity,
+          );
+          if (Object.keys(positions).length > Object.keys(grid.positions).length) {
+            grid.positions = positions;
+            room.containers = sortByGridSlot(room.containers, grid.positions);
+          }
+        }
+        return `Resized container grid for room "${room.name}" to ${rows}x${columns}`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.delete("/api/groups/:id/inventory/rooms/:roomId/container-grid", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const roomId = (request.params as { roomId: string }).roomId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      const currentRoom = resolveGridRoom(currentTree, roomId);
+      if (currentRoom.containerGrid === undefined) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: null };
+      }
+      const result = mutate(groupId, user, (tree) => {
+        const room = resolveGridRoom(tree, roomId);
+        room.containerGrid = undefined;
+        return `Removed container grid for room "${room.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.post("/api/groups/:id/inventory/rooms/:roomId/container-grid/move", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const roomId = (request.params as { roomId: string }).roomId;
+    return wrap(request, reply, () => {
+      guard(user, groupId);
+      if (!requireWriter(user, reply)) return;
+      const body = ContainerGridMoveBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+
+      // Resolve same-slot no-ops before mutating so they neither bump the
+      // document nor append history.
+      const { tree: currentTree, version: currentVersion } = loadDoc(db(), groupId);
+      const currentRoom = resolveGridRoom(currentTree, roomId);
+      const currentGrid = currentRoom.containerGrid;
+      if (currentGrid === undefined) {
+        throw new OpError(404, "Container grid not configured");
+      }
+      const currentContainer = currentRoom.containers.find(
+        (candidate) => candidate.id === body.data.containerId,
+      );
+      if (currentContainer === undefined) {
+        throw new OpError(404, "Container not found");
+      }
+      const currentCapacity = gridCapacity(currentGrid.rows, currentGrid.columns);
+      if (body.data.slot >= currentCapacity) {
+        throw new OpError(
+          409,
+          `Slot ${body.data.slot} is outside the container grid capacity (${currentGrid.rows}x${currentGrid.columns} = ${currentCapacity} slots)`,
+        );
+      }
+      if (currentGrid.positions[body.data.containerId] === body.data.slot) {
+        return { version: currentVersion, tree: currentTree, mirrorGroupId: null };
+      }
+
+      const result = mutate(groupId, user, (tree) => {
+        const room = resolveGridRoom(tree, roomId);
+        const grid = room.containerGrid;
+        if (grid === undefined) {
+          throw new OpError(404, "Container grid not configured");
+        }
+        const container = room.containers.find((candidate) => candidate.id === body.data.containerId);
+        if (container === undefined) {
+          throw new OpError(404, "Container not found");
+        }
+        const capacity = gridCapacity(grid.rows, grid.columns);
+        if (body.data.slot >= capacity) {
+          throw new OpError(
+            409,
+            `Slot ${body.data.slot} is outside the container grid capacity (${grid.rows}x${grid.columns} = ${capacity} slots)`,
+          );
+        }
+        grid.positions = moveGridItem(grid.positions, body.data.containerId, body.data.slot);
+        room.containers = sortByGridSlot(room.containers, grid.positions);
+        return `Moved container "${container.name}" to grid slot ${body.data.slot}`;
       });
       broadcastResult(groupId, result);
       return result;
@@ -1124,7 +1473,12 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
-        tree.rooms.push({ id: genId(), name: body.data.name, description: body.data.description, containers: [] });
+        const room: Room = { id: genId(), name: body.data.name, description: body.data.description, containers: [] };
+        tree.rooms.push(room);
+        if (tree.roomGrid !== undefined) {
+          autoAssignNewGridItem(tree.roomGrid, room.id);
+          tree.rooms = sortByGridSlot(tree.rooms, tree.roomGrid.positions);
+        }
         return `Added room "${body.data.name}"`;
       });
       broadcastResult(groupId, result);

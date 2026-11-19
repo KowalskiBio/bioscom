@@ -6,7 +6,7 @@
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
-  import { opAdjustQty, opDeleteChemical } from "../../lib/ops";
+  import { opAdjustQty, opDeleteChemical, opMoveContainerGrid, roleCanWrite } from "../../lib/ops";
   import { openChemicalForm, openStockLabelModal } from "../../lib/forms";
   import { closeModal, openModal } from "../../lib/modal.svelte";
   import { showToast } from "../../lib/stores/toast.svelte";
@@ -15,12 +15,14 @@
   import ChemicalTable from "./ChemicalTable.svelte";
   import RoomInstrumentsSection from "./RoomInstrumentsSection.svelte";
   import RoomAssetBarcodesSection from "./RoomAssetBarcodesSection.svelte";
+  import GridBoard from "../GridBoard.svelte";
   import {
     catalogColumnPreferences,
     loadCatalogColumnPreferences,
   } from "../../lib/stores/catalogColumnPreferences.svelte";
 
   const design = $derived(theme.design);
+  const canWrite = $derived(roleCanWrite());
 
   const route = $derived(router.route);
   const roomId = $derived(route.view === "containers" || route.view === "detail" ? route.roomId : "");
@@ -45,7 +47,7 @@
   const cabinets = $derived(containers.filter((c) => c.type === "cabinet"));
   const fridges = $derived(containers.filter((c) => c.type === "fridge"));
   const freezers = $derived(containers.filter((c) => c.type === "freezer" || c.type === "deepfreezer"));
-  const showEmpty = $derived(containers.length === 0);
+  const showEmpty = $derived(containers.length === 0 && room?.containerGrid === undefined);
   const isReader = $derived(session.user?.role === "reader");
   const preferencesConfirmed = $derived(
     session.user?.uid !== undefined &&
@@ -94,9 +96,48 @@
       },
     });
   }
+
+  function openContainer(cont: Container): void {
+    navigateTo("detail", { roomId, containerId: cont.id });
+  }
+
+  function onCardKeydown(event: KeyboardEvent, cont: Container): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openContainer(cont);
+  }
+
+  function containerTypeName(cont: Container): string {
+    if (cont.type === "cabinet") return "Cabinet";
+    if (cont.type === "fridge") return "Fridge";
+    if (cont.type === "deepfreezer") return "Deep Freezer";
+    if (cont.type === "crate") return "Crate";
+    return "Freezer";
+  }
+
+  function containerTypeIcon(cont: Container): string {
+    if (cont.type === "cabinet" || cont.type === "crate") return "🗄️";
+    if (cont.type === "fridge") return "❄️";
+    return "🧊";
+  }
+
+  function containerTypeClass(cont: Container): string {
+    if (cont.type === "cabinet") return "cabinet";
+    if (cont.type === "fridge") return "fridge";
+    if (cont.type === "crate") return "cabinet";
+    return "freezer";
+  }
+
+  async function moveContainer(containerId: string, slot: number): Promise<void> {
+    if (room === undefined || roomId === "shared-assets") return;
+    const containerName = containers.find((cont) => cont.id === containerId)?.name ?? "Container";
+    if (await opMoveContainerGrid(room.id, containerId, slot)) {
+      showToast(`${containerName} moved to slot ${slot + 1}`);
+    }
+  }
 </script>
 
-{#snippet card(cont: Container, typeName: string, icon: string, cls: string)}
+{#snippet containerCard(cont: Container, typeName: string, icon: string, cls: string)}
   {@const chemCount = countChems(cont)}
   {@const isFromOtherLab = cont.ownerGroupId !== undefined && cont.ownerGroupId !== currentGroup.groupId}
   {@const isMySharedContainer = !isFromOtherLab && (cont.sharedWithGroupIds ?? []).length > 0}
@@ -106,7 +147,6 @@
   <div
     class={`card ${cls}-card`}
     style={isMySharedContainer ? "border: 2px solid var(--accent-blue); box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);" : ""}
-    onclick={() => { navigateTo("detail", { roomId, containerId: cont.id }); }}
   >
     <span class={`card-type-badge ${cls}-badge`}>{cont.type === "deepfreezer" ? "Deep Freezer" : typeName}</span>
     <div class={`card-icon ${cls}`}>{#if design === "bauhaus"}<span class={`glyph glyph-${glyphKind}`} aria-hidden="true"></span>{:else}{cont.emoji || icon}{/if}</div>
@@ -176,34 +216,78 @@
   </section>
 {/if}
 
-<div id="containers-split" class="containers-split" style={`display: ${showEmpty ? "none" : "flex"};`}>
+{#if room?.containerGrid !== undefined && roomId !== "shared-assets"}
+  <GridBoard
+    boardId="container-grid-board"
+    title="Container grid"
+    items={containers}
+    grid={room.containerGrid}
+    canWrite={canWrite}
+    itemLabel="Container"
+    overflowLabel="Unplaced containers"
+    onMove={moveContainer}
+    onOpen={openContainer}
+  >
+    {#snippet card(cont)}
+      {@render containerCard(cont, containerTypeName(cont), containerTypeIcon(cont), containerTypeClass(cont))}
+    {/snippet}
+  </GridBoard>
+{:else}
+  <div id="containers-split" class="containers-split" style={`display: ${showEmpty ? "none" : "flex"};`}>
     <div class="containers-col">
-        <h2 class="col-title">Cabinets</h2>
-        <div id="cabinets-grid" class="card-grid" style={`display: ${cabinets.length === 0 ? "none" : "grid"};`}>
-            {#each cabinets as cont (cont.id)}{@render card(cont, "Cabinet", "🗄️", "cabinet")}{/each}
-        </div>
-        <div id="cabinets-empty" class="empty-state-small" style={`display: ${cabinets.length === 0 ? "block" : "none"};`}>No cabinets yet</div>
+      <h2 class="col-title">Cabinets</h2>
+      <div id="cabinets-grid" class="card-grid" style={`display: ${cabinets.length === 0 ? "none" : "grid"};`}>
+        {#each cabinets as cont (cont.id)}
+          <div class="legacy-card-open" role="button" tabindex="0" aria-label={`Open container ${cont.name}`} onclick={() => openContainer(cont)} onkeydown={(event) => onCardKeydown(event, cont)}>
+            {@render containerCard(cont, "Cabinet", "🗄️", "cabinet")}
+          </div>
+        {/each}
+      </div>
+      <div id="cabinets-empty" class="empty-state-small" style={`display: ${cabinets.length === 0 ? "block" : "none"};`}>No cabinets yet</div>
     </div>
     <div class="containers-col">
-        <h2 class="col-title">Fridges</h2>
-        <div id="fridges-grid" class="card-grid" style={`display: ${fridges.length === 0 ? "none" : "grid"};`}>
-            {#each fridges as cont (cont.id)}{@render card(cont, "Fridge", "❄️", "fridge")}{/each}
-        </div>
-        <div id="fridges-empty" class="empty-state-small" style={`display: ${fridges.length === 0 ? "block" : "none"};`}>No fridges yet</div>
+      <h2 class="col-title">Fridges</h2>
+      <div id="fridges-grid" class="card-grid" style={`display: ${fridges.length === 0 ? "none" : "grid"};`}>
+        {#each fridges as cont (cont.id)}
+          <div class="legacy-card-open" role="button" tabindex="0" aria-label={`Open container ${cont.name}`} onclick={() => openContainer(cont)} onkeydown={(event) => onCardKeydown(event, cont)}>
+            {@render containerCard(cont, "Fridge", "❄️", "fridge")}
+          </div>
+        {/each}
+      </div>
+      <div id="fridges-empty" class="empty-state-small" style={`display: ${fridges.length === 0 ? "block" : "none"};`}>No fridges yet</div>
     </div>
     <div class="containers-col">
-        <h2 class="col-title">Freezers</h2>
-        <div id="freezers-grid" class="card-grid" style={`display: ${freezers.length === 0 ? "none" : "grid"};`}>
-            {#each freezers as cont (cont.id)}{@render card(cont, "Freezer", "🧊", "freezer")}{/each}
-        </div>
-        <div id="freezers-empty" class="empty-state-small" style={`display: ${freezers.length === 0 ? "block" : "none"};`}>No freezers yet</div>
+      <h2 class="col-title">Freezers</h2>
+      <div id="freezers-grid" class="card-grid" style={`display: ${freezers.length === 0 ? "none" : "grid"};`}>
+        {#each freezers as cont (cont.id)}
+          <div class="legacy-card-open" role="button" tabindex="0" aria-label={`Open container ${cont.name}`} onclick={() => openContainer(cont)} onkeydown={(event) => onCardKeydown(event, cont)}>
+            {@render containerCard(cont, "Freezer", "🧊", "freezer")}
+          </div>
+        {/each}
+      </div>
+      <div id="freezers-empty" class="empty-state-small" style={`display: ${freezers.length === 0 ? "block" : "none"};`}>No freezers yet</div>
     </div>
-</div>
+  </div>
+{/if}
 <div id="containers-empty" class="empty-state" style={`display: ${showEmpty ? "block" : "none"};`}>
-    <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-red" aria-hidden="true"></span>{:else}🗄️{/if}</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
+  <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-red" aria-hidden="true"></span>{:else}🗄️{/if}</div><h2>No cabinets, fridges or freezers yet</h2><p>Add your first container</p>
 </div>
 
 {#if route.view === "containers" && room !== undefined && roomId !== "shared-assets" && currentGroup.groupId !== null}
   <RoomInstrumentsSection roomId={room.id} roomGroupId={currentGroup.groupId} />
   <RoomAssetBarcodesSection roomId={room.id} />
 {/if}
+
+<style>
+  .legacy-card-open {
+    min-width: 0;
+  }
+  .legacy-card-open > .card {
+    height: 100%;
+  }
+  .legacy-card-open:focus-visible {
+    outline: 3px solid var(--accent-blue);
+    outline-offset: 3px;
+    border-radius: var(--radius-lg);
+  }
+</style>

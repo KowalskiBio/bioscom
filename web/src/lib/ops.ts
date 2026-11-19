@@ -4,6 +4,7 @@ import { currentGroup } from "./stores/currentGroup.svelte";
 import { session } from "./stores/session.svelte";
 import { showToast } from "./stores/toast.svelte";
 import { getFirstLetter, findRangeShelf, countChems } from "./inventoryUtils";
+import type { GridSettings } from "./grid";
 
 const gid = (): string => {
   const id = currentGroup.groupId;
@@ -27,6 +28,22 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
   }
 }
 
+async function runGridSettings(label: string, path: string, settings: GridSettings): Promise<boolean> {
+  try {
+    await api.put(path, settings);
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      showToast("The grid can’t be shrunk because items still use slots outside the new size. Move those items first or choose a larger grid.", "error");
+    } else if (error instanceof ApiError) {
+      showToast(error.message, "error");
+    } else {
+      showToast(label, "error");
+    }
+    return false;
+  }
+}
+
 export function opAddRoom(name: string, description?: string): Promise<boolean> {
   return run("Failed to add room", () => api.post(`/api/groups/${gid()}/inventory/rooms`, { name, description }));
 }
@@ -39,6 +56,16 @@ export function opEditRoom(roomId: string, name: string, description?: string): 
 
 export function opDeleteRoom(roomId: string): Promise<boolean> {
   return run("Failed to delete room", () => api.del(`/api/groups/${gid()}/inventory/rooms/${roomId}`));
+}
+
+export function opSetRoomGrid(settings: GridSettings): Promise<boolean> {
+  return runGridSettings("Failed to save room grid", `/api/groups/${gid()}/inventory/room-grid`, settings);
+}
+
+export function opMoveRoomGrid(roomId: string, slot: number): Promise<boolean> {
+  return run("Failed to move room", () =>
+    api.post(`/api/groups/${gid()}/inventory/room-grid/move`, { roomId, slot }),
+  );
 }
 
 export type ShelfSpec = string | { name: string; isRangeShelf?: boolean; rangeStart?: string; rangeEnd?: string };
@@ -69,6 +96,26 @@ export function opEditContainer(
 export function opDeleteContainer(roomId: string, containerId: string): Promise<boolean> {
   return run("Failed to delete container", () =>
     api.del(`/api/groups/${gid()}/inventory/containers/${containerId}`, { roomId }),
+  );
+}
+
+export function opSetContainerGrid(roomId: string, settings: GridSettings): Promise<boolean> {
+  return runGridSettings(
+    "Failed to save container grid",
+    `/api/groups/${gid()}/inventory/rooms/${encodeURIComponent(roomId)}/container-grid`,
+    settings,
+  );
+}
+
+export function opMoveContainerGrid(roomId: string, containerId: string, slot: number): Promise<boolean> {
+  return run("Failed to move container", () =>
+    api.post(`/api/groups/${gid()}/inventory/rooms/${encodeURIComponent(roomId)}/container-grid/move`, { containerId, slot }),
+  );
+}
+
+export function opDeleteContainerGrid(roomId: string): Promise<boolean> {
+  return run("Failed to restore default container view", () =>
+    api.del(`/api/groups/${gid()}/inventory/rooms/${encodeURIComponent(roomId)}/container-grid`),
   );
 }
 
