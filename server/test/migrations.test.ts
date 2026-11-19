@@ -314,6 +314,25 @@ describe("migration runner", () => {
     expect(ensureParityChecked(db)).toEqual([]);
   });
 
+  it("creates the missing inventory document for a group that predates doc creation", () => {
+    const db = getDatabase(tempDbPath());
+    db.prepare("INSERT INTO groups (id, name, join_code, created) VALUES ('g-new', 'Legacy Group', 'BIOS-999', 1)").run();
+
+    expect(runMigrations(db)).toEqual([]);
+
+    const doc = db.prepare("SELECT tree, version FROM group_inventory_docs WHERE group_id = 'g-new'").get() as
+      | { tree: string; version: number }
+      | undefined;
+    expect(doc).toBeDefined();
+    expect(doc!.version).toBe(0);
+    const tree = JSON.parse(doc!.tree) as { rooms: unknown[] };
+    expect(tree.rooms).toEqual([]);
+    expect(runMigrations(db)).toEqual([]);
+    expect(
+      (db.prepare("SELECT COUNT(*) AS n FROM group_inventory_docs WHERE group_id = 'g-new'").get() as { n: number }).n,
+    ).toBe(1);
+  });
+
   it("accepts a trial relational insert across the new tables", () => {    const db = getDatabase(tempDbPath());
 
     db.prepare("INSERT INTO materials (id, group_id, type_key, name) VALUES (?, ?, ?, ?)").run(

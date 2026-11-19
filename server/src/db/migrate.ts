@@ -22,8 +22,24 @@ function runPairedMigrationStep(db: Database.Database, version: number): void {
   }
 }
 
-export function stripLegacyEmbeddedBarcodeImages(db: Database.Database): void {
-  const rows = db
+export function ensureInventoryDocs(db: Database.Database): void {
+  const missing = db
+    .prepare(
+      "SELECT id FROM groups WHERE id NOT IN (SELECT group_id FROM group_inventory_docs)",
+    )
+    .all() as Array<{ id: string }>;
+  if (missing.length === 0) {
+    return;
+  }
+  const emptyTree = JSON.stringify({ rooms: [], assetRooms: [], assets: [], protocols: [] });
+  const insert = db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES (?, ?, 0)");
+  for (const group of missing) {
+    insert.run(group.id, emptyTree);
+    console.log(`[inventory-cleanup] created missing inventory document for group ${group.id}`);
+  }
+}
+
+export function stripLegacyEmbeddedBarcodeImages(db: Database.Database): void {  const rows = db
     .prepare("SELECT group_id, tree FROM group_inventory_docs")
     .all() as Array<{ group_id: string; tree: string }>;
   const update = db.prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = ?");
@@ -99,6 +115,7 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
   }
 
   try {
+    ensureInventoryDocs(db);
     stripLegacyEmbeddedBarcodeImages(db);
   } catch (error) {
     console.error(
