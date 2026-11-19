@@ -151,12 +151,16 @@ sudo apt-get install -y acl
 sudo setfacl -m u:zble:x /home/kowalski
 sudo setfacl -R -m u:zble:rX /home/kowalski/BioSCom
 sudo setfacl -m u:zble:--- /home/kowalski/BioSCom/.env /home/kowalski/BioSCom/bioscom.db /home/kowalski/BioSCom/bioscom.db-wal /home/kowalski/BioSCom/bioscom.db-shm
+sudo setfacl -d -m u:zble:--- /home/kowalski/BioSCom
+chmod 700 /home/kowalski/backups && chmod 600 /home/kowalski/backups/*.db
 ```
 
 - `/home/kowalski` gets traversal-only (`x`, no listing) for the account
 - the whole `BioSCom` tree is readable (source, dists, deploy configs — the repo is public on GitHub anyway)
 - `.env` (Resend key, session secret) and the SQLite DB files (real lab PII) are explicitly denied
-- new files created by later deploys are NOT automatically readable (no default ACLs — deliberate); re-run the recursive grant after deploys if needed
+- the **default ACL** on the tree denies zble on every NEW file automatically — this matters because SQLite deletes and recreates `-wal`/`-shm` on every restart, which would otherwise drop the per-file deny (found and closed 2026-11-19)
+- `/home/kowalski/backups` is `700` and backup copies (full PII snapshots, e.g. `bioscom-pre-inventory-refactor.db`) must be `600` — the VACUUM-INTO drill files were world-readable until closed 2026-11-19
+- after a recursive re-grant (`setfacl -R -m u:zble:rX`), ALWAYS re-apply the deny from the block above — the recursive grant overwrites the per-file denies
 - the colleague develops via GitHub (clone `https://github.com/KowalskiBio/bioscom.git`, see `DEVELOPMENT.md`); the VM tree is for inspecting what is actually running
 
 ## Routine updates
