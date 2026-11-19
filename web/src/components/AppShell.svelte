@@ -266,7 +266,7 @@
     openDeleteRoomConfirm(containersRoom, () => navigateTo("rooms"));
   }
 
-  function onAddContainer(type: "cabinet" | "fridge" | "freezer"): void {
+  function onAddContainer(): void {
     if (isReader) {
       showToast("Access Denied", "error");
       return;
@@ -274,7 +274,7 @@
     if (containersRoom === undefined) {
       return;
     }
-    openContainerForm(type);
+    openContainerForm();
   }
 
   function onAddRoomChemical(): void {
@@ -693,9 +693,7 @@
                         </button>
                     {/if}
                     <button id="btn-add-room-chemical" class="btn-primary" style={`display: ${!isReader ? "inline-flex" : "none"};`} onclick={onAddRoomChemical}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Chemical</span></button>
-                    <button id="btn-add-cabinet" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("cabinet")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Cabinet</span></button>
-                    <button id="btn-add-fridge" class="btn-primary btn-fridge" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={() => onAddContainer("fridge")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Fridge</span></button>
-                    <button id="btn-add-freezer" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"}; background: linear-gradient(135deg, #6366f1, #4f46e5); border: 1px solid rgba(99, 102, 241, 0.25);`} onclick={() => onAddContainer("freezer")}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Freezer</span></button>
+                    <button id="btn-add-container" type="button" class="btn-primary" style={`display: ${isVirtualShared ? "none" : "inline-flex"};`} onclick={onAddContainer}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Container</span></button>
                 </div>
             </div>
             <ContainersView />

@@ -2,7 +2,7 @@ import http from "node:http";
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
@@ -36,6 +36,7 @@ const allRoomPreferenceColumns = [
 let roomPreferenceColumns = [...allRoomPreferenceColumns];
 const pageErrors: string[] = [];
 const adjustCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+const chemicalWrites: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
 const okabeIto = {
   chemical: { hex: "#0072B2", rgb: "0, 114, 178", color: "rgb(0, 114, 178)", ink: "#A9C7FF", inkColor: "rgb(169, 199, 255)" },
   reagent: { hex: "#56B4E9", rgb: "86, 180, 233", color: "rgb(86, 180, 233)", ink: "#8FE3DC", inkColor: "rgb(143, 227, 220)" },
@@ -167,6 +168,15 @@ beforeAll(async () => {
       body: JSON.stringify({ stocks, total: stocks.length, page: 1, limit: 25 }),
     });
   });
+  await page.route(/\/api\/groups\/group-a\/inventory\/chemicals(?:\/[^/]+)?$/, (route) => {
+    const request = route.request();
+    chemicalWrites.push({
+      method: request.method(),
+      path: new URL(request.url()).pathname,
+      body: request.postDataJSON() as Record<string, unknown>,
+    });
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
   await page.route("**/api/groups/group-a/inventory/chemicals/*/adjust-qty", (route) => {
     adjustCalls.push({
       path: new URL(route.request().url()).pathname,
@@ -202,6 +212,17 @@ async function columnIds(tableId: string): Promise<string[]> {
 async function cellText(tableId: string, chemicalId: string, columnId: string): Promise<string> {
   const cell = page!.locator(`#${tableId} tbody tr[data-chemid="${chemicalId}"] td[data-column="${columnId}"]`);
   return (await cell.textContent())?.trim() ?? "";
+}
+
+async function resolvedThemeColor(token: string): Promise<string> {
+  return page!.evaluate((property) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${property})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
 }
 
 async function computedTypeStyle(selector: string, pseudo: string | null = null) {
@@ -374,6 +395,27 @@ describe("mounted material type chips", () => {
     expect(pageErrors).toEqual([]);
   }, 60_000);
 
+  it("uses short room Type cells while keeping full names in the item edit form", async () => {
+    roomPreferenceColumns = ["name", "type", "note", "actions"];
+    await openView("containers/room-main", "palette=room&design=original");
+    for (const type of MATERIAL_TYPES) {
+      const typeCell = page!.locator(
+        `#room-direct-chemicals-table tr[data-chemid="palette-room-${type.key}"] td[data-column="type"] .status-badge`,
+      );
+      expect(await typeCell.textContent()).toBe(type.shortLabel);
+      expect(await typeCell.getAttribute("title")).toBe(type.label);
+    }
+
+    await openView("containers/room-main", "case=edit-full-types");
+    const row = page!.locator('#room-direct-chemicals-table tr[data-chemid="room-chem"]');
+    await row.getByRole("button", { name: "Edit Room primer stock" }).click();
+    await page!.waitForSelector("#f-type");
+    expect(await page!.locator("#f-type option").allTextContents()).toEqual(
+      MATERIAL_TYPES.map((type) => type.label),
+    );
+    expect(pageErrors).toEqual([]);
+  }, 60_000);
+
   it("limits Bauhaus keylines to light reagent and solution marks without changing geometry or active filters", async () => {
     roomPreferenceColumns = ["name", "type", "note", "actions"];
     await openView("catalog", "design=bauhaus");
@@ -459,10 +501,11 @@ describe("mounted material type chips", () => {
     roomPreferenceColumns = ["name", "type", "quantity", "location", "note", "actions"];
     await openView("containers/room-main", "case=inline-room-types");
     const roomBioType = page!.locator('#room-direct-chemicals-table tr[data-chemid="room-chip-bio"] td[data-column="type"] .status-badge');
-    expect(await roomBioType.textContent()).toBe("Biological / glycerol stock");
+    expect(await roomBioType.textContent()).toBe("Biological stock");
+    expect(await roomBioType.getAttribute("title")).toBe("Biological / glycerol stock");
     expect(await roomBioType.getAttribute("class")).toContain("material-type-biological_stock");
     const roomChemicalType = page!.locator('#room-direct-chemicals-table tr[data-chemid="room-blank"] td[data-column="type"] .status-badge');
-    expect(await roomChemicalType.textContent()).toBe("Chemical / compound");
+    expect(await roomChemicalType.textContent()).toBe("Chemical");
     expect(await roomChemicalType.getAttribute("class")).toContain("material-type-chemical");
     expect(await page!.locator('#room-direct-chemicals-table td[data-column="name"] .status-badge').count()).toBe(0);
 
@@ -594,7 +637,7 @@ describe("mounted room All column preferences", () => {
       "note",
       "actions",
     ]);
-    expect(await cellText(table, "room-chem", "type")).toBe("Primer / oligonucleotide");
+    expect(await cellText(table, "room-chem", "type")).toBe("Primer");
     expect(await cellText(table, "room-chem", "location")).toBe("Main Test Room");
     expect(await cellText(table, "room-chem", "concentration")).toBe("0 mM");
     expect(await cellText(table, "room-chem", "cas_number")).toBe("77-86-1");
@@ -604,11 +647,11 @@ describe("mounted room All column preferences", () => {
     expect(await cellText(table, "room-chem", "lot")).toBe("ROOM-LOT");
     expect(await cellText(table, "room-chem", "received")).toBe("1970-01-01");
     expect(await cellText(table, "room-chem", "expires")).toBe("2027-01-02");
-    expect(await cellText(table, "room-chem", "status")).toBe("on hold");
+    expect(await cellText(table, "room-chem", "status")).toBe("Available");
     expect(await cellText(table, "room-chem", "note")).toBe("Actual room stock note");
     expect(await cellText(table, "room-chem", "cas_number")).not.toBe("50-00-0");
     expect(await page!.locator(`#${table} tr[data-chemid="room-chem"] td[data-column="molecular_formula"] sub`).first().textContent()).toBe("6");
-    expect(await cellText(table, "room-blank", "status")).toBe("—");
+    expect(await cellText(table, "room-blank", "status")).toBe("Available");
     expect(await cellText(table, "room-blank", "note")).toBe("—");
     expect(await cellText(table, "room-blank", "target_species")).toBe("—");
     expect(await cellText(table, "room-other", "note")).toBe("Other room descriptor fallback");
@@ -642,7 +685,7 @@ describe("mounted room All column preferences", () => {
       "actions",
     ]);
     expect(await page!.locator('#nested-box-chemicals-table-nested-box tr[data-chemid="nested-chem"] .status-badge').textContent()).toBe(
-      "Primer / oligonucleotide",
+      "Primer",
     );
     expect(await cellText("nested-box-chemicals-table-nested-box", "nested-chem", "note")).toBe("Nested box note");
   }, 40_000);
@@ -704,7 +747,7 @@ describe("mounted room All column preferences", () => {
     expect(await cellText(table, "deep-chem", "target_species")).toBe("mouse");
     expect(await cellText(table, "deep-chem", "manufacturer")).toBe("Cold Products");
     expect(await cellText(table, "deep-chem", "lot")).toBe("DEEP-LOT");
-    expect(await cellText(table, "deep-chem", "status")).toBe("—");
+    expect(await cellText(table, "deep-chem", "status")).toBe("Available");
     expect(await cellText(table, "deep-chem", "note")).toBe("Deep freezer note");
   }, 40_000);
 
@@ -718,6 +761,114 @@ describe("mounted room All column preferences", () => {
     expect(await row.getByRole("button", { name: "Edit Room primer stock" }).count()).toBe(0);
     expect(await row.getByRole("button", { name: "Delete Room primer stock" }).count()).toBe(0);
     expect(adjustCalls).toHaveLength(0);
+  }, 40_000);
+});
+
+describe("mounted chemical availability", () => {
+  beforeEach(() => {
+    chemicalWrites.length = 0;
+    roomPreferenceColumns = ["name", "quantity", "status", "actions"];
+  });
+
+  afterEach(() => {
+    roomPreferenceColumns = [...allRoomPreferenceColumns];
+  });
+
+  it("colors quantities and labels status from derived availability", async () => {
+    await openView("containers/room-main", "availability=1&case=availability-table&design=original");
+    await page!.waitForSelector('#room-direct-chemicals-table tr[data-chemid="room-out-of-stock"]');
+
+    const cases = [
+      { id: "room-out-of-stock", quantity: "0", label: "Out of stock", statusClass: "rejected", quantityClass: "low", color: "--accent-red" },
+      { id: "room-low", quantity: "4", label: "Low", statusClass: "pending", quantityClass: "medium", color: "--accent-amber" },
+      { id: "room-available", quantity: "4", label: "Available", statusClass: "done", quantityClass: "ok", color: "--accent-green" },
+    ];
+    for (const item of cases) {
+      const row = page!.locator(`#room-direct-chemicals-table tr[data-chemid="${item.id}"]`);
+      const quantity = row.locator('td[data-column="quantity"] .chem-quantity');
+      const status = row.locator('td[data-column="status"] .status-badge');
+      expect((await quantity.textContent())?.trim()).toBe(item.quantity);
+      expect(await quantity.getAttribute("class")).toContain(item.quantityClass);
+      expect((await status.textContent())?.trim()).toBe(item.label);
+      expect(await status.getAttribute("class")).toContain(item.statusClass);
+      const expectedColor = await resolvedThemeColor(item.color);
+      expect(await quantity.evaluate((element) => getComputedStyle(element).color)).toBe(expectedColor);
+      expect(await status.evaluate((element) => getComputedStyle(element).color)).toBe(expectedColor);
+    }
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("opens the writer editor with available by default and preserves explicit low", async () => {
+    await openView("containers/room-main", "availability=1&case=availability-default");
+    await page!.locator('#room-direct-chemicals-table tr[data-chemid="room-available"]')
+      .getByRole("button", { name: "Edit Room available stock" }).click();
+    await page!.waitForSelector("#f-availability");
+    expect(await page!.inputValue("#f-availability")).toBe("available");
+    expect(await page!.$$eval("#f-availability option", (options) => options.map((option) => ({
+      value: (option as HTMLOptionElement).value,
+      label: option.textContent?.trim() ?? "",
+    })))).toEqual([
+      { value: "available", label: "Available" },
+      { value: "low", label: "Low" },
+    ]);
+    expect((await page!.textContent("#f-availability-hint"))?.trim()).toBe("Zero quantity is always Out of stock.");
+    expect(await page!.getByRole("option", { name: "Out of stock", exact: true }).count()).toBe(0);
+
+    await openView("containers/room-main", "availability=1&case=availability-existing-low");
+    await page!.locator('#room-direct-chemicals-table tr[data-chemid="room-low"]')
+      .getByRole("button", { name: "Edit Room explicit low stock" }).click();
+    await page!.waitForSelector("#f-availability");
+    expect(await page!.inputValue("#f-availability")).toBe("low");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("sends explicit available and low values in add payloads", async () => {
+    for (const [index, availability] of ["available", "low"].entries()) {
+      await openView("dashboard", `case=availability-add-${availability}`);
+      await page!.click("#btn-dash-add-chemical");
+      await page!.waitForSelector("#f-availability");
+      await page!.selectOption("#f-room", "room-main");
+      await page!.fill("#f-cn2", `Availability ${availability} stock`);
+      await page!.fill("#f-cq", "12");
+      expect(await page!.inputValue("#f-availability")).toBe("available");
+      await page!.selectOption("#f-availability", availability);
+      await page!.click("#modal-confirm");
+      await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(index + 1);
+      expect(chemicalWrites[index]).toMatchObject({
+        method: "POST",
+        path: "/api/groups/group-a/inventory/chemicals",
+        body: {
+          roomId: "room-main",
+          name: `Availability ${availability} stock`,
+          quantity: 12,
+          availability,
+        },
+      });
+    }
+    expect(pageErrors).toEqual([]);
+  }, 60_000);
+
+  it("sends the selected availability in an edit payload", async () => {
+    await openView("containers/room-main", "availability=1&case=availability-edit");
+    await page!.locator('#room-direct-chemicals-table tr[data-chemid="room-low"]')
+      .getByRole("button", { name: "Edit Room explicit low stock" }).click();
+    await page!.waitForSelector("#f-availability");
+    expect(await page!.inputValue("#f-availability")).toBe("low");
+    await page!.selectOption("#f-availability", "available");
+    await page!.click("#modal-confirm");
+
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "PUT",
+      path: "/api/groups/group-a/inventory/chemicals/room-low",
+      body: {
+        roomId: "room-main",
+        name: "Room explicit low stock",
+        quantity: 4,
+        availability: "available",
+      },
+    });
+    expect(pageErrors).toEqual([]);
   }, 40_000);
 });
 

@@ -177,17 +177,6 @@ export function parseDeepFreezerShelf(sh: Shelf | string | null | undefined): Pa
   return { rack: rack!.trim(), box: box!.trim() };
 }
 
-export function quantityClass(quantity: unknown): string {
-  const qty = parseFloat(String(quantity ?? 0)) || 0;
-  if (qty <= 0) {
-    return "low";
-  }
-  if (qty < 10) {
-    return "medium";
-  }
-  return "ok";
-}
-
 export function sortChems(chems: Chemical[], posMap: Record<string, string>): Chemical[] {
   return [...chems].sort((a, b) => {
     const posA = posMap[a.id] ?? "";

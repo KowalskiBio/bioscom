@@ -13,12 +13,19 @@ import {
 const NOW = Date.UTC(2026, 10, 15, 12);
 const days = (count: number): number => Date.UTC(2026, 10, 15 + count);
 
-function chemical(id: string, name: string, quantity: unknown, expiresAt?: unknown): Chemical {
+function chemical(
+  id: string,
+  name: string,
+  quantity: unknown,
+  expiresAt?: unknown,
+  availability?: Chemical["availability"],
+): Chemical {
   return {
     id,
     name,
     quantity,
     unit: "mL",
+    ...(availability === undefined ? {} : { availability }),
     ...(expiresAt === undefined ? {} : { batchInfo: { expiresAt } }),
   } as Chemical;
 }
@@ -35,7 +42,7 @@ function locationTree(): InventoryTree {
             id: "cont-main",
             name: "Cabinet",
             type: "cabinet",
-            chemicals: [chemical("container-stock", "Container stock", 4)],
+            chemicals: [chemical("container-stock", "Container stock", 4, undefined, "low")],
             shelves: [
               {
                 id: "shelf-a",
@@ -46,7 +53,7 @@ function locationTree(): InventoryTree {
                 id: "box-b",
                 name: "Nested Box B",
                 parentShelfId: "shelf-a",
-                chemicals: [chemical("nested-stock", "Nested stock", 2, days(2))],
+                chemicals: [chemical("nested-stock", "Nested stock", 2, days(2), "low")],
               },
             ],
           },
@@ -72,17 +79,23 @@ function locationTree(): InventoryTree {
 }
 
 describe("dashboard quantity and expiry triggers", () => {
-  it("preserves quantityClass thresholds and missing/non-numeric coercion", () => {
-    expect(dashboardQuantityAlert(-1)).toEqual({ quantity: -1, level: "low" });
-    expect(dashboardQuantityAlert(0)).toEqual({ quantity: 0, level: "low" });
-    expect(dashboardQuantityAlert(undefined)).toEqual({ quantity: 0, level: "low" });
-    expect(dashboardQuantityAlert(null)).toEqual({ quantity: 0, level: "low" });
-    expect(dashboardQuantityAlert("not-a-number")).toEqual({ quantity: 0, level: "low" });
-    expect(dashboardQuantityAlert("9残り")).toEqual({ quantity: 9, level: "medium" });
-    expect(dashboardQuantityAlert(0.01)).toEqual({ quantity: 0.01, level: "medium" });
-    expect(dashboardQuantityAlert(9.999)).toEqual({ quantity: 9.999, level: "medium" });
-    expect(dashboardQuantityAlert(10)).toBeNull();
-    expect(dashboardQuantityAlert(100)).toBeNull();
+  it("uses explicit availability without automatic low thresholds", () => {
+    expect(dashboardQuantityAlert({ quantity: -1 })).toEqual({ quantity: -1, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: 0 })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: 0, availability: "low" })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: undefined })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: null })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: Number.NaN })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: "not-a-number" })).toEqual({ quantity: 0, level: "low" });
+    expect(dashboardQuantityAlert({ quantity: "9残り" })).toEqual({ quantity: 0, level: "low" });
+
+    for (const quantity of [0.01, 2, 4, 9.999, 10, 100]) {
+      expect(dashboardQuantityAlert({ quantity })).toBeNull();
+      expect(dashboardQuantityAlert({ quantity, availability: "available" })).toBeNull();
+    }
+    for (const quantity of [0.01, 2, 4, 9.999, 100]) {
+      expect(dashboardQuantityAlert({ quantity, availability: "low" })).toEqual({ quantity, level: "medium" });
+    }
   });
 
   it("uses the catalog UTC-day boundary for expired, today, 60 and 61 days", () => {

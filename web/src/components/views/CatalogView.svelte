@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { MATERIAL_TYPES, materialTypeLabels, type MaterialFieldDef } from "@bioscom/shared";
+  import {
+    MATERIAL_TYPES,
+    materialTypeLabels,
+    materialTypeShortLabels,
+    type MaterialFieldDef,
+  } from "@bioscom/shared";
   import { catalog, type CatalogStock } from "../../lib/stores/catalog.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
@@ -19,6 +24,7 @@
   import { openCatalogColumnSettings } from "../../lib/catalogColumnSettings";
 
   const labels = materialTypeLabels();
+  const shortLabels = materialTypeShortLabels();
   const canEdit = $derived(roleCanWrite());
   const activeScope = $derived(catalogScopeForTypeFilter(catalog.typeFilter));
   const activeColumns = $derived(
@@ -177,6 +183,10 @@
 
   function statusClass(status: string): string {
     switch (status) {
+      case "out_of_stock":
+        return "rejected";
+      case "low":
+        return "pending";
       case "available":
         return "done";
       case "depleted":
@@ -191,7 +201,29 @@
   }
 
   function statusLabel(status: string): string {
-    return status.charAt(0).toUpperCase() + status.slice(1);
+    switch (status) {
+      case "out_of_stock":
+        return "Out of stock";
+      case "low":
+        return "Low";
+      case "available":
+        return "Available";
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  }
+
+  function stockQuantityClass(status: string): string {
+    switch (status) {
+      case "out_of_stock":
+        return "low";
+      case "low":
+        return "medium";
+      case "available":
+        return "ok";
+      default:
+        return "";
+    }
   }
 </script>
 
@@ -291,8 +323,14 @@
                                     <strong>{stock.name}</strong>
                                 </button>
                             </td>
-                            {#if activeColumns.includes("type")}<td><span class={`chem-pos ${materialTypeColorClass(stock.type)}`}>{labels[stock.type] ?? stock.type}</span></td>{/if}
-                            {#if activeColumns.includes("quantity")}<td class="stocks-mono">{stock.quantity ?? "—"}{stock.unit ? ` ${stock.unit}` : ""}</td>{/if}
+                            {#if activeColumns.includes("type")}
+                                {@const fullTypeLabel = labels[stock.type] ?? stock.type}
+                                {@const shortTypeLabel = shortLabels[stock.type] ?? fullTypeLabel}
+                                <td><span class={`chem-pos ${materialTypeColorClass(stock.type)}`} title={shortTypeLabel === fullTypeLabel ? undefined : fullTypeLabel}>{shortTypeLabel}</span></td>
+                            {/if}
+                            {#if activeColumns.includes("quantity")}
+                                <td class="stocks-mono"><span class={`chem-quantity ${stockQuantityClass(stock.status)}`}>{stock.quantity ?? "—"}</span>{stock.unit ? ` ${stock.unit}` : ""}</td>
+                            {/if}
                             {#if activeColumns.includes("concentration")}<td class="stocks-mono">{stockConcentrationText(stock)}</td>{/if}
                             {#each activeTypeFields as field (field.key)}
                                 <td class={field.dataType === "number" || field.dataType === "sequence" ? "stocks-mono" : ""}>{formatStockAttribute(field, stock.attributes[field.key])}</td>

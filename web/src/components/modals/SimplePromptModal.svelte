@@ -9,6 +9,8 @@
     MAX_RACK_SHELVES,
   } from "@bioscom/shared";
   import { theme } from "../../lib/theme.svelte";
+  import HighlightColorSelect from "./HighlightColorSelect.svelte";
+  import type { HighlightFormValue } from "../../lib/highlight";
 
   interface RackSlotOption {
     value: number;
@@ -24,11 +26,13 @@
     slotHint = "",
     showRackGrid = false,
     showShelfCount = false,
+    showHighlightPicker = false,
   }: {
     form: {
       name: string;
       description?: string;
       emoji?: string;
+      highlightColor?: HighlightFormValue;
       color?: string;
       slot?: number | null;
       rackRows?: number | null;
@@ -42,6 +46,7 @@
     slotHint?: string;
     showRackGrid?: boolean;
     showShelfCount?: boolean;
+    showHighlightPicker?: boolean;
   } = $props();
 
   const design = $derived(theme.design);
@@ -60,6 +65,7 @@
   <div class="form-group"><label class="form-label">Name *</label><input class="form-input" id="c-name" bind:value={form.name}></div>
   <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="c-desc" bind:value={form.description}></div>
   <div class="form-group"><label class="form-label">Emoji Icon (optional)</label><input class="form-input" id="c-emoji" placeholder={design === "bauhaus" ? "optional icon" : "e.g. 🧪 or 🥶"} bind:value={form.emoji}></div>
+  {#if showHighlightPicker}<HighlightColorSelect id="c-edit-highlight" bind:value={form.highlightColor} />{/if}
 {:else if kind === "color"}
   <div class="form-group"><label class="form-label">Box Color *</label><input type="color" class="form-input" id="f-color" style="height: 2.5rem; cursor: pointer; padding: 0.2rem;" bind:value={form.color}></div>
 {:else if kind === "shelf" || kind === "box"}

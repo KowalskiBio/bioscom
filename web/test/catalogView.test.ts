@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright";
-import { defaultCatalogColumnSelections } from "@bioscom/shared";
+import { defaultCatalogColumnSelections, MATERIAL_TYPES } from "@bioscom/shared";
 
 let vite: ViteDevServer | null = null;
 let server: http.Server | null = null;
@@ -200,6 +200,33 @@ const STOCKS = [
   },
 ];
 
+const AVAILABILITY_STOCKS = [
+  {
+    ...STOCKS[0]!,
+    id: "st-out-of-stock",
+    name: "Empty catalog stock",
+    quantity: 0,
+    status: "out_of_stock",
+    materialId: "m-out-of-stock",
+  },
+  {
+    ...STOCKS[0]!,
+    id: "st-low",
+    name: "Low catalog stock",
+    quantity: 4,
+    status: "low",
+    materialId: "m-low",
+  },
+  {
+    ...STOCKS[0]!,
+    id: "st-available",
+    name: "Available catalog stock",
+    quantity: 4,
+    status: "available",
+    materialId: "m-available",
+  },
+];
+
 beforeAll(async () => {
   const webRoot = fileURLToPath(new URL("../", import.meta.url));
   const sharedBrowser = fileURLToPath(new URL("../../shared/src/browser.ts", import.meta.url));
@@ -255,13 +282,14 @@ beforeAll(async () => {
       body: JSON.stringify({ columnsByType, updatedAt: 0 }),
     });
   });
-  await page.route("**/api/groups/group-a/stocks*", (route) =>
-    route.fulfill({
+  await page.route("**/api/groups/group-a/stocks*", (route) => {
+    const stocks = [...STOCKS, ...AVAILABILITY_STOCKS];
+    return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ stocks: STOCKS, total: STOCKS.length, page: 1, limit: 25 }),
-    }),
-  );
+      body: JSON.stringify({ stocks, total: stocks.length, page: 1, limit: 25 }),
+    });
+  });
 }, 30_000);
 
 afterAll(async () => {
@@ -285,6 +313,17 @@ async function rowTexts(stockId: string): Promise<string[]> {
   return page!.$eval(`#stocks-table tbody tr[data-stock-id="${stockId}"]`, (row) =>
     [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim() ?? ""),
   );
+}
+
+async function resolvedThemeColor(token: string): Promise<string> {
+  return page!.evaluate((property) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${property})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
 }
 
 describe("catalog view product, descriptor and stock note columns", () => {
@@ -385,5 +424,58 @@ describe("catalog view product, descriptor and stock note columns", () => {
     expect(await rowTexts("st-beta")).toEqual(["Beta no product", "2.5 µM", "—", ""]);
     expect(await rowTexts("st-primer")).toEqual(["Gamma primer", "—", "—", ""]);
     expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("uses short labels in stock Type cells and full labels in the top filter pills", async () => {
+    const previousColumns = [...allPreferenceColumns];
+    allPreferenceColumns = ["name", "type", "note", "actions"];
+    try {
+      await page!.goto(`${fixtureUrl}?short-types=1`, { waitUntil: "networkidle" });
+      await page!.waitForSelector('#stocks-table tbody tr[data-stock-id="st-primer"]');
+
+      expect(await headerTexts()).toEqual(["Name", "Type", "Note", "Actions"]);
+      expect(await rowTexts("st-alpha")).toEqual(["Alpha product", "Chemical", "Synthetic stock note alpha", ""]);
+      expect(await rowTexts("st-primer")).toEqual(["Gamma primer", "Primer", "—", ""]);
+      expect(await rowTexts("st-other")).toEqual(["Delta other package", "Other", "Synthetic Other descriptor", ""]);
+      const primerType = page!.locator('#stocks-table tr[data-stock-id="st-primer"] .chem-pos');
+      expect(await primerType.getAttribute("title")).toBe("Primer / oligonucleotide");
+
+      for (const type of MATERIAL_TYPES) {
+        expect(await page!.locator(`#catalog-type-${type.key}`).textContent()).toBe(type.label);
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      allPreferenceColumns = previousColumns;
+    }
+  }, 40_000);
+
+  it("labels and colors derived stock status and quantity consistently", async () => {
+    const previousColumns = [...allPreferenceColumns];
+    allPreferenceColumns = ["name", "quantity", "status", "note", "actions"];
+    try {
+      await page!.goto(`${fixtureUrl}?availability=1`, { waitUntil: "networkidle" });
+      await page!.waitForSelector('#stocks-table tbody tr[data-stock-id="st-out-of-stock"]');
+
+      const cases = [
+        { id: "st-out-of-stock", quantity: "0", label: "Out of stock", statusClass: "rejected", quantityClass: "low", color: "--accent-red" },
+        { id: "st-low", quantity: "4", label: "Low", statusClass: "pending", quantityClass: "medium", color: "--accent-amber" },
+        { id: "st-available", quantity: "4", label: "Available", statusClass: "done", quantityClass: "ok", color: "--accent-green" },
+      ];
+      for (const item of cases) {
+        const row = page!.locator(`#stocks-table tbody tr[data-stock-id="${item.id}"]`);
+        const status = row.locator(".status-badge");
+        const quantity = row.locator(".chem-quantity");
+        expect((await status.textContent())?.trim()).toBe(item.label);
+        expect(await status.getAttribute("class")).toContain(item.statusClass);
+        expect((await quantity.textContent())?.trim()).toBe(item.quantity);
+        expect(await quantity.getAttribute("class")).toContain(item.quantityClass);
+        const expectedColor = await resolvedThemeColor(item.color);
+        expect(await status.evaluate((element) => getComputedStyle(element).color)).toBe(expectedColor);
+        expect(await quantity.evaluate((element) => getComputedStyle(element).color)).toBe(expectedColor);
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      allPreferenceColumns = previousColumns;
+    }
   }, 40_000);
 });

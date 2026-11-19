@@ -9,6 +9,7 @@ import {
   rtdbArray,
 } from "./common.js";
 import { GridLayoutDocSchema } from "./grid.js";
+import { HighlightColorSettingSchema } from "./highlight.js";
 import { InstrumentSchema } from "./instrument.js";
 import { NoticeSchema } from "./notice.js";
 import { PrintCatalogItemSchema, PrintRequestSchema } from "./print.js";
@@ -213,12 +214,20 @@ const ChemicalAttributesDocSchema = z
   .nullish()
   .catch(undefined);
 
+/**
+ * Explicit, user-controlled availability. This intentionally has no automatic
+ * quantity threshold: missing means "available", and only an explicit "low"
+ * marks an item as low.
+ */
+export const ChemicalAvailabilitySchema = z.enum(["available", "low"]);
+
 export const ChemicalSchema = z.looseObject({
   id: idSchema,
   name: looseTextSchema,
   cas: optionalTextSchema,
   formula: optionalTextSchema,
   quantity: optionalNumberSchema,
+  availability: ChemicalAvailabilitySchema.nullish().catch(undefined),
   unit: optionalTextSchema,
   concentration: optionalNumberSchema,
   concUnit: optionalTextSchema,
@@ -232,6 +241,36 @@ export const ChemicalSchema = z.looseObject({
   product: StockProductSchema.nullish().catch(undefined),
   batchInfo: BatchInfoSchema.nullish().catch(undefined),
 });
+
+export type ChemicalAvailability = z.infer<typeof ChemicalAvailabilitySchema>;
+export type ChemicalAvailabilityState = "out_of_stock" | "low" | "available";
+export type ChemicalAvailabilityClass = "low" | "medium" | "ok";
+
+/**
+ * Derives the display availability of a chemical. Quantity alone decides the
+ * out-of-stock state; an explicit user-set "low" only applies to in-stock items.
+ */
+export function chemicalAvailability(chemical: {
+  quantity?: number | null;
+  availability?: ChemicalAvailability | null;
+}): ChemicalAvailabilityState {
+  const quantity = chemical.quantity;
+  if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0) {
+    return "out_of_stock";
+  }
+  return chemical.availability === "low" ? "low" : "available";
+}
+
+/** Maps derived availability onto the existing UI class names. */
+export function chemicalAvailabilityClass(chemical: {
+  quantity?: number | null;
+  availability?: ChemicalAvailability | null;
+}): ChemicalAvailabilityClass {
+  const availability = chemicalAvailability(chemical);
+  if (availability === "out_of_stock") return "low";
+  if (availability === "low") return "medium";
+  return "ok";
+}
 
 export const ShelfSchema = z.looseObject({
   id: idSchema,
@@ -264,6 +303,7 @@ const containerFields = {
   rackColumns: z.number().int().min(1).max(MAX_RACK_COLUMNS).nullish().catch(undefined),
   rackShelves: z.number().int().min(1).max(MAX_RACK_SHELVES).nullish().catch(undefined),
   rackPositions: z.record(z.string(), z.coerce.number()).nullish().catch(undefined),
+  highlightColor: HighlightColorSettingSchema,
   shelves: z.array(ShelfSchema),
   chemicals: rtdbArray(ChemicalSchema).nullish().catch(undefined),
 };
@@ -279,6 +319,7 @@ export const RoomSchema = z.looseObject({
   id: idSchema,
   name: looseTextSchema,
   description: optionalTextSchema,
+  highlightColor: HighlightColorSettingSchema,
   containers: rtdbArray(ContainerSchema).catch([]),
   chemicals: rtdbArray(ChemicalSchema).nullish().catch(undefined),
   // Optional doc-only container layout grid for this room. Keyed by stable

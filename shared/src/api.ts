@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { MAX_RACK_COLUMNS, MAX_RACK_ROWS, MAX_RACK_SHELVES, MAX_RACK_SLOTS } from "./inventory.js";
+import {
+  ChemicalAvailabilitySchema,
+  MAX_RACK_COLUMNS,
+  MAX_RACK_ROWS,
+  MAX_RACK_SHELVES,
+  MAX_RACK_SLOTS,
+} from "./inventory.js";
+import { HighlightColorSchema } from "./highlight.js";
 
 const rackRowsSchema = z.number().int().min(1).max(MAX_RACK_ROWS);
 const rackColumnsSchema = z.number().int().min(1).max(MAX_RACK_COLUMNS);
@@ -97,14 +104,20 @@ export const UpdateRoleBodySchema = z.object({
 export const AddRoomBodySchema = z.object({
   name: z.string().trim().min(1).max(50),
   description: z.string().trim().max(500).optional(),
+  highlightColor: HighlightColorSchema.optional(),
 });
 
 export const EditRoomBodySchema = z
   .object({
     name: z.string().trim().min(1).max(50).optional(),
     description: z.string().trim().max(500).optional(),
+    highlightColor: HighlightColorSchema.nullish(),
   })
-  .refine((value) => value.name !== undefined || value.description !== undefined, { message: "empty update" });
+  .refine(
+    (value) =>
+      value.name !== undefined || value.description !== undefined || value.highlightColor !== undefined,
+    { message: "empty update" },
+  );
 
 const ShelfSpecSchema = z.union([
   z.string().trim().min(1).max(100),
@@ -133,6 +146,7 @@ export const AddContainerBodySchema = z.object({
   type: z.enum(["cabinet", "fridge", "freezer", "crate", "deepfreezer"]),
   cabinetMethod: z.enum(["numerical", "alphabetical", "custom"]).optional(),
   customRangeType: z.enum(["alphabetical", "numerical"]).optional(),
+  highlightColor: HighlightColorSchema.optional(),
   shelves: z.array(ShelfSpecSchema).max(50).optional(),
 });
 
@@ -142,10 +156,16 @@ export const EditContainerBodySchema = z
     name: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().max(500).optional(),
     emoji: z.string().trim().max(16).optional(),
+    highlightColor: HighlightColorSchema.nullish(),
   })
-  .refine((value) => value.name !== undefined || value.description !== undefined || value.emoji !== undefined, {
-    message: "empty update",
-  });
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.emoji !== undefined ||
+      value.highlightColor !== undefined,
+    { message: "empty update" },
+  );
 
 export const AddDeepFreezerRackBodySchema = z.object({
   name: z.string().trim().min(1).max(50),
@@ -224,6 +244,7 @@ export const AddChemicalBodySchema = z.object({
   cas: z.string().trim().max(32).optional(),
   formula: z.string().trim().max(100).optional(),
   quantity: z.number().optional(),
+  availability: ChemicalAvailabilitySchema.optional(),
   unit: z.string().trim().max(16).optional(),
   concentration: z.number().optional(),
   concUnit: z.string().trim().max(16).optional(),
@@ -248,6 +269,7 @@ export const EditChemicalBodySchema = z
     cas: z.string().trim().max(32).optional(),
     formula: z.string().trim().max(100).optional(),
     quantity: z.number().optional(),
+    availability: ChemicalAvailabilitySchema.optional(),
     unit: z.string().trim().max(16).optional(),
     concentration: z.number().optional(),
     concUnit: z.string().trim().max(16).optional(),
@@ -267,6 +289,7 @@ export const EditChemicalBodySchema = z
       value.cas !== undefined ||
       value.formula !== undefined ||
       value.quantity !== undefined ||
+      value.availability !== undefined ||
       value.unit !== undefined ||
       value.concentration !== undefined ||
       value.concUnit !== undefined ||

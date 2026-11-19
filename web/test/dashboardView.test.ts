@@ -337,6 +337,20 @@ describe("mounted Dashboard attention", () => {
     expect(pageErrors).toEqual([]);
   }, 40_000);
 
+  it("does not infer low stock from positive quantities below ten", async () => {
+    await gotoDashboard("case=no-automatic-low");
+    await waitForBoardReady();
+
+    const rows = await stockRows();
+    expect(rows.map((row) => row.id)).toEqual(["out-of-stock", "explicit-low"]);
+    expect(rows.find((row) => row.id === "out-of-stock")?.detail).toBe("Out of stock · 0 mL remaining");
+    expect(rows.find((row) => row.id === "explicit-low")?.detail).toBe("Low stock · 4 mL remaining");
+    expect(rows.some((row) => row.id === "implicit-four" || row.id === "implicit-two")).toBe(false);
+    expect(await page!.locator('#dash-stock-attention-list [data-stock-id="out-of-stock"] .dash-attention-detail.low').count()).toBe(1);
+    expect(await page!.locator('#dash-stock-attention-list [data-stock-id="explicit-low"] .dash-attention-detail.medium').count()).toBe(1);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
   for (const design of ["bauhaus", "original"] as const) {
     it(`uses notice-board category colors and preserves interactions in ${design}`, async () => {
       noticesPayload = CATEGORY_NOTICES;

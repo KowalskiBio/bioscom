@@ -1,10 +1,11 @@
-import type { Container } from "@bioscom/shared";
+import type { ChemicalAvailability, Container } from "@bioscom/shared";
 import { api, ApiError } from "./api";
 import { currentGroup } from "./stores/currentGroup.svelte";
 import { session } from "./stores/session.svelte";
 import { showToast } from "./stores/toast.svelte";
 import { getFirstLetter, findRangeShelf, countChems } from "./inventoryUtils";
 import type { GridSettings } from "./grid";
+import type { HighlightColorId } from "./highlight";
 
 const gid = (): string => {
   const id = currentGroup.groupId;
@@ -44,13 +45,28 @@ async function runGridSettings(label: string, path: string, settings: GridSettin
   }
 }
 
-export function opAddRoom(name: string, description?: string): Promise<boolean> {
-  return run("Failed to add room", () => api.post(`/api/groups/${gid()}/inventory/rooms`, { name, description }));
+export function opAddRoom(name: string, description?: string, highlightColor?: HighlightColorId): Promise<boolean> {
+  return run("Failed to add room", () =>
+    api.post(`/api/groups/${gid()}/inventory/rooms`, {
+      name,
+      description,
+      ...(highlightColor !== undefined ? { highlightColor } : {}),
+    }),
+  );
 }
 
-export function opEditRoom(roomId: string, name: string, description?: string): Promise<boolean> {
+export function opEditRoom(
+  roomId: string,
+  name: string,
+  description?: string,
+  highlightColor?: HighlightColorId | null,
+): Promise<boolean> {
   return run("Failed to save room", () =>
-    api.put(`/api/groups/${gid()}/inventory/rooms/${roomId}`, { name, description }),
+    api.put(`/api/groups/${gid()}/inventory/rooms/${roomId}`, {
+      name,
+      description,
+      ...(highlightColor !== undefined ? { highlightColor } : {}),
+    }),
   );
 }
 
@@ -75,18 +91,25 @@ export function opAddContainer(body: {
   name: string;
   description?: string;
   emoji?: string;
+  highlightColor?: HighlightColorId;
   type: "cabinet" | "fridge" | "freezer" | "deepfreezer";
   cabinetMethod?: "numerical" | "alphabetical" | "custom";
   customRangeType?: "alphabetical" | "numerical";
   shelves?: ShelfSpec[];
 }): Promise<boolean> {
-  return run("Failed to add container", () => api.post(`/api/groups/${gid()}/inventory/containers`, body));
+  return run("Failed to add container", () => {
+    const { highlightColor, ...requestBody } = body;
+    return api.post(`/api/groups/${gid()}/inventory/containers`, {
+      ...requestBody,
+      ...(highlightColor !== undefined ? { highlightColor } : {}),
+    });
+  });
 }
 
 export function opEditContainer(
   roomId: string,
   containerId: string,
-  body: { name?: string; description?: string; emoji?: string },
+  body: { name?: string; description?: string; emoji?: string; highlightColor?: HighlightColorId | null },
 ): Promise<boolean> {
   return run("Failed to save container", () =>
     api.put(`/api/groups/${gid()}/inventory/containers/${containerId}`, { roomId, ...body }),
@@ -280,6 +303,7 @@ export interface ChemicalFormValues {
   name: string;
   formula: string;
   quantity: number | null;
+  availability: ChemicalAvailability;
   unit: string;
   concentration: number | null;
   concUnit: string;
@@ -310,6 +334,7 @@ export function opAddChemical(
       cas: values.cas === "" ? undefined : values.cas,
       formula: values.formula === "" ? undefined : values.formula,
       quantity: values.quantity ?? undefined,
+      availability: values.availability,
       unit: values.unit,
       concentration: values.concentration ?? undefined,
       concUnit: values.concUnit,
@@ -344,6 +369,7 @@ export function opEditChemical(
       cas: values.cas,
       formula: values.formula,
       quantity: values.quantity ?? 0,
+      availability: values.availability,
       unit: values.unit,
       concentration: values.concentration ?? undefined,
       concUnit: values.concUnit,

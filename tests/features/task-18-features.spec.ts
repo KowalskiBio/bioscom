@@ -288,7 +288,8 @@ test("radio widget: play state toggles (network stubbed)", async ({ page }) => {
   await page.click("#modal-confirm");
   await page.waitForTimeout(400);
   await page.click("#rooms-grid .card:has-text('Radio Room')");
-  await page.click("#btn-add-cabinet");
+  await page.click("#btn-add-container");
+  await page.selectOption("#c-type", "cabinet");
   await page.fill("#c-name", "Radio Cabinet");
   await page.click("#modal-confirm");
   await page.waitForTimeout(400);

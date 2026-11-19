@@ -3,6 +3,7 @@
   import { inventory, inventoryFor } from "../../lib/stores/inventory.svelte";
   import { router, navigateTo } from "../../lib/router.svelte";
   import { countChems, effectivePosition, escapeHtml, stripEmoji } from "../../lib/inventoryUtils";
+  import { highlightCardPresentation } from "../../lib/highlight";
   import { groupList } from "../../lib/stores/groups.svelte";
   import { currentGroup } from "../../lib/stores/currentGroup.svelte";
   import { session } from "../../lib/stores/session.svelte";
@@ -141,12 +142,13 @@
   {@const chemCount = countChems(cont)}
   {@const isFromOtherLab = cont.ownerGroupId !== undefined && cont.ownerGroupId !== currentGroup.groupId}
   {@const isMySharedContainer = !isFromOtherLab && (cont.sharedWithGroupIds ?? []).length > 0}
+  {@const highlight = highlightCardPresentation(cont.highlightColor)}
   {@const groupNames = Object.fromEntries(groupList.items.map((g) => [g.id, g.name]))}
   {@const otherGroupIds = (cont.sharedWithGroupIds ?? []).filter((gid) => gid !== currentGroup.groupId)}
   {@const glyphKind = cont.type === "cabinet" ? "square-red" : cont.type === "fridge" ? "circle-blue" : cont.type === "freezer" ? "square-ink" : cont.type === "deepfreezer" ? "circle-ink" : "square-ink"}
   <div
-    class={`card ${cls}-card`}
-    style={isMySharedContainer ? "border: 2px solid var(--accent-blue); box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);" : ""}
+    class={`card ${cls}-card ${highlight.className}`}
+    style={`${isMySharedContainer ? "border: 2px solid var(--accent-blue); box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);" : ""}${highlight.style}` || undefined}
   >
     <span class={`card-type-badge ${cls}-badge`}>{cont.type === "deepfreezer" ? "Deep Freezer" : typeName}</span>
     <div class={`card-icon ${cls}`}>{#if design === "bauhaus"}<span class={`glyph glyph-${glyphKind}`} aria-hidden="true"></span>{:else}{cont.emoji || icon}{/if}</div>

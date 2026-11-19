@@ -42,6 +42,7 @@ import {
   resolveAutoShelf,
 } from "./ops";
 import { countWords, effectivePosition, stripEmoji } from "./inventoryUtils";
+import { highlightForAdd, highlightForEdit, highlightFormValue } from "./highlight";
 import { verifyCaptchaAndExecute } from "./captcha";
 import { router, navigateTo } from "./router.svelte";
 import RoomFormModal from "../components/modals/RoomFormModal.svelte";
@@ -371,7 +372,11 @@ export function openProfileModal(): void {
 }
 
 export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => void): void {
-  const form = { name: room?.name ?? "", description: room?.description ?? "" };
+  const form = {
+    name: room?.name ?? "",
+    description: room?.description ?? "",
+    highlightColor: highlightFormValue(room?.highlightColor),
+  };
   openModal({
     title: mode === "add" ? "Add Room" : "Edit Room",
     component: RoomFormModal,
@@ -394,8 +399,8 @@ export function openRoomForm(mode: "add" | "edit", room?: Room, onDone?: () => v
       }
       const ok =
         mode === "add"
-          ? await opAddRoom(n, desc === "" ? undefined : desc)
-          : room !== undefined && (await opEditRoom(room.id, n, desc));
+          ? await opAddRoom(n, desc === "" ? undefined : desc, highlightForAdd(form.highlightColor))
+          : room !== undefined && (await opEditRoom(room.id, n, desc, highlightForEdit(form.highlightColor)));
       if (ok) {
         closeModal();
         showToast(mode === "add" ? `Room "${isBauhaus() ? stripEmoji(n) : n}" added` : "Saved");
@@ -428,12 +433,13 @@ function escapeHtmlText(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone?: () => void): void {
-  const typeLabel = type === "cabinet" ? "Cabinet" : type === "fridge" ? "Fridge" : "Freezer";
+export function openContainerForm(onDone?: () => void): void {
   const form = {
+    type: "" as "cabinet" | "fridge" | "freezer" | "",
     name: "",
     description: "",
     emoji: "",
+    highlightColor: highlightFormValue(),
     system: "numerical",
     countNum: 4,
     countAlpha: 4,
@@ -445,15 +451,22 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
     sharedGroups: {} as Record<string, boolean>,
   };
   openModal({
-    title: `Add ${typeLabel}`,
+    title: "Add Container",
     component: ContainerFormModal,
-    props: { form, type },
+    props: { form },
     btnText: "Add",
     onConfirm: async () => {
       if (!roleCanWrite()) {
         showToast("Access Denied", "error");
         return;
       }
+      const type = form.type;
+      if (type === "") {
+        showToast("Select a container type.", "error");
+        document.getElementById("c-type")?.focus();
+        return;
+      }
+      const typeLabel = type === "cabinet" ? "Cabinet" : type === "fridge" ? "Fridge" : "Freezer";
       const name = form.name.trim();
       if (name === "" || name.length > 50) {
         showToast("Container name is required (max 50 chars)", "error");
@@ -507,6 +520,7 @@ export function openContainerForm(type: "cabinet" | "fridge" | "freezer", onDone
         name,
         description: form.description.trim() === "" ? undefined : form.description.trim(),
         emoji: form.emoji.trim() === "" ? undefined : form.emoji.trim(),
+        highlightColor: highlightForAdd(form.highlightColor),
         type,
         cabinetMethod: type === "cabinet" ? cabinetMethod : undefined,
         customRangeType: type === "cabinet" && cabinetMethod === "custom" ? customRangeType : undefined,
@@ -629,11 +643,16 @@ function currentRoomIdSafe(): string | null {
 }
 
 export function openEditContainerForm(room: Room, cont: Container, onDone?: () => void): void {
-  const form = { name: cont.name ?? "", description: cont.description ?? "", emoji: cont.emoji ?? "" };
+  const form = {
+    name: cont.name ?? "",
+    description: cont.description ?? "",
+    emoji: cont.emoji ?? "",
+    highlightColor: highlightFormValue(cont.highlightColor),
+  };
   openModal({
     title: "Edit Container",
     component: SimplePromptModal,
-    props: { form, kind: "container" as const },
+    props: { form, kind: "container" as const, showHighlightPicker: true },
     btnText: "Save",
     onConfirm: async () => {
       const name = form.name.trim();
@@ -641,7 +660,12 @@ export function openEditContainerForm(room: Room, cont: Container, onDone?: () =
         showToast("Container name is required (max 50 chars)", "error");
         return;
       }
-      if (await opEditContainer(room.id, cont.id, { name, description: form.description.trim(), emoji: form.emoji.trim() })) {
+      if (await opEditContainer(room.id, cont.id, {
+        name,
+        description: form.description.trim(),
+        emoji: form.emoji.trim(),
+        highlightColor: highlightForEdit(form.highlightColor),
+      })) {
         closeModal();
         showToast("Saved");
         onDone?.();
@@ -1022,6 +1046,7 @@ export function openChemicalForm(
     name: editChem?.ch.name ?? "",
     formula: editChem?.ch.formula ?? "",
     quantity: editChem?.ch.quantity ?? null,
+    availability: editChem?.ch.availability ?? "available",
     unit: editChem?.ch.unit ?? "pcs",
     concentration: editChem?.ch.concentration ?? null,
     concUnit: editChem?.ch.concUnit ?? "",
@@ -1144,6 +1169,7 @@ export function openChemicalForm(
         name,
         formula: form.type === "chemical" ? form.formula.trim() : "",
         quantity: form.quantity,
+        availability: form.availability,
         unit: form.unit,
         concentration: form.concentration,
         concUnit: form.concUnit,

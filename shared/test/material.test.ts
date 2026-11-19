@@ -8,6 +8,7 @@ import {
   ProductSchema,
   StockSchema,
   materialTypeLabels,
+  materialTypeShortLabels,
   validateAttributes,
   validateAttributesAgainstType,
 } from "../src/index.js";
@@ -69,6 +70,20 @@ describe("MATERIAL_TYPES", () => {
       biological_stock: "Biological / glycerol stock",
       other: "Other material",
     });
+  });
+
+  it("returns a short label for every type, keyed by type key", () => {
+    const expected = {
+      chemical: "Chemical",
+      reagent: "Reagent",
+      antibody: "Antibody",
+      primer: "Primer",
+      solution: "Solution",
+      biological_stock: "Biological stock",
+      other: "Other",
+    };
+    expect(Object.fromEntries(MATERIAL_TYPES.map((type) => [type.key, type.shortLabel]))).toEqual(expected);
+    expect(materialTypeShortLabels()).toEqual(expected);
   });
 });
 
@@ -132,6 +147,7 @@ describe("validateAttributes", () => {
     const dateType: MaterialTypeDef = {
       key: "dated",
       label: "Dated",
+      shortLabel: "Dated",
       schemaVersion: 1,
       fields: [{ key: "checked_on", label: "Checked on", dataType: "date", required: false }],
     };
@@ -150,6 +166,7 @@ describe("validateAttributes", () => {
     const synthetic: MaterialTypeDef = {
       key: "synthetic",
       label: "Synthetic",
+      shortLabel: "Synthetic",
       schemaVersion: 1,
       fields: [{ key: "must_fill", label: "Must fill", dataType: "string", required: true }],
     };

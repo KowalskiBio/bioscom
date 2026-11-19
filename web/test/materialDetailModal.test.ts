@@ -620,6 +620,7 @@ describe("mounted MaterialDetailModal", () => {
       cas: "77-86-1",
       formula: "C4H11NO3-HCl",
       quantity: 250,
+      availability: "available",
       unit: "g",
       concentration: 2.25,
       concUnit: "mol/L",

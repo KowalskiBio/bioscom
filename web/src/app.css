@@ -251,6 +251,9 @@ body::after {
 .card.fridge-card:hover { border-color:rgba(6,182,212,0.2); box-shadow:var(--shadow-glow-fridge); }
 .card.freezer-card::before { background:var(--gradient-freezer); }
 .card.freezer-card:hover { border-color:rgba(99,102,241,0.2); box-shadow:var(--shadow-glow-freezer); }
+/* Explicit Okabe–Ito selection stays visible without waiting for hover. */
+.card.highlight-on::before { background:var(--card-highlight); opacity:1; }
+.card.highlight-none::before { display:none; }
 .card-icon {
     width:48px; height:48px; border-radius:var(--radius-md);
     display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:1rem;
@@ -3230,6 +3233,14 @@ body[data-design="bauhaus"] .print-catalog-card { border-top: 10px solid #DE2C1E
 body[data-design="bauhaus"] .asset-card { border-top: 10px solid #1D4FA2; }
 body[data-design="bauhaus"] .card.fridge-card:hover { border-color: #171512; border-top-color: #1D4FA2; }
 body[data-design="bauhaus"] .card.freezer-card:hover { border-color: #171512; border-top-color: #171512; }
+/* Highlight borders also override the inline blue border on shared containers.
+   The other three borders remain blue; the explicit stripe stays readable. */
+body[data-design="bauhaus"] .card.highlight-on {
+    border-top:10px solid var(--card-highlight) !important;
+}
+body[data-design="bauhaus"] .card.highlight-none {
+    border-top:2px solid #171512 !important;
+}
 
 /* 2c. Icon tiles & card type */
 body[data-design="bauhaus"] .card-icon {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Container, Room } from "@bioscom/shared";
+  import type { ChemicalAvailability, Container, Room } from "@bioscom/shared";
   import { MATERIAL_TYPES } from "@bioscom/shared";
   import type { MaterialFieldDef, MaterialTypeDef } from "@bioscom/shared";
   import { renderFormulaHtml, normalizeFormula } from "../../lib/inventoryUtils";
@@ -21,6 +21,7 @@
       name: string;
       formula: string;
       quantity: number | null;
+      availability: ChemicalAvailability;
       unit: string;
       concentration: number | null;
       concUnit: string;
@@ -426,6 +427,14 @@
 <div class="form-row">
   <div class="form-group"><label class="form-label">Quantity</label><input class="form-input" id="f-cq" type="number" step="any" min="0" bind:value={form.quantity}></div>
   <div class="form-group"><label class="form-label">Unit</label><select class="form-select" id="f-cu" bind:value={form.unit}>{#each units as unit (unit)}<option value={unit}>{unit}</option>{/each}</select></div>
+  <div class="form-group">
+    <label class="form-label" for="f-availability">Availability</label>
+    <select class="form-select" id="f-availability" aria-describedby="f-availability-hint" bind:value={form.availability}>
+      <option value="available">Available</option>
+      <option value="low">Low</option>
+    </select>
+    <div class="form-hint" id="f-availability-hint">Zero quantity is always Out of stock.</div>
+  </div>
 </div>
 <div class="form-row">
   <div class="form-group"><label class="form-label">Concentration</label><input class="form-input" id="f-cconc" type="number" step="any" min="0" placeholder="e.g. 1.5" bind:value={form.concentration}></div>

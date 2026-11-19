@@ -34,6 +34,7 @@ export interface MaterialFieldDef {
 export interface MaterialTypeDef {
   key: string;
   label: string;
+  shortLabel: string;
   schemaVersion: 1;
   fields: readonly MaterialFieldDef[];
 }
@@ -42,6 +43,7 @@ export const MATERIAL_TYPES = [
   {
     key: "chemical",
     label: "Chemical / compound",
+    shortLabel: "Chemical",
     schemaVersion: 1,
     fields: [
       { key: "cas_number", label: "CAS number", dataType: "string", required: false, searchable: true },
@@ -59,6 +61,7 @@ export const MATERIAL_TYPES = [
   {
     key: "reagent",
     label: "Commercial reagent / kit",
+    shortLabel: "Reagent",
     schemaVersion: 1,
     fields: [
       { key: "formulation", label: "Formulation", dataType: "string", required: false },
@@ -69,6 +72,7 @@ export const MATERIAL_TYPES = [
   {
     key: "antibody",
     label: "Antibody",
+    shortLabel: "Antibody",
     schemaVersion: 1,
     fields: [
       { key: "target", label: "Target", dataType: "string", required: false, searchable: true },
@@ -95,6 +99,7 @@ export const MATERIAL_TYPES = [
   {
     key: "primer",
     label: "Primer / oligonucleotide",
+    shortLabel: "Primer",
     schemaVersion: 1,
     fields: [
       { key: "sequence", label: "Sequence (5' to 3')", dataType: "sequence", required: false, searchable: true },
@@ -120,6 +125,7 @@ export const MATERIAL_TYPES = [
   {
     key: "solution",
     label: "Prepared solution / buffer",
+    shortLabel: "Solution",
     schemaVersion: 1,
     fields: [
       { key: "composition", label: "Composition", dataType: "text", required: false },
@@ -131,6 +137,7 @@ export const MATERIAL_TYPES = [
   {
     key: "biological_stock",
     label: "Biological / glycerol stock",
+    shortLabel: "Biological stock",
     schemaVersion: 1,
     fields: [
       { key: "organism", label: "Organism", dataType: "string", required: false, searchable: true },
@@ -150,6 +157,7 @@ export const MATERIAL_TYPES = [
   {
     key: "other",
     label: "Other material",
+    shortLabel: "Other",
     schemaVersion: 1,
     fields: [{ key: "custom_notes", label: "Notes", dataType: "text", required: false }],
   },
@@ -301,10 +309,14 @@ export function materialTypeLabels(): Record<string, string> {
   return Object.fromEntries(MATERIAL_TYPES.map((type) => [type.key, type.label]));
 }
 
+export function materialTypeShortLabels(): Record<string, string> {
+  return Object.fromEntries(MATERIAL_TYPES.map((type) => [type.key, type.shortLabel]));
+}
+
 export const OriginTypeSchema = z.enum(["purchased", "prepared", "derived", "unknown"]).catch("unknown");
 
 export const StockStatusSchema = z
-  .enum(["available", "depleted", "discarded", "reserved", "unknown"])
+  .enum(["available", "depleted", "discarded", "reserved", "low", "out_of_stock", "unknown"])
   .catch("unknown");
 
 export const LocationKindSchema = z.enum(["room", "container", "shelf"]);

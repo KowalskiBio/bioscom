@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { InventoryTreeSchema, relocateDeepFreezers, validateAttributes as validateMaterialAttributes, type Chemical, type InventoryTree } from "@bioscom/shared";
+import { InventoryTreeSchema, relocateDeepFreezers, chemicalAvailability, validateAttributes as validateMaterialAttributes, type Chemical, type InventoryTree } from "@bioscom/shared";
 import { loadDoc } from "./doc.js";
 
 const KNOWN_CHEMICAL_KEYS = new Set([
@@ -8,6 +8,7 @@ const KNOWN_CHEMICAL_KEYS = new Set([
   "cas",
   "formula",
   "quantity",
+  "availability",
   "unit",
   "concentration",
   "concUnit",
@@ -157,7 +158,7 @@ INSERT INTO stocks (id, group_id, batch_id, location_id, position, custom_positi
   current_quantity, quantity_unit, concentration, concentration_unit, note, barcode, status, container_type,
   created_at, updated_at)
 VALUES (@id, @group_id, @batch_id, @location_id, @position, @custom_position, @shelf_override,
-  @current_quantity, @quantity_unit, @concentration, @concentration_unit, @note, @barcode, 'available', NULL,
+  @current_quantity, @quantity_unit, @concentration, @concentration_unit, @note, @barcode, @status, NULL,
   @created_at, @updated_at)
 ON CONFLICT(id) DO UPDATE SET
   group_id = excluded.group_id, batch_id = excluded.batch_id, location_id = excluded.location_id,
@@ -279,6 +280,7 @@ export function syncGroupInventoryDocument(db: Database.Database, groupId: strin
       concentration_unit: ch.concUnit ?? null,
       note: ch.note ?? null,
       barcode: typeof ch.barcode === "string" && ch.barcode.trim() !== "" ? ch.barcode.trim() : null,
+      status: chemicalAvailability(ch),
       created_at: now,
       updated_at: now,
     });

@@ -3,6 +3,7 @@
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { navigateTo } from "../../lib/router.svelte";
   import { countAllChems, countChems, parseDeepFreezerShelf, stripEmoji } from "../../lib/inventoryUtils";
+  import { highlightCardPresentation } from "../../lib/highlight";
   import { opMoveRoomGrid, roleCanWrite } from "../../lib/ops";
   import { openDeepFreezerForm } from "../../lib/forms";
   import { theme } from "../../lib/theme.svelte";
@@ -78,7 +79,8 @@
 
 {#snippet roomCard(room: Room)}
   {@const directChems = room.chemicals?.length ?? 0}
-  <div class="card room-card">
+  {@const highlight = highlightCardPresentation(room.highlightColor)}
+  <div class={`card room-card ${highlight.className}`} style={highlight.style || undefined}>
     <div class="card-icon room">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}🏠{/if}</div>
     <div class="card-title">{design === "bauhaus" ? stripEmoji(room.name) : room.name}</div>
     <div class="card-description">{design === "bauhaus" ? stripEmoji(room.description || "Room") : (room.description || "Room")}</div>

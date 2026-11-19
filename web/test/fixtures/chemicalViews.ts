@@ -257,6 +257,34 @@ const tree = {
           target_species: "guessed top-level descriptor",
           attributes: { custom_notes: "Chemical descriptor must not leak" },
         },
+        ...(params.get("availability") === "1" ? [
+          {
+            id: "room-out-of-stock",
+            name: "Room empty stock",
+            type: "chemical",
+            quantity: 0,
+            availability: "low",
+            unit: "g",
+            note: "Zero quantity overrides explicit low availability",
+          },
+          {
+            id: "room-low",
+            name: "Room explicit low stock",
+            type: "chemical",
+            quantity: 4,
+            availability: "low",
+            unit: "g",
+            note: "Explicit low availability",
+          },
+          {
+            id: "room-available",
+            name: "Room available stock",
+            type: "chemical",
+            quantity: 4,
+            unit: "g",
+            note: "Positive quantity without an automatic low threshold",
+          },
+        ] : []),
         {
           id: "room-other",
           name: "Room Other stock",
@@ -293,6 +321,9 @@ mount(Toasts, { target: toastTarget });
 if (window.location.hash === "#catalog") {
   const { default: CatalogView } = await import("../../src/components/views/CatalogView.svelte");
   mount(CatalogView, { target });
+} else if (window.location.hash === "#dashboard") {
+  const { default: DashboardView } = await import("../../src/components/views/DashboardView.svelte");
+  mount(DashboardView, { target });
 } else if (window.location.hash.startsWith("#detail/")) {
   const { default: DetailView } = await import("../../src/components/views/DetailView.svelte");
   mount(DetailView, { target, props: { searchQuery: params.get("q") ?? "" } });

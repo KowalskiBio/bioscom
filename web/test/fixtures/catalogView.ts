@@ -1,10 +1,13 @@
 import { mount } from "svelte";
 import { setUser } from "../../src/lib/stores/session.svelte";
 import { setCurrentGroup } from "../../src/lib/stores/currentGroup.svelte";
+import { setDesign } from "../../src/lib/theme.svelte";
+import "../../src/app.css";
 
 // Set the route before CatalogView loads the router module so the view effect
 // performs the normal stock and preference fetch against the mocked API.
 window.location.hash = "#catalog";
+setDesign("original");
 setUser({
   uid: "synthetic-catalog-user",
   name: "Catalog Test User",

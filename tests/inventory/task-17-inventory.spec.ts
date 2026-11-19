@@ -147,7 +147,8 @@ test("add room -> add freezer -> add shelf -> add chemical with position -> appe
   await page.click("#rooms-grid .card:has-text('E2E Room')");
   await expect(page.locator("#containers-title")).toHaveText("Room: E2E Room");
 
-  await page.click("#btn-add-freezer");
+  await page.click("#btn-add-container");
+  await page.selectOption("#c-type", "freezer");
   await page.fill("#c-name", "E2E Freezer");
   await page.click("#modal-confirm");
   await expect(page.locator(".toast", { hasText: 'Freezer "E2E Freezer" added' })).toBeVisible();

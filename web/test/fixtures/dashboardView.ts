@@ -21,13 +21,20 @@ const todayUtc = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(
 const day = 86_400_000;
 const expiryDay = (offset: number): number => todayUtc + offset * day + 12 * 60 * 60 * 1000;
 
-function stock(id: string, name: string, quantity: unknown, expiresAt?: number): Chemical {
+function stock(
+  id: string,
+  name: string,
+  quantity: unknown,
+  expiresAt?: number,
+  availability?: Chemical["availability"],
+): Chemical {
   return {
     id,
     name,
     type: "chemical",
     quantity,
     unit: "mL",
+    ...(availability === undefined ? {} : { availability }),
     ...(expiresAt === undefined ? {} : { batchInfo: { expiresAt } }),
   } as Chemical;
 }
@@ -48,7 +55,7 @@ function mainTree(): InventoryTree {
             id: "cont-main",
             name: "Main Cabinet",
             type: "cabinet",
-            chemicals: [stock("container-direct", "Container direct stock", 4)],
+            chemicals: [stock("container-direct", "Container direct stock", 4, undefined, "low")],
             shelves: [
               {
                 id: "shelf-main",
@@ -61,7 +68,7 @@ function mainTree(): InventoryTree {
                 name: "Nested Box B",
                 type: "box",
                 parentShelfId: "shelf-main",
-                chemicals: [stock("nested-stock", "Nested two-reason stock", 2, expiryDay(2))],
+                chemicals: [stock("nested-stock", "Nested two-reason stock", 2, expiryDay(2), "low")],
               },
             ],
           },
@@ -86,6 +93,25 @@ function mainTree(): InventoryTree {
         ],
       },
     ],
+  } as InventoryTree;
+}
+
+function noAutomaticLowTree(): InventoryTree {
+  return {
+    rooms: [
+      {
+        id: "room-threshold",
+        name: "Threshold Room",
+        containers: [],
+        chemicals: [
+          stock("implicit-four", "Implicit positive four", 4),
+          stock("implicit-two", "Implicit positive two", 2),
+          stock("explicit-low", "Explicit low four", 4, undefined, "low"),
+          stock("out-of-stock", "Out of stock zero", 0, undefined, "low"),
+        ],
+      },
+    ],
+    deepFreezers: [],
   } as InventoryTree;
 }
 
@@ -132,7 +158,10 @@ setUser({
 setCurrentGroup(groupId, groupId === null ? null : groupId === "group-a" ? "Synthetic Lab A" : "Synthetic Lab B");
 let version = 0;
 function treeFor(nextGroupId: string): InventoryTree {
-  return nextGroupId === "group-b" ? otherGroupTree() : fixtureCase === "cap" ? capTree() : mainTree();
+  if (nextGroupId === "group-b") return otherGroupTree();
+  if (fixtureCase === "cap") return capTree();
+  if (fixtureCase === "no-automatic-low") return noAutomaticLowTree();
+  return mainTree();
 }
 function installGroupTree(nextGroupId: string): void {
   const tree = treeFor(nextGroupId);

@@ -550,6 +550,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const result = mutate(groupId, user, (tree) => {
         const room: Room = { id: genId(), name: body.data.name, description: body.data.description, containers: [] };
+        if (body.data.highlightColor !== undefined && body.data.highlightColor !== null) {
+          room.highlightColor = body.data.highlightColor;
+        }
         tree.rooms.push(room);
         if (tree.roomGrid !== undefined) {
           autoAssignNewGridItem(tree.roomGrid, room.id);
@@ -585,6 +588,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.description !== undefined) {
           room.description = body.data.description;
+        }
+        if (body.data.highlightColor !== undefined) {
+          if (body.data.highlightColor === null) {
+            delete room.highlightColor;
+          } else {
+            room.highlightColor = body.data.highlightColor;
+          }
         }
         return `Edited room "${oldName}"`;
       });
@@ -804,6 +814,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
             };
           }),
         };
+        if (body.data.highlightColor !== undefined) {
+          container.highlightColor = body.data.highlightColor;
+        }
         room.containers.push(container);
         // Deep freezers are relocated to the root rail on the next document
         // load; never give them a slot in this room's container grid.
@@ -840,6 +853,13 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.emoji !== undefined) {
           container.emoji = body.data.emoji;
+        }
+        if (body.data.highlightColor !== undefined) {
+          if (body.data.highlightColor === null) {
+            delete container.highlightColor;
+          } else {
+            container.highlightColor = body.data.highlightColor;
+          }
         }
         return `Edited container "${body.data.name ?? container.name}"`;
       });
@@ -1163,6 +1183,7 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           cas: body.data.cas,
           formula: body.data.formula,
           quantity: body.data.quantity,
+          availability: body.data.availability,
           unit: body.data.unit,
           concentration: body.data.concentration,
           concUnit: body.data.concUnit,
@@ -1234,6 +1255,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.quantity !== undefined) {
           chemical.quantity = body.data.quantity;
+        }
+        if (body.data.availability !== undefined) {
+          chemical.availability = body.data.availability;
         }
         if (body.data.unit !== undefined) {
           chemical.unit = body.data.unit;
@@ -1474,6 +1498,9 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
       }
       const result = mutate(groupId, user, (tree) => {
         const room: Room = { id: genId(), name: body.data.name, description: body.data.description, containers: [] };
+        if (body.data.highlightColor !== undefined && body.data.highlightColor !== null) {
+          room.highlightColor = body.data.highlightColor;
+        }
         tree.rooms.push(room);
         if (tree.roomGrid !== undefined) {
           autoAssignNewGridItem(tree.roomGrid, room.id);

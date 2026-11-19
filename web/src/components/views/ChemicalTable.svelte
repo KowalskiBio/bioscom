@@ -1,12 +1,17 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { materialTypeLabels, type Chemical } from "@bioscom/shared";
+  import {
+    chemicalAvailability,
+    chemicalAvailabilityClass,
+    materialTypeLabels,
+    materialTypeShortLabels,
+    type Chemical,
+  } from "@bioscom/shared";
   import {
     chemicalConcentrationText,
     chemicalDateText,
     chemicalDescriptorText,
     chemicalFormulaSource,
-    chemicalLegacyStatusText,
     chemicalNoteText,
     chemicalProductText,
     chemicalTableModel,
@@ -17,7 +22,6 @@
     effectivePosition,
     highlightHtml,
     materialTypeColorClass,
-    quantityClass,
     renderFormulaHtml,
     stripEmoji,
   } from "../../lib/inventoryUtils";
@@ -56,6 +60,7 @@
   } = $props();
 
   const labels = materialTypeLabels();
+  const shortLabels = materialTypeShortLabels();
   const design = $derived(theme.design);
   const model = $derived(chemicalTableModel(columns, layout, legacy));
 
@@ -71,10 +76,32 @@
     return locationText?.(ch) ?? "—";
   }
 
+  function chemicalStatusText(ch: Chemical): string {
+    switch (chemicalAvailability(ch)) {
+      case "out_of_stock":
+        return "Out of stock";
+      case "low":
+        return "Low";
+      default:
+        return "Available";
+    }
+  }
+
+  function chemicalStatusClass(ch: Chemical): string {
+    switch (chemicalAvailability(ch)) {
+      case "out_of_stock":
+        return "rejected";
+      case "low":
+        return "pending";
+      default:
+        return "done";
+    }
+  }
+
   function cellText(ch: Chemical, column: ChemicalTableColumn): string {
     switch (column.kind) {
       case "type":
-        return labels[ch.type ?? "chemical"] ?? ch.type ?? "chemical";
+        return shortLabels[ch.type ?? "chemical"] ?? ch.type ?? "chemical";
       case "position":
         return positionText(ch);
       case "location":
@@ -96,7 +123,7 @@
       case "expires":
         return chemicalDateText(ch.batchInfo?.expiresAt);
       case "status":
-        return chemicalLegacyStatusText(ch);
+        return chemicalStatusText(ch);
       case "note":
         return displayText(chemicalNoteText(ch));
       default:
@@ -136,6 +163,7 @@
           {#if column.kind === "name"}
             {@const materialType = ch.type ?? "chemical"}
             {@const fullTypeLabel = labels[materialType] ?? materialType}
+            {@const shortTypeLabel = shortLabels[materialType] ?? fullTypeLabel}
             {@const compactInlineType = materialType === "chemical" || materialType === "biological_stock"}
             <td class={`${column.className} chem-name`} data-column={column.id}>
               <span class={`chemical-name-line${layout !== "room" && model.selected.has("type") && compactInlineType ? " has-compact-type" : ""}`}>
@@ -158,8 +186,8 @@
                   <span
                     class={`status-badge ${materialTypeColorClass(materialType)}${compactInlineType ? " chemical-inline-type" : ""}`}
                     style={compactInlineType ? undefined : "margin-left:0.4rem;"}
-                    title={compactInlineType ? fullTypeLabel : undefined}
-                  >{materialType === "chemical" ? "Chemical" : materialType === "biological_stock" ? "Biological stock" : fullTypeLabel}</span>
+                    title={shortTypeLabel === fullTypeLabel ? undefined : fullTypeLabel}
+                  >{shortTypeLabel}</span>
                 {/if}
               </span>
               {#if layout === "room" && legacy && ch.concentration !== null && ch.concentration !== undefined}
@@ -167,7 +195,7 @@
               {/if}
             </td>
           {:else if column.kind === "type"}
-            <td class={column.className} data-column={column.id}><span class={`status-badge ${materialTypeColorClass(ch.type ?? "chemical")}`}>{cellText(ch, column)}</span></td>
+            <td class={column.className} data-column={column.id}><span class={`status-badge ${materialTypeColorClass(ch.type ?? "chemical")}`} title={labels[ch.type ?? "chemical"] ?? ch.type ?? "chemical"}>{cellText(ch, column)}</span></td>
           {:else if column.kind === "position"}
             <td class={column.className} data-column={column.id}><span class={`chem-pos ${fridgePositions || layout === "deepfreezer-search" ? "fridge" : ""}`}>{cellText(ch, column)}</span></td>
           {:else if column.kind === "location" && onOpenLocation !== undefined}
@@ -186,7 +214,7 @@
                 {#if canAdjust}
                   <button type="button" class="btn-qty" title="Decrease quantity" aria-label={`Decrease quantity of ${ch.name ?? "chemical"}`} onclick={(event) => { event.stopPropagation(); onAdjust?.(ch, -1); }}>−</button>
                 {/if}
-                <span class={`chem-quantity ${quantityClass(ch.quantity)}`}>{ch.quantity ?? 0}</span>
+                <span class={`chem-quantity ${chemicalAvailabilityClass(ch)}`}>{ch.quantity ?? 0}</span>
                 {#if canAdjust}
                   <button type="button" class="btn-qty" title="Increase quantity" aria-label={`Increase quantity of ${ch.name ?? "chemical"}`} onclick={(event) => { event.stopPropagation(); onAdjust?.(ch, 1); }}>+</button>
                 {/if}
@@ -194,6 +222,8 @@
             </td>
           {:else if column.kind === "descriptor" && column.field?.key === "molecular_formula"}
             <td class={`${column.className} chem-formula`} data-column={column.id}><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html renderFormulaHtml(chemicalFormulaSource(ch))}</td>
+          {:else if column.kind === "status"}
+            <td class={column.className} data-column={column.id}><span class={`status-badge ${chemicalStatusClass(ch)}`}>{cellText(ch, column)}</span></td>
           {:else if column.kind === "actions"}
             <td class={column.className} data-column={column.id} style={layout === "room" ? "text-align: right;" : "text-align: center;"}>
               {@render actions(ch)}

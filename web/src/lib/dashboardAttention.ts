@@ -1,15 +1,17 @@
 import {
+  chemicalAvailability,
   noticeDismissalKey,
   stockExpiryDismissalKey,
   stockLowDismissalKey,
   type Chemical,
+  type ChemicalAvailability,
   type Container,
   type InventoryTree,
   type Notice,
   type Room,
   type Shelf,
 } from "@bioscom/shared";
-import { parseDeepFreezerShelf, quantityClass, stripEmoji } from "./inventoryUtils";
+import { parseDeepFreezerShelf, stripEmoji } from "./inventoryUtils";
 
 export const DASHBOARD_STOCK_ALERT_LIMIT = 8;
 const DAY_MS = 86_400_000;
@@ -65,15 +67,21 @@ export function cleanDashboardText(value: unknown): string {
   return stripEmoji(String(value)).replace(/\s+/gu, " ").trim();
 }
 
-export function dashboardQuantityAlert(
-  value: unknown,
-): { quantity: number; level: DashboardAttentionLevel } | null {
-  // Deliberately use the existing quantityClass coercion and thresholds.
-  const level = quantityClass(value);
-  if (level === "ok") return null;
+export function dashboardQuantityAlert(chemical: {
+  quantity?: unknown;
+  availability?: ChemicalAvailability | null;
+}): { quantity: number; level: DashboardAttentionLevel } | null {
+  const availability = chemicalAvailability({
+    quantity: typeof chemical.quantity === "number" ? chemical.quantity : null,
+    availability: chemical.availability,
+  });
+  if (availability === "available") return null;
   return {
-    quantity: parseFloat(String(value ?? 0)) || 0,
-    level: level as DashboardAttentionLevel,
+    quantity:
+      typeof chemical.quantity === "number" && Number.isFinite(chemical.quantity)
+        ? chemical.quantity
+        : 0,
+    level: availability === "out_of_stock" ? "low" : "medium",
   };
 }
 
@@ -242,7 +250,7 @@ export function buildDashboardStockAlerts(
       href: location.href,
     };
 
-    const quantity = dashboardQuantityAlert(chemical.quantity);
+    const quantity = dashboardQuantityAlert(chemical);
     if (quantity !== null) {
       const dismissalKey = stockLowDismissalKey(chemical.id);
       if (!alertsByKey.has(dismissalKey)) {
