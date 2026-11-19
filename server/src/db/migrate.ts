@@ -22,6 +22,33 @@ function runPairedMigrationStep(db: Database.Database, version: number): void {
   }
 }
 
+export function stripLegacyEmbeddedBarcodeImages(db: Database.Database): void {
+  const rows = db
+    .prepare("SELECT group_id, tree FROM group_inventory_docs")
+    .all() as Array<{ group_id: string; tree: string }>;
+  const update = db.prepare("UPDATE group_inventory_docs SET tree = ? WHERE group_id = ?");
+  for (const row of rows) {
+    if (!row.tree.includes("barcodeImg")) {
+      continue;
+    }
+    const tree = JSON.parse(row.tree) as { assets?: Array<Record<string, unknown> | null> };
+    let changed = false;
+    for (const asset of tree.assets ?? []) {
+      if (asset !== null && typeof asset === "object" && "barcodeImg" in asset) {
+        delete asset.barcodeImg;
+        changed = true;
+      }
+    }
+    if (changed) {
+      const cleaned = JSON.stringify(tree);
+      update.run(cleaned, row.group_id);
+      console.log(
+        `[inventory-cleanup] removed embedded barcode images from group ${row.group_id} (${row.tree.length} -> ${cleaned.length} bytes)`,
+      );
+    }
+  }
+}
+
 export interface AppliedMigration {
   version: number;
   name: string;
@@ -71,6 +98,13 @@ export function runMigrations(db: Database.Database): AppliedMigration[] {
     newlyApplied.push(migration);
   }
 
+  try {
+    stripLegacyEmbeddedBarcodeImages(db);
+  } catch (error) {
+    console.error(
+      `[inventory-cleanup] failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   try {
     const reports = ensureBackfilled(db);
     const anomalies = reports.filter((r) => !r.ok);

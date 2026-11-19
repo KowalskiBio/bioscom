@@ -14,6 +14,7 @@ export interface ServerConfig {
   unknownResetNotifyEmail: string;
   logLevel: string;
   loginRateLimit: number;
+  compressThreshold: number;
   firebaseScrypt: FirebaseScryptParams | null;
 }
 
@@ -60,6 +61,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       overrides.unknownResetNotifyEmail ?? (process.env.RESET_UNKNOWN_NOTIFY_EMAIL?.trim() || ""),
     logLevel: overrides.logLevel ?? (process.env.LOG_LEVEL?.trim() || "info"),
     loginRateLimit: overrides.loginRateLimit ?? envNumber("LOGIN_RATE_LIMIT", 5),
+    compressThreshold: overrides.compressThreshold ?? envNumber("COMPRESS_THRESHOLD", 1024),
     firebaseScrypt: loadFirebaseScrypt(overrides.firebaseScrypt),
   };
 }

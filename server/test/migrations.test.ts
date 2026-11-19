@@ -279,6 +279,41 @@ describe("migration runner", () => {
     expect(ensureParityChecked(db)).toEqual([]);
   });
 
+  it("strips legacy embedded barcode images from asset docs on boot and stays idempotent", () => {
+    const db = getDatabase(tempDbPath());
+    const fakePng = "data:image/png;base64," + "A".repeat(20000);
+    db.prepare("INSERT INTO group_inventory_docs (group_id, tree, version) VALUES ('g1', ?, 1)").run(
+      JSON.stringify({
+        rooms: [],
+        assetRooms: [],
+        assets: [
+          { id: "a1", name: "Microscope", roomId: null, barcode: "60352391", barcodeImg: fakePng },
+          { id: "a2", name: "Centrifuge", roomId: null, barcode: "60352392" },
+        ],
+        protocols: [],
+      }),
+    );
+    const before = (db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree;
+
+    expect(runMigrations(db)).toEqual([]);
+
+    const cleaned = JSON.parse(
+      (db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree,
+    ) as { assets: Array<{ id: string; name: string; barcodeImg?: string }> };
+    expect(cleaned.assets).toHaveLength(2);
+    expect("barcodeImg" in cleaned.assets[0]!).toBe(false);
+    expect("barcodeImg" in cleaned.assets[1]!).toBe(false);
+    expect(cleaned.assets[0]!.barcode).toBe("60352391");
+    expect((db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree.length)
+      .toBeLessThan(before.length);
+
+    expect(runMigrations(db)).toEqual([]);
+    expect(
+      (db.prepare("SELECT tree FROM group_inventory_docs WHERE group_id = 'g1'").get() as { tree: string }).tree,
+    ).not.toContain("barcodeImg");
+    expect(ensureParityChecked(db)).toEqual([]);
+  });
+
   it("accepts a trial relational insert across the new tables", () => {    const db = getDatabase(tempDbPath());
 
     db.prepare("INSERT INTO materials (id, group_id, type_key, name) VALUES (?, ?, ?, ?)").run(

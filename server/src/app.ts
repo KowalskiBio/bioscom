@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
+import compress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { loadConfig, type ServerConfig } from "./config.js";
@@ -45,6 +46,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const app = Fastify({ logger: { level: config.logLevel } });
 
   await app.register(cookie);
+  await app.register(compress, { threshold: config.compressThreshold });
+  await app.register(websocket, { options: { perMessageDeflate: { threshold: 4096 } } });
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
@@ -80,7 +83,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   registerGroupRoutes(app, config);
   registerUserRoutes(app, config);
   const hub = new InventoryHub();
-  await app.register(websocket);
   registerInventoryWs(app, config, hub);
   registerInventoryRoutes(app, config, hub);
   registerSharedContainerRoutes(app, config, hub);

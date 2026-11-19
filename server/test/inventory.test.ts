@@ -60,7 +60,7 @@ let otherCookie: string;
 beforeAll(async () => {
   const dir = mkdtempSync(join(tmpdir(), "bioscom-inventory-test-"));
   dbPath = join(dir, "test.db");
-  app = await buildApp({ config: { dbPath, logLevel: "silent", loginRateLimit: 1000 } });
+  app = await buildApp({ config: { dbPath, logLevel: "silent", loginRateLimit: 1000, compressThreshold: 0 } });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
   if (address === null || typeof address === "string") {
@@ -100,6 +100,16 @@ describe("GET /api/groups/:id/inventory", () => {
   it("rejects non-members with 403", async () => {
     const response = await request(baseUrl).get("/api/groups/group-a/inventory").set("Cookie", otherCookie);
     expect(response.status).toBe(403);
+  });
+
+  it("compresses the tree payload when the client accepts gzip", async () => {
+    const response = await request(baseUrl)
+      .get("/api/groups/group-a/inventory")
+      .set("Cookie", ownerCookie)
+      .set("accept-encoding", "gzip");
+    expect(response.status).toBe(200);
+    expect(response.headers["content-encoding"]).toBe("gzip");
+    expect(response.body.tree.rooms).toEqual([]);
   });
 });
 
@@ -725,5 +735,26 @@ describe("websocket hub", () => {
     });
     expect(status).toBe(401);
     socket.close();
+  });
+
+  it("serves snapshots over a permessage-deflate connection", async () => {
+    const wsUrl = baseUrl.replace("http", "ws") + "/ws";
+    const socket = new WebSocket(wsUrl, {
+      headers: { Cookie: ownerCookie },
+      perMessageDeflate: true,
+    });
+    const collector = collectMessages(socket);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", (error: Error) => reject(error));
+    });
+    try {
+      socket.send(JSON.stringify({ subscribe: "group-a" }));
+      const initial = await collector.waitFor((message) => message.version !== undefined);
+      expect(initial.groupId).toBe("group-a");
+      expect(initial.tree).toBeDefined();
+    } finally {
+      socket.close();
+    }
   });
 });
