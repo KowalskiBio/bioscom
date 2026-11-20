@@ -345,9 +345,14 @@ export const AssetSchema = z.looseObject({
   roomId: optionalTextSchema,
 });
 
+export const ProtocolTagSchema = z.string().trim().min(1).max(50);
+
 export const ProtocolSchema = z.looseObject({
   id: idSchema,
   title: looseTextSchema,
+  description: optionalTextSchema,
+  tags: rtdbArray(ProtocolTagSchema).nullish().catch(undefined),
+  // Raw GitHub-flavored Markdown source; preserved verbatim.
   content: optionalTextSchema,
 });
 

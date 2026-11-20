@@ -49,6 +49,7 @@ import {
   type Chemical,
   type Container,
   type InventoryTree,
+  type Protocol,
   type Room,
 } from "@bioscom/shared";
 import { getDatabase } from "../db.js";
@@ -1423,7 +1424,14 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         throw new OpError(400, "Invalid request");
       }
       const result = mutate(groupId, user, (tree) => {
-        tree.protocols.push({ id: genId(), title: body.data.title, content: body.data.content ?? "" });
+        const protocol: Protocol = { id: genId(), title: body.data.title, content: body.data.content ?? "" };
+        if (body.data.description !== undefined && body.data.description !== "") {
+          protocol.description = body.data.description;
+        }
+        if (body.data.tags !== undefined && body.data.tags.length > 0) {
+          protocol.tags = body.data.tags;
+        }
+        tree.protocols.push(protocol);
         return `Added protocol "${body.data.title}"`;
       });
       broadcastResult(groupId, result);
@@ -1450,6 +1458,20 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
         }
         if (body.data.title !== undefined) {
           protocol.title = body.data.title;
+        }
+        if (body.data.description !== undefined) {
+          if (body.data.description === "") {
+            delete protocol.description;
+          } else {
+            protocol.description = body.data.description;
+          }
+        }
+        if (body.data.tags !== undefined) {
+          if (body.data.tags.length === 0) {
+            delete protocol.tags;
+          } else {
+            protocol.tags = body.data.tags;
+          }
         }
         if (body.data.content !== undefined) {
           protocol.content = body.data.content;

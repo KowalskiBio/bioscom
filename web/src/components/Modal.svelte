@@ -28,7 +28,13 @@
     <div id="modal" class="modal" class:modal-wide={modal.state.size === "wide"} class:modal-xwide={modal.state.size === "xwide"}>
         <div class="modal-header">
             <h2 id="modal-title">{modal.state.title}</h2>
-            <button id="modal-close" class="modal-close-btn" onclick={() => closeModal()}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            <div class="modal-header-actions">
+                {#if modal.state.headerActions !== null}
+                    {@const HeaderActions = modal.state.headerActions.component}
+                    <HeaderActions {...modal.state.headerActions.props} />
+                {/if}
+                <button id="modal-close" class="modal-close-btn" type="button" title="Close" aria-label="Close modal" onclick={() => closeModal()}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
         </div>
         <div id="modal-body" class="modal-body">
             {#if modal.state.component !== null}

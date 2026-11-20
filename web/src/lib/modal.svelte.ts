@@ -4,12 +4,18 @@ type AnyComponent = Component<any>;
 
 export type ModalSize = "default" | "wide" | "xwide";
 
+export interface ModalHeaderActions {
+  component: AnyComponent;
+  props: Record<string, unknown>;
+}
+
 export interface ModalState {
   open: boolean;
   title: string;
   bodyHtml: string;
   component: AnyComponent | null;
   props: Record<string, unknown>;
+  headerActions: ModalHeaderActions | null;
   btnText: string | null;
   onConfirm: (() => void) | null;
   size?: ModalSize;
@@ -21,6 +27,7 @@ let state = $state.raw<ModalState>({
   bodyHtml: "",
   component: null,
   props: {},
+  headerActions: null,
   btnText: null,
   onConfirm: null,
   size: "default",
@@ -37,6 +44,7 @@ export interface OpenModalOptions {
   bodyHtml?: string;
   component?: AnyComponent | null;
   props?: Record<string, unknown>;
+  headerActions?: { component: AnyComponent; props?: Record<string, unknown> } | null;
   btnText?: string | null;
   onConfirm?: (() => void) | null;
   size?: ModalSize;
@@ -49,6 +57,9 @@ export function openModal(options: OpenModalOptions): void {
     bodyHtml: options.bodyHtml ?? "",
     component: options.component ?? null,
     props: options.props ?? {},
+    headerActions: options.headerActions == null
+      ? null
+      : { component: options.headerActions.component, props: options.headerActions.props ?? {} },
     btnText: options.btnText ?? null,
     onConfirm: options.onConfirm ?? null,
     size: options.size ?? "default",
@@ -68,6 +79,7 @@ export function closeModal(): void {
     bodyHtml: "",
     component: null,
     props: {},
+    headerActions: null,
     btnText: null,
     onConfirm: null,
     size: "default",

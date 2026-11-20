@@ -17,6 +17,11 @@
   import { opDeleteContainer, opDeleteContainerGrid, opSetContainerGrid, opSetRoomGrid, roleCanWrite } from "../lib/ops";
   import type { GridSettings } from "../lib/grid";
   import { stripEmoji } from "../lib/inventoryUtils";
+  import {
+    normalizeProtocolColumnCount,
+    readProtocolColumnCount,
+    storeProtocolColumnCount,
+  } from "../lib/protocol";
   import { verifyCaptchaAndExecute } from "../lib/captcha";
   import {
     openRoomForm,
@@ -58,6 +63,7 @@
 
   let assetSearch = $state("");
   let instrumentSearch = $state("");
+  let protocolColumns = $state(readProtocolColumnCount());
 
   const TAB_MAP: Record<string, string> = {
     dashboard: "tab-dashboard",
@@ -81,6 +87,7 @@
   const badgeVisible = $derived(session.user !== null);
   const isReader = $derived(session.user?.role === "reader");
   const canWrite = $derived(roleCanWrite());
+  const hasProtocols = $derived((inventory.tree?.protocols?.length ?? 0) > 0);
   const isSuperadmin = $derived(session.user?.role === "superadmin");
   const catalogTypeLabel = $derived(
     catalog.typeFilter === "" ? "all types" : (materialTypeLabels()[catalog.typeFilter] ?? catalog.typeFilter),
@@ -352,6 +359,11 @@
       return;
     }
     openProtocolForm();
+  }
+
+  function onProtocolColumnsChange(event: Event): void {
+    protocolColumns = normalizeProtocolColumnCount((event.currentTarget as HTMLSelectElement).value);
+    storeProtocolColumnCount(protocolColumns);
   }
 
   function onAddAssetRoom(): void {
@@ -720,10 +732,21 @@
             <div class="view-header">
                 <div><h1>Standard Laboratory Solutions &amp; Stock Preparations</h1><p class="view-subtitle">Manage laboratory protocols and recipes</p></div>
                 <div class="view-header-actions">
+                    {#if hasProtocols}
+                        <div class="protocol-columns-control">
+                            <label class="protocol-columns-label" for="protocol-columns">Columns</label>
+                            <select id="protocol-columns" class="form-select protocol-columns-select" value={protocolColumns} onchange={onProtocolColumnsChange}>
+                                <option value={1}>1</option>
+                                <option value={2}>2</option>
+                                <option value={3}>3</option>
+                                <option value={4}>4</option>
+                            </select>
+                        </div>
+                    {/if}
                     <button id="btn-add-protocol" class="btn-primary" onclick={onAddProtocol}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Protocol</span></button>
                 </div>
             </div>
-            <ProtocolsView />
+            <ProtocolsView columns={protocolColumns} />
         </section>
 
         <!-- Assets/Inventory View -->
@@ -831,3 +854,32 @@
         </div>
         <audio id="lab-radio-audio"></audio>
     </div>
+
+<style>
+    .protocol-columns-control {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .protocol-columns-label {
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .protocol-columns-select {
+        width: 4.75rem;
+        min-height: 2.35rem;
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+    }
+
+    :global(body[data-design="bauhaus"]) .protocol-columns-label {
+        color: rgba(23, 21, 18, 0.65);
+        font-family: var(--bauhaus-font-mono);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+    }
+</style>

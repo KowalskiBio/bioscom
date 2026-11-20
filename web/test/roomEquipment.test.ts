@@ -349,7 +349,7 @@ for (const design of ["original", "bauhaus"] as const) {
     expect(await page!.locator('[data-instrument-id="inst-main"]').count()).toBe(1);
     expect(await page!.locator('[data-instrument-id="inst-name-only"]').count()).toBe(0);
     expect(await page!.locator('[data-instrument-id="inst-other-lab"]').count()).toBe(0);
-    expect(await page!.locator("#room-view-reservations").getAttribute("href")).toBe("#instruments");
+    expect(await page!.locator("#room-view-reservations").count()).toBe(0);
     expect(await page!.textContent("#room-direct-chemicals-table")).toContain("Room primer stock");
     expect(await page!.locator('#room-direct-chemicals-table [data-column="type"] .status-badge').count()).toBeGreaterThan(0);
 
@@ -380,6 +380,46 @@ for (const design of ["original", "bauhaus"] as const) {
     expect(await page!.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     expect(pageErrors).toEqual([]);
   }, 40_000);
+
+  it(`opens room instrument booking by mouse, Enter and Space in ${design}`, async () => {
+    await page!.goto(`${fixtureUrl}?shell=1&design=${design}#containers/room-main`, { waitUntil: "networkidle" });
+    const roomCard = page!.locator('#view-containers [data-instrument-id="inst-main"]');
+    await roomCard.waitFor();
+    expect(await page!.locator("#room-view-reservations").count()).toBe(0);
+    expect(await roomCard.getAttribute("role")).toBe("button");
+    expect(await roomCard.getAttribute("tabindex")).toBe("0");
+    expect(await roomCard.getAttribute("aria-label")).toBe("Book Matched centrifuge");
+
+    async function expectBookingView(): Promise<void> {
+      await page!.waitForFunction(() => window.location.hash === "#instruments");
+      await page!.waitForSelector("#view-instruments.active #instruments-grid");
+      await page!.waitForSelector("#b-date");
+      expect(await page!.textContent("#modal-title")).toBe("Book: Matched centrifuge");
+      expect(await page!.textContent("#modal-confirm")).toBe("Book");
+    }
+
+    async function returnToRoom(): Promise<void> {
+      await page!.click("#modal-cancel");
+      await page!.goBack();
+      await page!.waitForSelector("#view-containers.active #room-instrument-grid");
+    }
+
+    await roomCard.click();
+    await expectBookingView();
+
+    await returnToRoom();
+    await roomCard.focus();
+    await page!.keyboard.press("Enter");
+    await expectBookingView();
+
+    await returnToRoom();
+    await roomCard.focus();
+    await page!.keyboard.press("Space");
+    await expectBookingView();
+
+    expect(writes).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  }, 60_000);
 }
 
 it("sends correct instrument assignment payloads without changing legacy location", async () => {
@@ -653,7 +693,7 @@ it("keeps reader controls non-mutating and hidden content inaccessible when coll
   expect(await page!.locator("#room-open-inventory").count()).toBe(0);
   await expandBarcodes();
   expect(await page!.locator("#room-mapping").count()).toBe(0);
-  expect(await page!.locator("#room-view-reservations").getAttribute("href")).toBe("#instruments");
+  expect(await page!.locator("#room-view-reservations").count()).toBe(0);
   await page!.setViewportSize({ width: 390, height: 844 });
   expect(await page!.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   expect(await page!.textContent("#room-barcodes-panel")).toContain("ASSET-001");

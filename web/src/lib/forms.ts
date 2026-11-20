@@ -1,4 +1,4 @@
-import type { Chemical, Container, Room } from "@bioscom/shared";
+import type { Chemical, Container, Protocol, Room } from "@bioscom/shared";
 import {
   DEFAULT_RACK_COLUMNS,
   DEFAULT_RACK_ROWS,
@@ -35,6 +35,7 @@ import {
   opChangeBoxColor,
   opAddProtocol,
   opEditProtocol,
+  opDeleteProtocol,
   opAddAssetRoom,
   opEditAssetRoom,
   opAddAsset,
@@ -42,6 +43,7 @@ import {
   resolveAutoShelf,
 } from "./ops";
 import { countWords, effectivePosition, stripEmoji } from "./inventoryUtils";
+import { parseProtocolTags } from "./protocol";
 import { highlightForAdd, highlightForEdit, highlightFormValue } from "./highlight";
 import { verifyCaptchaAndExecute } from "./captcha";
 import { router, navigateTo } from "./router.svelte";
@@ -50,6 +52,8 @@ import ContainerFormModal from "../components/modals/ContainerFormModal.svelte";
 import ChemicalFormModal from "../components/modals/ChemicalFormModal.svelte";
 import SimplePromptModal from "../components/modals/SimplePromptModal.svelte";
 import ProtocolFormModal from "../components/modals/ProtocolFormModal.svelte";
+import ProtocolDetailModal from "../components/modals/ProtocolDetailModal.svelte";
+import ProtocolDetailActions from "../components/modals/ProtocolDetailActions.svelte";
 import AssetRoomFormModal from "../components/modals/AssetRoomFormModal.svelte";
 import AssetFormModal from "../components/modals/AssetFormModal.svelte";
 import NoticeFormModal from "../components/modals/NoticeFormModal.svelte";
@@ -1361,13 +1365,76 @@ export function openChemicalRadioPrompt(room: Room, cont: Container, preSelected
   });
 }
 
-export function openProtocolForm(edit?: { id: string; title: string; content: string }): void {
-  const form = { title: edit?.title ?? "", content: edit?.content ?? "" };
+export function openProtocolDeleteConfirm(protocol: Protocol): void {
+  openModal({
+    title: "Delete Protocol",
+    bodyHtml: `<p>Delete <strong>${escapeHtmlText(protocol.title ?? "")}</strong>?</p>`,
+    btnText: "Delete",
+    onConfirm: () => {
+      verifyCaptchaAndExecute(async () => {
+        if (await opDeleteProtocol(protocol.id)) {
+          closeModal();
+          showToast("Protocol deleted");
+        }
+      });
+    },
+  });
+}
+
+export function openProtocolDetail(protocol: Protocol): void {
+  const title = protocol.title ?? "Protocol";
+  const headerActions = roleCanWrite()
+    ? {
+        component: ProtocolDetailActions,
+        props: {
+          protocolTitle: protocol.title ?? "",
+          onEdit: () => {
+            closeModal();
+            openProtocolForm({
+              id: protocol.id,
+              title: protocol.title ?? "",
+              description: protocol.description,
+              tags: protocol.tags,
+              content: protocol.content ?? "",
+            });
+          },
+          onRemove: () => {
+            closeModal();
+            openProtocolDeleteConfirm(protocol);
+          },
+        },
+      }
+    : null;
+
+  openModal({
+    title: isBauhaus() ? stripEmoji(title) : title,
+    component: ProtocolDetailModal,
+    props: { protocol },
+    headerActions,
+    btnText: null,
+    size: "xwide",
+  });
+}
+
+export function openProtocolForm(edit?: {
+  id: string;
+  title: string;
+  description?: string | null;
+  tags?: string[] | null;
+  content: string;
+}): void {
+  const form = {
+    title: edit?.title ?? "",
+    description: edit?.description ?? "",
+    tags: edit?.tags?.join(", ") ?? "",
+    content: edit?.content ?? "",
+  };
   openModal({
     title: edit === undefined ? "Add Protocol" : "Edit Protocol",
     component: ProtocolFormModal,
     props: { form },
     btnText: edit === undefined ? "Add" : "Save",
+    size: "xwide",
     onConfirm: async () => {
       const title = form.title.trim();
       if (title === "") {
@@ -1378,7 +1445,13 @@ export function openProtocolForm(edit?: { id: string; title: string; content: st
         showToast("Title or content exceeds 300 words!", "error");
         return;
       }
-      const ok = edit === undefined ? await opAddProtocol(title, form.content) : await opEditProtocol(edit.id, title, form.content);
+      const body = {
+        title,
+        description: form.description.trim(),
+        tags: parseProtocolTags(form.tags),
+        content: form.content,
+      };
+      const ok = edit === undefined ? await opAddProtocol(body) : await opEditProtocol(edit.id, body);
       if (ok) {
         closeModal();
         showToast(edit === undefined ? "Protocol added" : "Protocol saved");

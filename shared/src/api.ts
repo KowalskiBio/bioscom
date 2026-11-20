@@ -382,17 +382,31 @@ export const UnshareContainerBodySchema = z.object({
   sharedWithGroupId: z.string().min(1),
 });
 
+/** Tags are trimmed, non-empty, at most 50 chars each and at most 24 per protocol. */
+export const ProtocolTagsBodySchema = z.array(z.string().trim().min(1).max(50)).max(24);
+
 export const AddProtocolBodySchema = z.object({
   title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(1000).optional(),
+  tags: ProtocolTagsBodySchema.optional(),
   content: z.string().max(8000).optional(),
 });
 
 export const EditProtocolBodySchema = z
   .object({
     title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(1000).optional(),
+    tags: ProtocolTagsBodySchema.optional(),
     content: z.string().max(8000).optional(),
   })
-  .refine((value) => value.title !== undefined || value.content !== undefined, { message: "empty update" });
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.description !== undefined ||
+      value.tags !== undefined ||
+      value.content !== undefined,
+    { message: "empty update" },
+  );
 
 export const AddAssetRoomBodySchema = z.object({
   name: z.string().trim().min(1).max(100),

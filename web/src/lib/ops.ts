@@ -455,15 +455,23 @@ export function opUnshareContainer(roomId: string, containerId: string, sharedWi
   );
 }
 
-export function opAddProtocol(title: string, content: string): Promise<boolean> {
+export function opAddProtocol(body: {
+  title: string;
+  description?: string;
+  tags?: string[];
+  content?: string;
+}): Promise<boolean> {
   return run("Failed to add protocol", () =>
-    api.post(`/api/groups/${gid()}/inventory/protocols`, { title, content }),
+    api.post(`/api/groups/${gid()}/inventory/protocols`, body),
   );
 }
 
-export function opEditProtocol(protocolId: string, title: string, content: string): Promise<boolean> {
+export function opEditProtocol(
+  protocolId: string,
+  body: { title?: string; description?: string; tags?: string[]; content?: string },
+): Promise<boolean> {
   return run("Failed to save protocol", () =>
-    api.put(`/api/groups/${gid()}/inventory/protocols/${protocolId}`, { title, content }),
+    api.put(`/api/groups/${gid()}/inventory/protocols/${protocolId}`, body),
   );
 }
 
