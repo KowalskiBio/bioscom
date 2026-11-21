@@ -426,6 +426,25 @@ export function opAdjustQty(roomId: string, containerId: string, shelfId: string
   );
 }
 
+export function opSetChemicalAvailability(
+  roomId: string,
+  containerId: string,
+  shelfId: string,
+  chemicalId: string,
+  availability: ChemicalAvailability,
+  boxId?: string,
+): Promise<boolean> {
+  return run("Failed to update availability", () =>
+    api.put(`/api/groups/${gid()}/inventory/chemicals/${chemicalId}/availability`, {
+      roomId,
+      ...(containerId !== "" ? { containerId } : {}),
+      ...(shelfId !== "" ? { shelfId } : {}),
+      ...(boxId !== undefined && boxId !== "" ? { boxId } : {}),
+      availability,
+    }),
+  );
+}
+
 export function opMoveChemical(
   from: { roomId: string; containerId: string; shelfId: string },
   to: { roomId: string; containerId: string; shelfId: string },

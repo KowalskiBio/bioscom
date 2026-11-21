@@ -5,9 +5,12 @@
   import { openNoticeForm as openNoticeFormShared } from "../../lib/forms";
   import { showToast } from "../../lib/stores/toast.svelte";
   import { verifyCaptchaAndExecute } from "../../lib/captcha";
-    import { opDeleteNotice, opAddReaction, opDeleteReaction } from "../../lib/featureOps";
+  import { opDeleteNotice, opAddReaction, opDeleteReaction } from "../../lib/featureOps";
   import { countWords, noticeCategoryPalette, stripEmoji } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
+  import type { NoticeColumnCount } from "../../lib/noticeColumns";
+
+  let { columns = 1 }: { columns?: NoticeColumnCount } = $props();
 
   const design = $derived(theme.design);
   
@@ -71,7 +74,13 @@
   }
 </script>
 
-<div id="noticeboard-container" class="protocols-container" style={`display: ${notices.length === 0 ? "none" : "block"};`}>
+<div class="noticeboard-view">
+  <div
+    id="noticeboard-container"
+    class="protocols-container noticeboard-overview-grid"
+    data-columns={columns}
+    style={`--notice-columns: ${columns}; display: ${notices.length === 0 ? "none" : "grid"};`}
+  >
     {#each notices as n (n.id)}
       {@const cat = n.category ?? "general"}
       {@const categoryPalette = noticeCategoryPalette(cat, design)}
@@ -111,13 +120,56 @@
                     <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Thumbs Up" onclick={() => void addReaction(n.id, "👍")}>{#if design === "bauhaus"}<span class="glyph glyph-circle-blue" aria-hidden="true"></span>{:else}👍{/if}</button>
                     <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Heart" onclick={() => void addReaction(n.id, "❤️")}>{#if design === "bauhaus"}<span class="glyph glyph-circle-red" aria-hidden="true"></span>{:else}❤️{/if}</button>
                     <button class="btn-inline" style="padding:0.15rem; font-size:0.9rem;" title="Check" onclick={() => void addReaction(n.id, "✅")}>{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}✅{/if}</button>
-                    <input type="text" id={`reaction-input-${n.id}`} placeholder="Type a comment..." style="flex:1; background:transparent; border:none; border-bottom:1px solid var(--border-subtle); color:var(--text-primary); outline:none; font-size:0.75rem; padding:0.15rem 0;" onkeydown={(e) => onReactionKeydown(e, n.id)}>
+                    <input type="text" id={`reaction-input-${n.id}`} placeholder="Type a comment..." style="flex:1; min-width:0; background:transparent; border:none; border-bottom:1px solid var(--border-subtle); color:var(--text-primary); outline:none; font-size:0.75rem; padding:0.15rem 0;" onkeydown={(e) => onReactionKeydown(e, n.id)}>
                     <button class="btn-inline" style="padding:0.15rem 0.4rem; font-size:0.75rem; color:var(--accent-blue);" onclick={() => void addReaction(n.id)}>Send</button>
                 </div>
             </div>
         </div>
     {/each}
-</div>
-<div id="noticeboard-empty" class="empty-state" style={`display: ${notices.length === 0 ? "block" : "none"};`}>
+  </div>
+  <div id="noticeboard-empty" class="empty-state" style={`display: ${notices.length === 0 ? "block" : "none"};`}>
     <div class="empty-icon">{#if design === "bauhaus"}<span class="glyph glyph-square-ink" aria-hidden="true"></span>{:else}📝{/if}</div><h2>No notes yet</h2><p>Add the first note or suggestion for your lab team</p>
+  </div>
 </div>
+
+<style>
+  .noticeboard-view {
+    min-width: 0;
+  }
+
+  .noticeboard-overview-grid {
+    grid-template-columns: repeat(var(--notice-columns, 1), minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+
+  .protocol-card {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .protocol-title,
+  .protocol-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .notice-reactions-container {
+    min-width: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .noticeboard-overview-grid[data-columns="3"],
+    .noticeboard-overview-grid[data-columns="4"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .noticeboard-overview-grid,
+    .noticeboard-overview-grid[data-columns="2"],
+    .noticeboard-overview-grid[data-columns="3"],
+    .noticeboard-overview-grid[data-columns="4"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

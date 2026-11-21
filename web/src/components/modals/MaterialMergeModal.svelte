@@ -127,7 +127,12 @@
       const targetName = body.target.name || target?.name || "selected material";
       showToast(`Merged into "${targetName}" (${body.moved.batches} batches, ${body.moved.stocks} stocks)`, "info");
       closeModal();
-      void catalog.fetchCatalog(catalog.page);
+      // Both catalog surfaces can show the merged source: the material list and
+      // the stock list. Refresh both so archived/no-stock sources disappear.
+      void Promise.all([
+        catalog.fetchCatalog(catalog.page),
+        catalog.fetchStocks(catalog.stocksPage),
+      ]);
     } catch (error) {
       const message =
         error instanceof ApiError && error.message !== ""

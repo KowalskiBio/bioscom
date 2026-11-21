@@ -65,6 +65,7 @@ export interface CatalogStock {
   concentration: number | null;
   concentrationUnit: string | null;
   note: string | null;
+  barcode: string | null;
   status: string;
   position: string | null;
   customPosition: string | null;

@@ -19,6 +19,7 @@ import {
   DeleteShelfBodySchema,
   DeleteChemicalBodySchema,
   AdjustQtyBodySchema,
+  SetChemicalAvailabilityBodySchema,
   MoveChemicalBodySchema,
   AddProtocolBodySchema,
   EditProtocolBodySchema,
@@ -1306,6 +1307,41 @@ export function registerInventoryRoutes(app: FastifyInstance, config: ServerConf
           chemical.batchInfo = body.data.batchInfo;
         }
         return `Edited chemical "${chemical.name}"`;
+      });
+      broadcastResult(groupId, result);
+      return result;
+    });
+  });
+
+  app.put("/api/groups/:id/inventory/chemicals/:chemicalId/availability", async (request, reply) => {
+    const user = requireUser(db(), request, reply);
+    if (user === null) return;
+    const groupId = (request.params as { id: string }).id;
+    const chemicalId = (request.params as { chemicalId: string }).chemicalId;
+    return wrap(request, reply, () => {
+      if (!requireWriter(user, reply)) return;
+      const body = SetChemicalAvailabilityBodySchema.safeParse(request.body);
+      if (!body.success) {
+        throw new OpError(400, "Invalid request");
+      }
+      const isMember = isMemberOrSuperadmin(user, groupId);
+      const result = mutate(groupId, user, (tree, context) => {
+        const found = findChemicalAnywhere(tree, body.data.roomId, chemicalId);
+        if (found.container !== null) {
+          checkSharedContainerAccess(user, groupId, found.container, context, isMember);
+        } else if (!isMember) {
+          throw new OpError(404, "Chemical not found");
+        }
+        const chemical = found.chemical;
+        if (
+          typeof chemical.quantity !== "number" ||
+          !Number.isFinite(chemical.quantity) ||
+          chemical.quantity <= 0
+        ) {
+          throw new OpError(409, "Out-of-stock packages cannot be marked low");
+        }
+        chemical.availability = body.data.availability;
+        return `Set availability of chemical "${chemical.name}" to ${body.data.availability}`;
       });
       broadcastResult(groupId, result);
       return result;

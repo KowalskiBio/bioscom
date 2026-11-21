@@ -307,7 +307,7 @@
                         <tr
                             data-stock-id={stock.id}
                             style="cursor: pointer;"
-                            onclick={() => openMaterialDetailModal(stock.materialId)}
+                            onclick={() => openMaterialDetailModal(stock.materialId, { focusStockId: stock.id })}
                         >
                             <td>
                                 <button
@@ -317,7 +317,7 @@
                                     style="background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;"
                                     onclick={(event) => {
                                         event.stopPropagation();
-                                        openMaterialDetailModal(stock.materialId);
+                                        openMaterialDetailModal(stock.materialId, { focusStockId: stock.id });
                                     }}
                                 >
                                     <strong>{stock.name}</strong>

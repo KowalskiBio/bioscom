@@ -918,7 +918,7 @@
             </div>
             <div class="shelf-actions">
               {#if canManage}
-                <button class="btn-inline" title="Rename Shelf" onclick={(e) => { e.stopPropagation(); openRenameShelfForm(room, cont, sh.id, sh.name); }}>{design === "bauhaus" ? "R" : "✏️"}</button>
+                <button class="btn-inline" title="Rename Shelf" aria-label={`Rename shelf ${sh.name}`} onclick={(e) => { e.stopPropagation(); openRenameShelfForm(room, cont, sh.id, sh.name); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                 {#if canHostBox(sh)}
                   <button class="btn-inline" title="Add Box" onclick={(e) => { e.stopPropagation(); openAddBoxForm(room, cont, sh.id); }}>{design === "bauhaus" ? "+ Box" : "➕ Box"}</button>
                 {/if}

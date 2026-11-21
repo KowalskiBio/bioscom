@@ -329,6 +329,14 @@ export const AdjustQtyBodySchema = z.object({
   delta: z.number(),
 });
 
+export const SetChemicalAvailabilityBodySchema = z.object({
+  roomId: z.string().min(1),
+  containerId: z.string().min(1).optional(),
+  shelfId: z.string().min(1).optional(),
+  boxId: z.string().min(1).optional(),
+  availability: ChemicalAvailabilitySchema,
+});
+
 export const BulkImportItemSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: z.string().trim().min(1).max(40).optional(),
@@ -559,6 +567,7 @@ export type EditShelfBody = z.infer<typeof EditShelfBodySchema>;
 export type AddChemicalBody = z.infer<typeof AddChemicalBodySchema>;
 export type EditChemicalBody = z.infer<typeof EditChemicalBodySchema>;
 export type AdjustQtyBody = z.infer<typeof AdjustQtyBodySchema>;
+export type SetChemicalAvailabilityBody = z.infer<typeof SetChemicalAvailabilityBodySchema>;
 export type BulkImportItem = z.infer<typeof BulkImportItemSchema>;
 export type BulkImportBody = z.infer<typeof BulkImportBodySchema>;
 export type MergeMaterialsBody = z.infer<typeof MergeMaterialsBodySchema>;

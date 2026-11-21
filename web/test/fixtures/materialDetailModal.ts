@@ -13,6 +13,10 @@ const materialId = params.get("material") ?? "m-stock-primary";
 const role = params.get("role") ?? "editor";
 const variant = params.get("variant") ?? "default";
 const location = params.get("location") ?? "room";
+const design = params.get("design") ?? "original";
+const catalogMode = params.get("view") === "catalog";
+const focusStockId = params.get("stock");
+document.body.dataset.design = design;
 
 setUser({
   uid: "synthetic-material-detail-user",
@@ -28,13 +32,15 @@ function primaryStock(): Chemical {
     id: "stock-primary",
     name: "Tris base original",
     type: "chemical",
-    quantity: 250,
+    quantity: variant === "out-of-stock" ? 0 : 250,
+    availability: "available",
     unit: "g",
     concentration: 1.5,
     concUnit: "mol/L",
     position: variant === "legacy-position" ? "AH1" : undefined,
     customPosition: variant === "legacy-position" ? "" : "A-17",
     note: "Original stock note",
+    ...(variant === "rich-preview" ? { barcode: "TRIS-BARCODE-123456789012345678901234567890" } : {}),
     cas: "77-86-1",
     formula: "C4H11NO3",
     attributes: {
@@ -87,8 +93,8 @@ function secondaryStock(): Chemical {
 
 function buildTree(): InventoryTree {
   // Deliberately store the secondary package first in the tree and in the
-  // material detail response, so the modal must resolve the canonical
-  // `m-${stock.id}` package instead of simply taking the first stock.
+  // material detail response, so per-package actions must address records by
+  // stock id instead of list position or material id.
   const chemicals = [secondaryStock(), primaryStock()];
   if (variant === "no-stock") {
     return {
@@ -124,6 +130,54 @@ function buildTree(): InventoryTree {
       ],
     } as InventoryTree;
   }
+  if (location === "container") {
+    return {
+      rooms: [
+        {
+          id: "room-main",
+          name: "Material Detail Room",
+          containers: [
+            {
+              id: "container-main",
+              name: "Cold storage",
+              type: "fridge",
+              shelves: [],
+              chemicals,
+            },
+          ],
+          chemicals: [],
+        },
+      ],
+      deepFreezers: [],
+    } as InventoryTree;
+  }
+  if (location === "cabinet" || location === "nested") {
+    const shelves = location === "nested"
+      ? [
+          { id: "shelf-main", name: "Shelf A", type: "shelf", chemicals: [] },
+          { id: "box-main", name: "Box A", type: "box", parentShelfId: "shelf-main", chemicals },
+        ]
+      : [{ id: "shelf-main", name: "Shelf A", type: "shelf", chemicals }];
+    return {
+      rooms: [
+        {
+          id: "room-main",
+          name: "Material Detail Room",
+          containers: [
+            {
+              id: "container-main",
+              name: "Chemical cabinet",
+              type: "cabinet",
+              shelves,
+              chemicals: [],
+            },
+          ],
+          chemicals: [],
+        },
+      ],
+      deepFreezers: [],
+    } as InventoryTree;
+  }
   return {
     rooms: [
       {
@@ -151,7 +205,10 @@ mount(Modal, { target: modalTarget });
 mount(Toasts, { target: toastTarget });
 
 Object.assign(window, {
-  openMaterialDetailFixture: (id = materialId) => openMaterialDetailModal(id),
+  openMaterialDetailFixture: (id = materialId, stockId?: string) => openMaterialDetailModal(
+    id,
+    stockId === undefined ? {} : { focusStockId: stockId },
+  ),
   materialDetailFixtureTree: () => activeTree,
   materialDetailFixtureInstallTree: (next: InventoryTree) => {
     version += 1;
@@ -159,4 +216,19 @@ Object.assign(window, {
     applyBroadcast({ groupId: "group-a", version, tree: next }, "group-a");
   },
 });
-openMaterialDetailModal(materialId);
+
+if (catalogMode) {
+  const catalogTarget = document.getElementById("catalog-app");
+  if (catalogTarget === null) {
+    throw new Error("Missing catalog test target");
+  }
+  window.location.hash = "#catalog";
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+  const { default: CatalogView } = await import("../../src/components/views/CatalogView.svelte");
+  mount(CatalogView, { target: catalogTarget });
+} else {
+  openMaterialDetailModal(
+    materialId,
+    focusStockId === null ? {} : { focusStockId },
+  );
+}

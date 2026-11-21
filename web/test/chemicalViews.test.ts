@@ -203,6 +203,30 @@ async function openView(hash: string, params = ""): Promise<void> {
   await page!.goto(`${fixtureUrl}?case=${navigation}${separator}${params}#${hash}`, { waitUntil: "networkidle" });
 }
 
+async function continueWithoutRadio(): Promise<void> {
+  await page!.waitForSelector('[data-radio-action="none"]');
+  expect(await page!.textContent("#modal-title")).toBe("Laboratory Background Radio");
+  await page!.locator('[data-radio-action="none"]').click();
+  await page!.waitForSelector("#f-cn2");
+  expect(await page!.textContent("#modal-title")).toBe("Add Chemical");
+}
+
+async function openChemicalFromContext(containerId: string, shelfId?: string): Promise<void> {
+  await page!.evaluate(async ({ containerId: selectedContainerId, shelfId: selectedShelfId }) => {
+    // Vitest rewrites direct dynamic imports for SSR; this fixture needs the browser's native importer.
+    const browserImport = new Function("modulePath", "return import(modulePath)") as (modulePath: string) => Promise<Record<string, any>>;
+    const { openChemicalRadioPrompt } = await browserImport("/src/lib/forms.ts");
+    const { inventory } = await browserImport("/src/lib/stores/inventory.svelte.ts");
+    const room = inventory.tree?.rooms.find((candidate: { id: string }) => candidate.id === "room-main");
+    const container = room?.containers.find((candidate: { id: string }) => candidate.id === selectedContainerId);
+    if (room === undefined || container === undefined) {
+      throw new Error(`Missing chemical form fixture: ${selectedContainerId}`);
+    }
+    openChemicalRadioPrompt(room, container, selectedShelfId);
+  }, { containerId, shelfId });
+  await continueWithoutRadio();
+}
+
 async function columnIds(tableId: string): Promise<string[]> {
   return page!.$$eval(`#${tableId} thead th`, (headers) =>
     headers.map((header) => (header as HTMLElement).dataset.column ?? ""),
@@ -868,6 +892,206 @@ describe("mounted chemical availability", () => {
         availability: "available",
       },
     });
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+});
+
+describe("mounted chemical placement context", () => {
+  beforeEach(() => {
+    chemicalWrites.length = 0;
+    roomPreferenceColumns = ["name", "quantity", "note", "actions"];
+  });
+
+  afterEach(() => {
+    roomPreferenceColumns = [...allRoomPreferenceColumns];
+  });
+
+  it("preselects the clicked cabinet shelf instead of Auto, first shelf or direct container", async () => {
+    await openView("detail/room-main/cont-placement-cabinet", "placement=1&case=placement-cabinet");
+    await page!.locator('.shelf-section[data-sid="cabinet-shelf-b"]')
+      .getByTitle("Add Chemical to Shelf").click();
+    await continueWithoutRadio();
+
+    const placement = page!.locator("#f-cab-shelf");
+    expect(await placement.inputValue()).toBe("cabinet-shelf-b");
+    expect(await placement.locator("option:checked").textContent()).toBe("Manual: Shelf B");
+    expect(await placement.inputValue()).not.toBe("auto");
+    expect(await placement.inputValue()).not.toBe("cabinet-shelf-a");
+    expect(await placement.inputValue()).not.toBe("cont-placement-cabinet");
+
+    await page!.fill("#f-cn2", "Cabinet targeted stock");
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "POST",
+      path: "/api/groups/group-a/inventory/chemicals",
+      body: {
+        roomId: "room-main",
+        containerId: "cont-placement-cabinet",
+        shelfId: "cabinet-shelf-b",
+        name: "Cabinet targeted stock",
+      },
+    });
+    expect(chemicalWrites[0]?.body).not.toHaveProperty("boxId");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  for (const entry of [
+    { label: "fridge", containerId: "cont-placement-fridge", shelfId: "fridge-shelf-b" },
+    { label: "freezer", containerId: "cont-placement-freezer", shelfId: "freezer-shelf-b" },
+  ] as const) {
+    it(`preselects and submits the clicked ${entry.label} shelf`, async () => {
+      await openView(`detail/room-main/${entry.containerId}`, `placement=1&case=placement-${entry.label}`);
+      await page!.locator(`.shelf-section[data-sid="${entry.shelfId}"]`)
+        .getByTitle("Add Chemical to Shelf").click();
+      await continueWithoutRadio();
+
+      expect(await page!.inputValue("#f-shelf")).toBe(entry.shelfId);
+      await page!.fill("#f-cn2", `${entry.label} targeted stock`);
+      await page!.click("#modal-confirm");
+      await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+      expect(chemicalWrites[0]).toMatchObject({
+        method: "POST",
+        path: "/api/groups/group-a/inventory/chemicals",
+        body: {
+          roomId: "room-main",
+          containerId: entry.containerId,
+          shelfId: entry.shelfId,
+          name: `${entry.label} targeted stock`,
+        },
+      });
+      expect(chemicalWrites[0]?.body).not.toHaveProperty("boxId");
+      expect(pageErrors).toEqual([]);
+    }, 40_000);
+  }
+
+  it("preselects a nested box and submits its parent shelf and box ids", async () => {
+    await openView("detail/room-main/cont-placement-fridge", "placement=1&case=placement-nested&q=Nested");
+    const boxSection = page!.locator(".box-chemicals-section").filter({ hasText: "Placement Nested Box Chemicals" });
+    await boxSection.getByRole("button", { name: /Add Chemical/ }).click();
+    await continueWithoutRadio();
+
+    expect(await page!.inputValue("#f-shelf")).toBe("fridge-nested-box");
+    expect(await page!.locator("#f-shelf option:checked").textContent()).toBe("Box: Placement Nested Box");
+    await page!.fill("#f-cn2", "Nested box targeted stock");
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "POST",
+      path: "/api/groups/group-a/inventory/chemicals",
+      body: {
+        roomId: "room-main",
+        containerId: "cont-placement-fridge",
+        shelfId: "fridge-shelf-b",
+        boxId: "fridge-nested-box",
+        name: "Nested box targeted stock",
+      },
+    });
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("keeps Auto as the top Add Chemical default when no shelf context is provided", async () => {
+    await openView("detail/room-main/cont-placement-cabinet", "placement=1&case=placement-top-default");
+    await openChemicalFromContext("cont-placement-cabinet");
+
+    const placement = page!.locator("#f-cab-shelf");
+    expect(await placement.inputValue()).toBe("auto");
+    expect(await placement.locator("option:checked").textContent()).toBe("Auto – alphabetically by first letter");
+    expect(chemicalWrites).toHaveLength(0);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("preselects and submits an explicit deep-freezer box", async () => {
+    await openView("detail/room-main/cont-freezer", "placement=1&case=placement-deep-freezer");
+    await openChemicalFromContext("cont-freezer", "box-cryo-second");
+
+    expect(await page!.inputValue("#f-shelf")).toBe("box-cryo-second");
+    await page!.fill("#f-cn2", "Deep freezer targeted stock");
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "POST",
+      path: "/api/groups/group-a/inventory/chemicals",
+      body: {
+        roomId: "room-main",
+        containerId: "cont-freezer",
+        shelfId: "box-cryo-second",
+        name: "Deep freezer targeted stock",
+      },
+    });
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("falls back to the existing cabinet default when the requested shelf no longer exists", async () => {
+    await openView("detail/room-main/cont-main", "case=placement-stale-shelf");
+    await openChemicalFromContext("cont-main", "deleted-shelf");
+
+    expect(await page!.inputValue("#f-cab-shelf")).not.toBe("deleted-shelf");
+    await page!.fill("#f-cn2", "Recovered shelf stock");
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "POST",
+      body: {
+        roomId: "room-main",
+        containerId: "cont-main",
+        shelfId: "shelf-main",
+        name: "Recovered shelf stock",
+      },
+    });
+    expect(chemicalWrites[0]?.body.shelfId).not.toBe("deleted-shelf");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("preserves valid direct-container placement for a fridge add", async () => {
+    await openView("detail/room-main/cont-placement-fridge", "placement=1&case=placement-direct-add");
+    await openChemicalFromContext("cont-placement-fridge", "cont-placement-fridge");
+
+    expect(await page!.inputValue("#f-shelf")).toBe("cont-placement-fridge");
+    await page!.fill("#f-cn2", "Direct container targeted stock");
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]).toMatchObject({
+      method: "POST",
+      body: {
+        roomId: "room-main",
+        containerId: "cont-placement-fridge",
+        name: "Direct container targeted stock",
+      },
+    });
+    expect(chemicalWrites[0]?.body).not.toHaveProperty("shelfId");
+    expect(chemicalWrites[0]?.body).not.toHaveProperty("boxId");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("keeps direct-container cabinet editing selected as before", async () => {
+    await openView("detail/room-main/cont-main", "case=placement-direct-edit");
+    await page!.locator('#container-direct-chemicals-table tr[data-chemid="container-chem"]')
+      .getByRole("button", { name: "Edit Container direct stock" }).click();
+    await page!.waitForSelector("#f-cab-shelf");
+
+    expect(await page!.textContent("#modal-title")).toBe("Edit Chemical");
+    expect(await page!.inputValue("#f-cab-shelf")).toBe("cont-main");
+    expect(await page!.locator("#f-cab-shelf option:checked").textContent()).toBe("Directly in this container");
+    expect(chemicalWrites).toHaveLength(0);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+});
+
+describe("mounted shelf rename action", () => {
+  it("uses the edit SVG in both themes and opens the rename modal", async () => {
+    for (const design of ["original", "bauhaus"] as const) {
+      await openView("detail/room-main/cont-main", `design=${design}`);
+      const renameButton = page!.locator('.shelf-section[data-sid="shelf-main"]')
+        .getByRole("button", { name: "Rename shelf Shelf A", exact: true });
+
+      expect(await renameButton.locator("svg").count()).toBe(1);
+      expect((await renameButton.textContent()) ?? "").not.toContain("R");
+      await renameButton.click();
+      await page!.waitForSelector("#f-sn");
+      expect(await page!.textContent("#modal-title")).toBe("Rename Shelf");
+      expect(await page!.inputValue("#f-sn")).toBe("Shelf A");
+    }
     expect(pageErrors).toEqual([]);
   }, 40_000);
 });

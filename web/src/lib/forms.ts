@@ -1,4 +1,4 @@
-import type { Chemical, Container, Protocol, Room } from "@bioscom/shared";
+import type { Chemical, Container, InventoryTree, Protocol, Room } from "@bioscom/shared";
 import {
   DEFAULT_RACK_COLUMNS,
   DEFAULT_RACK_ROWS,
@@ -305,13 +305,17 @@ export function openPrintRequestModal(item?: { id: string; name: string }): void
   });
 }
 
-export function openMaterialDetailModal(materialId: string): void {
+export interface MaterialDetailModalOptions {
+  focusStockId?: string;
+}
+
+export function openMaterialDetailModal(materialId: string, options: MaterialDetailModalOptions = {}): void {
   const material = catalog.items.find((item) => item.id === materialId);
   openModal({
     title: material?.name ?? "Chemical",
     size: "xwide",
     component: MaterialDetailModal,
-    props: { materialId },
+    props: { materialId, focusStockId: options.focusStockId },
     btnText: null,
   });
 }
@@ -1000,6 +1004,43 @@ function findChemicalInRoom(room: Room, chemicalId: string): ChemicalFormMatch |
   return ch === undefined ? undefined : { ch, placement: "", shelfId: "" };
 }
 
+export interface CatalogStockTarget {
+  room: Room;
+  container?: Container;
+  /** Empty for room-level and container-direct stock; the parent shelf for boxed stock. */
+  shelfId: string;
+  boxId?: string;
+}
+
+/** Resolve the same inventory placement used by the catalog stock editor. */
+export function resolveCatalogStockTarget(tree: InventoryTree, stockId: string): CatalogStockTarget | undefined {
+  for (const room of tree.rooms) {
+    for (const cont of room.containers ?? []) {
+      const match = findChemicalInContainer(cont, stockId);
+      if (match !== undefined) {
+        return { room, container: cont, shelfId: match.shelfId, boxId: match.boxId };
+      }
+    }
+    if (findChemicalInRoom(room, stockId) !== undefined) {
+      return { room, shelfId: "" };
+    }
+  }
+
+  for (const freezer of tree.deepFreezers ?? []) {
+    const match = findChemicalInContainer(freezer, stockId);
+    if (match !== undefined) {
+      return {
+        room: { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] },
+        container: freezer,
+        shelfId: match.shelfId,
+        boxId: match.boxId,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function defaultPlacementFor(cont?: Container): string {
   if (cont === undefined) {
     return "";
@@ -1035,16 +1076,27 @@ export function openChemicalForm(
           ? findChemicalInRoom(room, opts.editChemId)
           : undefined;
   const editChem = editMatch;
-  const initialShelf = opts.shelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
   const isDirectContainerEdit =
     cont !== undefined && editMatch?.shelfId === "" && editMatch.placement === cont.id;
+  const isValidDirectContainerChoice =
+    cont !== undefined && opts.shelfId === cont.id &&
+    ((cont.type !== "cabinet" && cont.type !== "deepfreezer") || isDirectContainerEdit);
+  const hasExplicitShelf =
+    cont !== undefined && opts.shelfId !== undefined &&
+    (isValidDirectContainerChoice || (cont.shelves ?? []).some((shelf) => shelf.id === opts.shelfId));
+  const explicitShelfId = hasExplicitShelf ? opts.shelfId : undefined;
+  const initialShelf = explicitShelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
   const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
   const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
   const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
   delete initialAttributes.safety_notes;
   const form: ChemicalFormState = {
     shelfId: initialShelf,
-    cabinetShelf: isDirectContainerEdit ? initialShelf : "auto",
+    cabinetShelf: cont?.type === "cabinet" && explicitShelfId !== undefined
+      ? explicitShelfId
+      : isDirectContainerEdit
+        ? initialShelf
+        : "auto",
     roomId: room?.id ?? "",
     contId: cont?.id ?? "",
     name: editChem?.ch.name ?? "",
@@ -1298,25 +1350,10 @@ export function openCatalogStockEditForm(stockId: string, afterSaved?: () => voi
     return;
   }
 
-  for (const room of tree.rooms) {
-    for (const cont of room.containers ?? []) {
-      if (findChemicalInContainer(cont, stockId) !== undefined) {
-        openChemicalForm(room, cont, { editChemId: stockId, afterSaved });
-        return;
-      }
-    }
-    if (findChemicalInRoom(room, stockId) !== undefined) {
-      openChemicalForm(room, undefined, { editChemId: stockId, afterSaved });
-      return;
-    }
-  }
-
-  for (const freezer of tree.deepFreezers ?? []) {
-    if (findChemicalInContainer(freezer, stockId) !== undefined) {
-      const room: Room = { id: freezer.id, name: freezer.name ?? freezer.id, containers: [freezer] };
-      openChemicalForm(room, freezer, { editChemId: stockId, afterSaved });
-      return;
-    }
+  const target = resolveCatalogStockTarget(tree, stockId);
+  if (target !== undefined) {
+    openChemicalForm(target.room, target.container, { editChemId: stockId, afterSaved });
+    return;
   }
 
   showToast("Package not found in the current lab inventory. Refresh Packages and try again.", "error");

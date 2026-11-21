@@ -160,6 +160,46 @@ const tree = {
             },
           ],
         },
+        ...(params.get("placement") === "1" ? [
+          {
+            id: "cont-placement-cabinet",
+            name: "Placement Cabinet",
+            type: "cabinet",
+            cabinetMethod: "alphabetical",
+            chemicals: [],
+            shelves: [
+              { id: "cabinet-shelf-a", name: "Shelf A", type: "shelf", chemicals: [] },
+              { id: "cabinet-shelf-b", name: "Shelf B", type: "shelf", chemicals: [] },
+            ],
+          },
+          {
+            id: "cont-placement-fridge",
+            name: "Placement Fridge",
+            type: "fridge",
+            chemicals: [],
+            shelves: [
+              { id: "fridge-shelf-a", name: "Shelf 1", type: "shelf", chemicals: [] },
+              { id: "fridge-shelf-b", name: "Shelf 2", type: "shelf", chemicals: [] },
+              {
+                id: "fridge-nested-box",
+                name: "Placement Nested Box",
+                type: "box",
+                parentShelfId: "fridge-shelf-b",
+                chemicals: [],
+              },
+            ],
+          },
+          {
+            id: "cont-placement-freezer",
+            name: "Placement Freezer",
+            type: "freezer",
+            chemicals: [],
+            shelves: [
+              { id: "freezer-shelf-a", name: "Shelf 1", type: "shelf", chemicals: [] },
+              { id: "freezer-shelf-b", name: "Shelf 2", type: "shelf", chemicals: [] },
+            ],
+          },
+        ] : []),
         {
           id: "cont-freezer",
           name: "Deep Freezer T",
@@ -209,6 +249,16 @@ const tree = {
                 },
               ],
             },
+            ...(params.get("placement") === "1" ? [
+              {
+                id: "box-cryo-second",
+                name: "Rack 7 / Box C5",
+                rackName: "7",
+                boxName: "C5",
+                rackShelf: 2,
+                chemicals: [],
+              },
+            ] : []),
           ],
         },
       ],

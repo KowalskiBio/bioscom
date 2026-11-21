@@ -22,6 +22,12 @@
     readProtocolColumnCount,
     storeProtocolColumnCount,
   } from "../lib/protocol";
+  import {
+    normalizeNoticeColumnCount,
+    readNoticeColumnCount,
+    storeNoticeColumnCount,
+  } from "../lib/noticeColumns";
+  import { noticeList } from "../lib/stores/notices.svelte";
   import { verifyCaptchaAndExecute } from "../lib/captcha";
   import {
     openRoomForm,
@@ -64,6 +70,7 @@
   let assetSearch = $state("");
   let instrumentSearch = $state("");
   let protocolColumns = $state(readProtocolColumnCount());
+  let noticeColumns = $state(readNoticeColumnCount());
 
   const TAB_MAP: Record<string, string> = {
     dashboard: "tab-dashboard",
@@ -88,6 +95,7 @@
   const isReader = $derived(session.user?.role === "reader");
   const canWrite = $derived(roleCanWrite());
   const hasProtocols = $derived((inventory.tree?.protocols?.length ?? 0) > 0);
+  const hasNotices = $derived(noticeList.items.length > 0);
   const isSuperadmin = $derived(session.user?.role === "superadmin");
   const catalogTypeLabel = $derived(
     catalog.typeFilter === "" ? "all types" : (materialTypeLabels()[catalog.typeFilter] ?? catalog.typeFilter),
@@ -364,6 +372,11 @@
   function onProtocolColumnsChange(event: Event): void {
     protocolColumns = normalizeProtocolColumnCount((event.currentTarget as HTMLSelectElement).value);
     storeProtocolColumnCount(protocolColumns);
+  }
+
+  function onNoticeColumnsChange(event: Event): void {
+    noticeColumns = normalizeNoticeColumnCount((event.currentTarget as HTMLSelectElement).value);
+    storeNoticeColumnCount(noticeColumns);
   }
 
   function onAddAssetRoom(): void {
@@ -778,10 +791,21 @@
             <div class="view-header">
                 <div><h1>{design === "bauhaus" ? "Notice Board" : "📋 Notice Board"}</h1><p class="view-subtitle">Share suggestions and notes with your laboratory team</p></div>
                 <div class="view-header-actions">
+                    {#if hasNotices}
+                        <div class="notice-columns-control">
+                            <label class="notice-columns-label" for="notice-columns">Columns</label>
+                            <select id="notice-columns" class="form-select notice-columns-select" value={noticeColumns} onchange={onNoticeColumnsChange}>
+                                <option value={1}>1</option>
+                                <option value={2}>2</option>
+                                <option value={3}>3</option>
+                                <option value={4}>4</option>
+                            </select>
+                        </div>
+                    {/if}
                     <button id="btn-add-notice" class="btn-primary" onclick={() => openNoticeForm()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Add Note</span></button>
                 </div>
             </div>
-            <NoticeboardView />
+            <NoticeboardView columns={noticeColumns} />
         </section>
 
         <!-- Instruments View -->
@@ -856,27 +880,31 @@
     </div>
 
 <style>
-    .protocol-columns-control {
+    .protocol-columns-control,
+    .notice-columns-control {
         display: flex;
         align-items: center;
         gap: 0.5rem;
     }
 
-    .protocol-columns-label {
+    .protocol-columns-label,
+    .notice-columns-label {
         color: var(--text-secondary);
         font-size: 0.8rem;
         font-weight: 600;
         white-space: nowrap;
     }
 
-    .protocol-columns-select {
+    .protocol-columns-select,
+    .notice-columns-select {
         width: 4.75rem;
         min-height: 2.35rem;
         padding-top: 0.4rem;
         padding-bottom: 0.4rem;
     }
 
-    :global(body[data-design="bauhaus"]) .protocol-columns-label {
+    :global(body[data-design="bauhaus"]) .protocol-columns-label,
+    :global(body[data-design="bauhaus"]) .notice-columns-label {
         color: rgba(23, 21, 18, 0.65);
         font-family: var(--bauhaus-font-mono);
         font-size: 0.7rem;
