@@ -10,8 +10,9 @@
     resolveCatalogStockTarget,
     type CatalogStockTarget,
   } from "../../lib/forms";
-  import { effectivePosition, materialTypeColorClass } from "../../lib/inventoryUtils";
+  import { effectivePosition, materialTypeColorClass, renderFormulaHtml } from "../../lib/inventoryUtils";
   import { opAdjustQty, opSetChemicalAvailability, roleCanWrite } from "../../lib/ops";
+  import { parseStoredSafetyNotes } from "../../lib/safetyNotes";
 
   let { materialId, focusStockId }: { materialId: string; focusStockId?: string } = $props();
 
@@ -27,6 +28,8 @@
     key: string;
     label: string;
     value: string;
+    htmlValue?: string;
+    tags?: string[];
     mono: boolean;
     title?: string;
     wide?: boolean;
@@ -92,10 +95,15 @@
         continue;
       }
       const numeric = field.dataType === "number" || field.dataType === "sequence";
+      const value = formatValue(raw);
+      const tags = field.key === "safety_notes" ? parseStoredSafetyNotes(raw) : undefined;
+      if (tags?.length === 0) continue;
       rows.push({
         key: field.key,
         label: field.label,
-        value: formatValue(raw),
+        value,
+        htmlValue: field.key === "molecular_formula" ? renderFormulaHtml(value) : undefined,
+        tags,
         mono: numeric,
       });
     }
@@ -103,7 +111,17 @@
       if (known.has(key) || raw === undefined || raw === null || raw === "") {
         continue;
       }
-      rows.push({ key, label: humanLabel(key), value: formatValue(raw), mono: false });
+      const value = formatValue(raw);
+      const tags = key === "safety_notes" ? parseStoredSafetyNotes(raw) : undefined;
+      if (tags?.length === 0) continue;
+      rows.push({
+        key,
+        label: humanLabel(key),
+        value,
+        htmlValue: key === "molecular_formula" ? renderFormulaHtml(value) : undefined,
+        tags,
+        mono: false,
+      });
     }
     return rows;
   });
@@ -418,7 +436,19 @@
                 <div class="detail-defs">
                     {#each descriptorRows as row (row.key)}
                         <div class="detail-def-key">{row.label}</div>
-                        <div class="detail-def-val" style={row.mono ? "font-family: monospace; font-variant-numeric: tabular-nums;" : ""}>{row.value}</div>
+                        <div class="detail-def-val" style={row.mono ? "font-family: monospace; font-variant-numeric: tabular-nums;" : ""}>
+                            {#if row.tags !== undefined}
+                                <div class="safety-note-tags" aria-label={row.label}>
+                                    {#each row.tags as tag (tag)}
+                                        <span class="safety-note-tag">{tag}</span>
+                                    {/each}
+                                </div>
+                            {:else if row.htmlValue !== undefined}
+                                <!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html row.htmlValue}
+                            {:else}
+                                {row.value}
+                            {/if}
+                        </div>
                     {/each}
                 </div>
             </section>
@@ -637,6 +667,37 @@
     .material-attributes .detail-def-val {
         min-width: 0;
         overflow-wrap: anywhere;
+    }
+
+    .safety-note-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        min-width: 0;
+    }
+
+    .safety-note-tag {
+        display: inline-block;
+        max-width: 100%;
+        padding: 0.12rem 0.5rem;
+        overflow-wrap: anywhere;
+        color: var(--accent-blue);
+        background: rgba(14, 165, 233, 0.1);
+        border: 1px solid rgba(14, 165, 233, 0.24);
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1.5;
+    }
+
+    :global(body[data-design="bauhaus"]) .safety-note-tag {
+        color: #171512;
+        background: #f4f0e6;
+        border: 1px solid #171512;
+        border-radius: 0;
+        font-family: var(--bauhaus-font-mono);
+        font-size: 0.68rem;
+        text-transform: uppercase;
     }
 
     .material-stocks {

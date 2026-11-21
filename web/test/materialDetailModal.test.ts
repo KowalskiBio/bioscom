@@ -118,6 +118,14 @@ let mergeCandidateCalls = 0;
 let events: string[] = [];
 let writes: RecordedWrite[] = [];
 
+function materialSafetyNotes(): string {
+  if (fixtureVariant === "legacy-safety") return "corrosive flammable CORROSIVE";
+  if (fixtureVariant === "safety-chips" || fixtureVariant === "safety-editing") {
+    return " corrosive, oxidizing agent, CORROSIVE, , flammable, OXIDIZING AGENT ";
+  }
+  return "corrosive";
+}
+
 function material(overrides: Partial<MaterialDto> = {}): MaterialDto {
   return {
     id: MATERIAL_ID,
@@ -127,9 +135,11 @@ function material(overrides: Partial<MaterialDto> = {}): MaterialDto {
     description: "Primary Tris buffer material used for synthetic material detail tests.",
     attributes: {
       cas_number: "77-86-1",
-      molecular_formula: "C4H11NO3",
+      molecular_formula: fixtureVariant === "unsafe-formula"
+        ? 'C4H11NO3<img src="x" onerror="alert(1)">'
+        : "C4H11NO3",
       molecular_weight: 121.14,
-      safety_notes: "corrosive",
+      ...(fixtureVariant === "no-safety" ? {} : { safety_notes: materialSafetyNotes() }),
     },
     createdAt: Date.UTC(2026, 0, 1),
     updatedAt: Date.UTC(2026, 0, 1),
@@ -389,7 +399,7 @@ function updatedDetail(): DetailDto {
       cas_number: "77-86-1",
       molecular_formula: "C4H11NO3-HCl",
       molecular_weight: 125.5,
-      safety_notes: "corrosive irritant",
+      safety_notes: "corrosive, irritant, oxidizing agent",
     },
     updatedAt: Date.UTC(2026, 0, 10),
   });
@@ -403,7 +413,7 @@ function updatedDetail(): DetailDto {
       cas_number: "77-86-1",
       molecular_formula: "C4H11NO3-HCl",
       molecular_weight: 125.5,
-      safety_notes: "corrosive irritant",
+      safety_notes: "corrosive, irritant, oxidizing agent",
     };
     primary.batch.lotCode = "LOT-EDITED";
     primary.batch.originType = "prepared";
@@ -708,6 +718,16 @@ async function descriptorRows(): Promise<Record<string, string>> {
   return Object.fromEntries(rows);
 }
 
+function descriptorValue(label: string) {
+  return page!.locator(".material-attributes .detail-def-key")
+    .filter({ hasText: new RegExp(`^${label}$`) })
+    .locator("xpath=following-sibling::*[1]");
+}
+
+async function materialSafetyNoteTexts(): Promise<string[]> {
+  return descriptorValue("Safety notes").locator(".safety-note-tag").allTextContents();
+}
+
 async function stockRows(stockId: string): Promise<Record<string, string>> {
   const rows = await page!.$$eval(`#stock-card-${stockId} .material-stock-fact dt`, (keys) =>
     keys.map((key) => [
@@ -791,7 +811,7 @@ async function expectLocationLayoutsContainedAt390(): Promise<void> {
 
 describe("mounted MaterialDetailModal", () => {
   it("edits the selected stock card through the existing chemical editor and refreshes the detail", async () => {
-    await gotoDetail(`material=${MATERIAL_ID}`);
+    await gotoDetail(`material=${MATERIAL_ID}&variant=safety-editing`);
     expect(detailCalls).toBe(1);
     await openEditor();
 
@@ -808,7 +828,11 @@ describe("mounted MaterialDetailModal", () => {
     expect(await inputValue("f-cu")).toBe("g");
     expect(await inputValue("f-ccu")).toBe("mol/L");
     expect(await inputValue("f-attr-molecular_weight")).toBe("121.14");
-    expect(await page!.textContent("#modal-body")).toContain("corrosive");
+    expect(await inputValue("f-attr-safety_notes")).toBe("corrosive, oxidizing agent, flammable");
+    expect(await page!.getAttribute("#f-attr-safety_notes", "placeholder")).toBe("e.g. corrosive, flammable");
+    expect(await page!.textContent("#f-attr-safety_notes-hint")).toBe("Separate safety notes with commas.");
+    expect(await page!.textContent("#modal-body")).not.toContain("press Enter to add");
+    expect(await page!.locator('#modal-body [aria-label^="Remove "]').count()).toBe(0);
     expect(await inputValue("f-p-manufacturer")).toBe("Original manufacturer");
     expect(await inputValue("f-p-catalog")).toBe("TRIS-100");
     expect(await inputValue("f-b-lot")).toBe("LOT-ORIGINAL");
@@ -822,8 +846,7 @@ describe("mounted MaterialDetailModal", () => {
     await page!.fill("#f-cconc", "2.25");
     await page!.fill("#f-cno", "Edited stock note");
     await page!.fill("#f-attr-molecular_weight", "125.5");
-    await page!.fill("#f-attr-safety_notes", "irritant");
-    await page!.press("#f-attr-safety_notes", "Enter");
+    await page!.fill("#f-attr-safety_notes", " corrosive, irritant, CORROSIVE, , oxidizing agent, Irritant ");
     await page!.fill("#f-p-manufacturer", "Edited manufacturer");
     await page!.fill("#f-p-catalog", "TRIS-EDITED");
     await page!.fill("#f-b-lot", "LOT-EDITED");
@@ -856,7 +879,7 @@ describe("mounted MaterialDetailModal", () => {
       type: "chemical",
       attributes: {
         molecular_weight: 125.5,
-        safety_notes: "corrosive irritant",
+        safety_notes: "corrosive, irritant, oxidizing agent",
       },
       batchInfo: {
         lotCode: "LOT-EDITED",
@@ -931,10 +954,8 @@ describe("mounted MaterialDetailModal", () => {
     await page!.waitForFunction(
       () => document.querySelector(".material-detail-heading")?.textContent === "Tris base edited",
     );
-    expect(await descriptorRows()).toMatchObject({
-      "Molecular weight": "125.5",
-      "Safety notes": "corrosive irritant",
-    });
+    expect(await descriptorRows()).toMatchObject({ "Molecular weight": "125.5" });
+    expect(await materialSafetyNoteTexts()).toEqual(["corrosive", "irritant", "oxidizing agent"]);
     expect(await page!.locator("#material-detail .material-stock-edit").count()).toBe(2);
     expect(await page!.locator("#material-merge-open, #material-edit-open").count()).toBe(0);
     expect(pageErrors).toEqual([]);
@@ -1201,6 +1222,80 @@ describe("mounted MaterialDetailModal stock focus", () => {
 });
 
 describe("mounted MaterialDetailModal presentation", () => {
+  it.each(["original", "bauhaus"])("renders the formula, safety-note chips, and plain remaining descriptors in the %s theme", async (design) => {
+    await gotoDetail(`material=${MATERIAL_ID}&design=${design}`);
+
+    const formula = descriptorValue("Molecular formula");
+    expect(await formula.innerHTML()).toContain("C<sub>4</sub>H<sub>11</sub>NO<sub>3</sub>");
+    expect(await formula.textContent()).toBe("C4H11NO3");
+    expect(await formula.locator("sub").allTextContents()).toEqual(["4", "11", "3"]);
+    expect(await formula.locator(":scope > *").count()).toBe(3);
+    for (const [label, text] of Object.entries({
+      "CAS number": "77-86-1",
+      "Molecular weight": "121.14",
+    })) {
+      const value = descriptorValue(label);
+      expect(await value.textContent()).toBe(text);
+      expect(await value.locator("*").count()).toBe(0);
+    }
+
+    const safetyGroup = descriptorValue("Safety notes").locator(".safety-note-tags");
+    expect(await safetyGroup.getAttribute("aria-label")).toBe("Safety notes");
+    const chip = safetyGroup.locator(".safety-note-tag");
+    expect(await chip.allTextContents()).toEqual(["corrosive"]);
+    const chipStyle = await chip.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        background: style.backgroundColor,
+        borderRadius: style.borderRadius,
+        textTransform: style.textTransform,
+      };
+    });
+    expect(chipStyle).toEqual(design === "bauhaus"
+      ? { background: "rgb(244, 240, 230)", borderRadius: "0px", textTransform: "uppercase" }
+      : { background: "rgba(14, 165, 233, 0.1)", borderRadius: "999px", textTransform: "none" });
+    expect(await page!.getAttribute("body", "data-design")).toBe(design);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("escapes arbitrary markup in the molecular formula while preserving subscripts", async () => {
+    await gotoDetail(`material=${MATERIAL_ID}&variant=unsafe-formula`);
+    const formula = page!.locator(".material-attributes .detail-def-key")
+      .filter({ hasText: /^Molecular formula$/ })
+      .locator("xpath=following-sibling::*[1]");
+
+    expect(await formula.locator("sub").allTextContents()).toEqual(["4", "11", "3"]);
+    expect(await formula.locator("img, script, [onerror]").count()).toBe(0);
+    expect(await formula.textContent()).toBe('C4H11NO3<img src="x" onerror="alert(1)">');
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("trims and orders comma-separated safety-note chips without splitting phrases or repeating case variants", async () => {
+    await gotoDetail(`material=${MATERIAL_ID}&variant=safety-chips`);
+
+    expect(await materialSafetyNoteTexts()).toEqual(["corrosive", "oxidizing agent", "flammable"]);
+    expect(await descriptorValue("Safety notes").locator(".safety-note-tag").count()).toBe(3);
+    expect(await descriptorValue("Molecular formula").locator("sub").allTextContents()).toEqual(["4", "11", "3"]);
+    expect(await descriptorValue("CAS number").textContent()).toBe("77-86-1");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("renders legacy whitespace-only safety notes as de-duplicated chips", async () => {
+    await gotoDetail(`material=${MATERIAL_ID}&variant=legacy-safety`);
+
+    expect(await materialSafetyNoteTexts()).toEqual(["corrosive", "flammable"]);
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
+  it("omits the Safety notes row when the stored attribute is missing", async () => {
+    await gotoDetail(`material=${MATERIAL_ID}&variant=no-safety`);
+
+    expect(await descriptorRows()).not.toHaveProperty("Safety notes");
+    expect(await page!.locator(".material-attributes .safety-note-tags").count()).toBe(0);
+    expect(await descriptorValue("Molecular formula").textContent()).toBe("C4H11NO3");
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+
   it("shows joined stock details in compact headers and one facts grid per stock", async () => {
     await gotoDetail(`material=${MATERIAL_ID}&variant=rich-preview&location=nested`);
 
@@ -1534,6 +1629,7 @@ describe("mounted MaterialDetailModal presentation", () => {
     expect(await page!.locator(".material-stock-edit").count()).toBe(0);
     expect(await page!.locator("#material-edit-open, #material-merge-open").count()).toBe(0);
     expect(await page!.locator("#f-cn2").count()).toBe(0);
+    expect(await descriptorRows()).not.toHaveProperty("Molecular formula");
     expect(writes).toEqual([]);
     expect(detailCalls).toBe(1);
     expect(mergeCandidateCalls).toBe(0);

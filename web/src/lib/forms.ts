@@ -44,6 +44,7 @@ import {
 } from "./ops";
 import { countWords, effectivePosition, stripEmoji } from "./inventoryUtils";
 import { parseProtocolTags } from "./protocol";
+import { parseSafetyNoteInput, safetyNotesForInput } from "./safetyNotes";
 import { highlightForAdd, highlightForEdit, highlightFormValue } from "./highlight";
 import { verifyCaptchaAndExecute } from "./captcha";
 import { router, navigateTo } from "./router.svelte";
@@ -946,29 +947,8 @@ type ChemicalFormState = ChemicalFormValues & {
   contId: string;
   product: { manufacturer: string; catalogNumber: string };
   batch: { lotCode: string; originType: string; expiresAt: string; receivedAt: string; preparedBy: string };
-  safetyNotes: string[];
+  safetyNotes: string;
 };
-
-function parseSafetyTags(value: unknown): string[] {
-  if (typeof value !== "string") {
-    return [];
-  }
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  for (const part of value.split(/[\s,]+/)) {
-    const tag = part.replace(/^#+/, "").trim();
-    if (tag === "") {
-      continue;
-    }
-    const key = tag.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    tags.push(tag);
-  }
-  return tags;
-}
 
 interface ChemicalFormMatch {
   ch: Chemical;
@@ -1088,7 +1068,7 @@ export function openChemicalForm(
   const initialShelf = explicitShelfId ?? editMatch?.placement ?? defaultPlacementFor(cont);
   const hadProduct = editChem?.ch.product !== undefined && editChem?.ch.product !== null;
   const initialAttributes = { ...(editChem?.ch.attributes ?? {}) };
-  const safetyNotes = parseSafetyTags(initialAttributes.safety_notes);
+  const safetyNotes = safetyNotesForInput(initialAttributes.safety_notes);
   delete initialAttributes.safety_notes;
   const form: ChemicalFormState = {
     shelfId: initialShelf,
@@ -1150,11 +1130,11 @@ export function openChemicalForm(
       // canonical attributes from them, so never send them from the descriptor map.
       delete attributes.cas_number;
       delete attributes.molecular_formula;
-      // The tag editor stores safety notes as string[] in form state; the
-      // payload/validator contract stays a single whitespace-joined string.
-      const safetyNotes = form.safetyNotes.map((tag) => tag.trim()).filter((tag) => tag !== "");
+      // Keep the existing string attribute contract while saving clean,
+      // comma-separated notes in the order entered by the user.
+      const safetyNotes = parseSafetyNoteInput(form.safetyNotes);
       if (form.type === "chemical" && safetyNotes.length > 0) {
-        attributes.safety_notes = safetyNotes.join(" ");
+        attributes.safety_notes = safetyNotes.join(", ");
       } else {
         delete attributes.safety_notes;
       }

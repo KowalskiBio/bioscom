@@ -2,7 +2,6 @@
   import type { ChemicalAvailability, Container, Room } from "@bioscom/shared";
   import { MATERIAL_TYPES } from "@bioscom/shared";
   import type { MaterialFieldDef, MaterialTypeDef } from "@bioscom/shared";
-  import { renderFormulaHtml, normalizeFormula } from "../../lib/inventoryUtils";
   import { theme } from "../../lib/theme.svelte";
   import { untrack } from "svelte";
 
@@ -30,7 +29,7 @@
       customPosition: string;
       type: string;
       attributes: Record<string, string | number | boolean | null>;
-      safetyNotes?: string[];
+      safetyNotes: string;
       product: {
         manufacturer: string;
         catalogNumber: string;
@@ -117,7 +116,6 @@
   );
   const hasRangeShelves = $derived(containerShelves.some((s) => s.isRangeShelf === true));
   const canAuto = $derived(isAlphabetical || hasRangeShelves);
-  const formulaPreview = $derived(renderFormulaHtml(normalizeFormula(formulaText)));
   const materialDef = $derived(
     MATERIAL_TYPES.find((type) => type.key === typeKey) as MaterialTypeDef | undefined,
   );
@@ -140,96 +138,6 @@
 
   function setAttrChecked(key: string, checked: boolean): void {
     form.attributes[key] = checked;
-  }
-
-  function normalizeTag(raw: string): string {
-    return raw.trim().replace(/^#+/, "").trim();
-  }
-
-  function parseSafetyTags(value: string): string[] {
-    const seen = new Set<string>();
-    const tags: string[] = [];
-    for (const part of value.split(/[\s,]+/)) {
-      const tag = normalizeTag(part);
-      if (tag === "") {
-        continue;
-      }
-      const key = tag.toLowerCase();
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      tags.push(tag);
-    }
-    return tags;
-  }
-
-  const initialSafetyTags = untrack(() =>
-    form.safetyNotes !== undefined ? [...form.safetyNotes] : parseSafetyTags(attrValue("safety_notes")),
-  );
-  let safetyTags = $state<string[]>(initialSafetyTags);
-  let tagDraft = $state("");
-
-  function writeSafetyTags(next: string[]): void {
-    safetyTags = next;
-    form.safetyNotes = [...next];
-  }
-
-  function commitTag(raw: string): void {
-    const tag = normalizeTag(raw);
-    if (tag === "" || safetyTags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
-      return;
-    }
-    writeSafetyTags([...safetyTags, tag]);
-  }
-
-  function removeTag(index: number): void {
-    if (index < 0) {
-      return;
-    }
-    writeSafetyTags(safetyTags.filter((_, i) => i !== index));
-  }
-
-  function onTagInput(event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    const raw = input.value;
-    if (raw.includes(",")) {
-      const parts = raw.split(",");
-      const remainder = parts.pop() ?? "";
-      for (const part of parts) {
-        commitTag(part);
-      }
-      tagDraft = remainder;
-      input.value = remainder;
-    } else {
-      tagDraft = raw;
-    }
-  }
-
-  function onTagKeydown(event: KeyboardEvent): void {
-    if (event.key === "Enter") {
-      // The modal window handler would otherwise confirm the form.
-      event.preventDefault();
-      event.stopPropagation();
-      commitTag(tagDraft);
-      tagDraft = "";
-      return;
-    }
-    if (event.key === ",") {
-      event.preventDefault();
-      commitTag(tagDraft);
-      tagDraft = "";
-      return;
-    }
-    if (event.key === "Backspace" && tagDraft === "") {
-      event.preventDefault();
-      removeTag(safetyTags.length - 1);
-    }
-  }
-
-  function onTagBlur(): void {
-    commitTag(tagDraft);
-    tagDraft = "";
   }
 
   function onRoomChange(): void {
@@ -356,9 +264,6 @@
   <div class="form-group">
     <label class="form-label">Formula</label>
     <input class="form-input" id="f-cf" placeholder="e.g. H2SO4, Na2CO3" bind:value={formulaText}>
-    {#if formulaText.trim() !== ""}
-      <div id="f-cf-preview" style="margin-top:0.4rem;padding:0.4rem 0.6rem;font-size:1.1rem;color:var(--text-secondary);min-height:1.5em;letter-spacing:0.02em;font-style:italic;"><!-- eslint-disable-next-line svelte/no-at-html-tags -->{@html formulaPreview}</div>
-    {/if}
   </div>
   <div class="form-group"><label class="form-label">CAS number</label><input class="form-input" id="f-cc" placeholder="e.g. 7647-01-0" bind:value={form.cas}></div>
 {/if}
@@ -380,28 +285,15 @@
           {/each}
         </select>
       {:else if field.key === "safety_notes" && typeKey === "chemical"}
-        <label class="form-label" for="f-attr-safety_notes">
-          {field.label}{field.required ? " *" : ""}
-          <span class="form-hint" style="display:inline;margin:0 0 0 0.4rem;font-weight:400;text-transform:none;letter-spacing:normal;">(press Enter to add)</span>
-        </label>
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;">
-          {#each safetyTags as tag, index (tag)}
-            <span style="display:inline-flex;align-items:center;gap:0.1rem;border:1px solid var(--border-light);border-radius:999px;font-size:.72rem;padding:.1rem .45rem;background:transparent;">
-              {tag}
-              <button type="button" class="btn-inline" style="padding:0 .12rem;line-height:1;" aria-label={`Remove ${tag}`} onclick={() => removeTag(index)}>×</button>
-            </span>
-          {/each}
-          <input
-            class="form-input"
-            id="f-attr-safety_notes"
-            placeholder="add tag + Enter"
-            style="flex:1 1 9rem;width:auto;min-width:9rem;padding:0.4rem 0.6rem;"
-            value={tagDraft}
-            oninput={onTagInput}
-            onkeydown={onTagKeydown}
-            onblur={onTagBlur}
-          >
-        </div>
+        <label class="form-label" for="f-attr-safety_notes">{field.label}{field.required ? " *" : ""}</label>
+        <input
+          class="form-input"
+          id="f-attr-safety_notes"
+          placeholder="e.g. corrosive, flammable"
+          aria-describedby="f-attr-safety_notes-hint"
+          bind:value={form.safetyNotes}
+        >
+        <div class="form-hint" id="f-attr-safety_notes-hint">Separate safety notes with commas.</div>
       {:else if field.dataType === "text"}
         <label class="form-label" for={`f-attr-${field.key}`}>{field.label}{field.required ? " *" : ""}</label>
         <textarea class="form-textarea" id={`f-attr-${field.key}`} rows="3" value={attrValue(field.key)} oninput={(e) => setAttrText(field.key, e.currentTarget.value)}></textarea>

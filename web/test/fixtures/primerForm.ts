@@ -15,7 +15,7 @@ const form = {
   customPosition: "",
   type: "primer",
   attributes: { sequence: "ACGT", target_species: "tobacco" } as Record<string, string | number | boolean | null>,
-  safetyNotes: [] as string[],
+  safetyNotes: "",
   product: { manufacturer: "", catalogNumber: "" },
   batch: { lotCode: "", originType: "", expiresAt: "", receivedAt: "", preparedBy: "" },
 };

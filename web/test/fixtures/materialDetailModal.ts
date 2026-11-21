@@ -45,7 +45,9 @@ function primaryStock(): Chemical {
     formula: "C4H11NO3",
     attributes: {
       molecular_weight: 121.14,
-      safety_notes: "corrosive",
+      safety_notes: variant === "safety-editing"
+        ? " corrosive, oxidizing agent, CORROSIVE, , flammable, OXIDIZING AGENT "
+        : "corrosive",
     },
     product: {
       manufacturer: "Original manufacturer",

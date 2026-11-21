@@ -896,6 +896,32 @@ describe("mounted chemical availability", () => {
   }, 40_000);
 });
 
+describe("mounted chemical formula editing", () => {
+  beforeEach(() => {
+    chemicalWrites.length = 0;
+  });
+
+  it.each(["original", "bauhaus"])("keeps the Formula binding without a live preview in the %s theme", async (design) => {
+    await openView("detail/room-main/cont-main", `case=formula-no-preview-${design}&design=${design}`);
+    await openChemicalFromContext("cont-main", "shelf-main");
+
+    expect(await page!.locator("#f-cf").count()).toBe(1);
+    expect(await page!.locator("#f-cf-preview").count()).toBe(0);
+    await page!.fill("#f-cf", "C4H11NO3");
+    expect(await page!.inputValue("#f-cf")).toBe("C4H11NO3");
+    expect(await page!.locator("#f-cf-preview").count()).toBe(0);
+
+    await page!.fill("#f-cn2", `Formula binding ${design}`);
+    await page!.click("#modal-confirm");
+    await expect.poll(() => chemicalWrites.length, { timeout: 10_000 }).toBe(1);
+    expect(chemicalWrites[0]?.body).toMatchObject({
+      name: `Formula binding ${design}`,
+      formula: "C4H11NO3",
+    });
+    expect(pageErrors).toEqual([]);
+  }, 40_000);
+});
+
 describe("mounted chemical placement context", () => {
   beforeEach(() => {
     chemicalWrites.length = 0;
